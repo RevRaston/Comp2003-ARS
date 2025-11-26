@@ -1,0 +1,24 @@
+body {
+  margin: 0;
+  padding: 0;
+  background: #0d0d0d;
+  color: white;
+  font-family: "Inter", sans-serif;
+}
+
+input, button {
+  padding: 10px 14px;
+  margin: 6px 0;
+  border-radius: 6px;
+  border: none;
+}
+
+button {
+  background: #333;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #444;
+}

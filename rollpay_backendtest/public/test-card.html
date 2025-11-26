@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add Card</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        max-width: 350px;
+        margin: 2rem auto;
+      }
+      input, button {
+        padding: 0.5rem;
+        font-size: 1rem;
+      }
+      button {
+        cursor: pointer;
+      }
+      #result {
+        white-space: pre;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>RollPay Test Card Form</h2>
+
+    <label>Card Holder</label>
+    <input id="card_holder" placeholder="John Tester" />
+
+    <label>Card Number</label>
+    <input id="card_number" placeholder="1234-5678-9012-3456" />
+
+    <label>Expiry Month</label>
+    <input id="expiry_month" type="number" placeholder="12" />
+
+    <label>Expiry Year</label>
+    <input id="expiry_year" type="number" placeholder="28" />
+
+    <label>CVV</label>
+    <input id="cvv" type="password" placeholder="123" />
+
+    <button id="submitBtn">Submit Card</button>
+
+    <h3>Server Response:</h3>
+    <pre id="result"></pre>
+
+    <script>
+      const btn = document.getElementById("submitBtn");
+      const result = document.getElementById("result");
+
+      // ✅ Your REAL Supabase access token
+      const ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsImtpZCI6IkNyMDh3UUZuczlZSmN6VW8iLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3FvcWl0aGJwdmh2cmxscmNwcmpoLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiIwYmYwZWI2ZS01ZTYxLTRmYzItOTdkOS1iODViMjIyYTU5YTQiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzYzMDUwNzQ1LCJpYXQiOjE3NjMwNDcxNDUsImVtYWlsIjoicm9sbHBheXRlc3RlMUBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsIjoicm9sbHBheXRlc3RlMUBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJzdWIiOiIwYmYwZWI2ZS01ZTYxLTRmYzItOTdkOS1iODViMjIyYTU5YTQifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc2MzA0NzE0NX1dLCJzZXNzaW9uX2lkIjoiYjdlNzI2NWMtOTNhZi00ZTgxLThlYjctZjU3ZTIzNTdhYmFiIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.BRwg9nUmQed-0LSwiBJR-BJnlo0kKw70IvmcgM8XQ-I";
+
+      btn.onclick = async () => {
+        const payload = {
+          card_holder: document.getElementById("card_holder").value,
+          card_number: document.getElementById("card_number").value,
+          expiry_month: Number(document.getElementById("expiry_month").value),
+          expiry_year: Number(document.getElementById("expiry_year").value),
+          cvv: document.getElementById("cvv").value
+        };
+
+        const res = await fetch("http://localhost:3000/cards", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${ACCESS_TOKEN}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      };
+    </script>
+  </body>
+</html>
