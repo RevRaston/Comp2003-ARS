@@ -1,0 +1,55 @@
+# ---------------------------------------------------
+# Node / Vite / React
+# ---------------------------------------------------
+node_modules/
+dist/
+build/
+*.local
+
+# Environment files (very important!)
+.env
+.env.local
+.env.*.local
+
+# Mac and Windows trash
+.DS_Store
+Thumbs.db
+
+# Vite cache
+.vite/
+vite.config.js.timestamp*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Editor stuff
+.vscode/
+.idea/
+
+# Supabase local folders
+supabase/.temp/
+supabase/.branches/
+
+# Ignore frontend build output
+rollplay_frontend/node_modules/
+rollplay_frontend/dist/
+
+# Ignore backend dependencies
+rollpay_backendtest/node_modules/
+
+# Ignore uploaded/generated assets
+public/uploads/
+public/*.zip
+public/*.tar
+public/*.tar.gz
+
+# Ignore backup files
+*.bak
+*.backup
+*.tmp
+*.temp
