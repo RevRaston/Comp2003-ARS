@@ -16,6 +16,13 @@ import HostSession from "./pages/HostSession";
 import JoinSession from "./pages/JoinSession";
 import Lobby from "./pages/Lobby";
 
+/* game pages */
+import DiceDuel from "./pages/DiceDuel";
+// import DiceDuel from "./pages/DiceDuel";
+// import DiceDuel from "./pages/DiceDuel";
+// import DiceDuel from "./pages/DiceDuel";
+
+
 export default function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -66,6 +73,13 @@ export default function App() {
           <Route path="/host-session" element={<HostSession token={token} />} />
           <Route path="/join-session" element={<JoinSession token={token} />} />
           <Route path="/lobby" element={<Lobby token={token} />} />
+
+          {/* game pages */}
+          <Route path="/dice-duel" element={<DiceDuel />} />
+          {/* <Route path="/dice-duel" element={<DiceDuel />} /> */}
+          {/* <Route path="/dice-duel" element={<DiceDuel />} /> */}
+          {/* <Route path="/dice-duel" element={<DiceDuel />} /> */}
+          
         </Routes>
       </Router>
     </GameProvider>
