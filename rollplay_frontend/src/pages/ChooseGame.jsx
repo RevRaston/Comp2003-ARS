@@ -9,7 +9,7 @@ export default function ChooseGame() {
 
       <Link to="/dice-duel">Dice Duel</Link>
       <br />
-      {/* <Link to="/quick-draw">Quick Draw</Link> */}
+      <Link to="/quick-draw">Quick Draw</Link>
       <br />
       {/* <Link to="/tip-toss">Tip Toss</Link> */}
       <br />

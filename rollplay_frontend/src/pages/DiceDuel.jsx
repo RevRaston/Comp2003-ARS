@@ -1,90 +1,77 @@
 import { useState, useEffect } from "react";
 
 export default function DiceDuel() {
-  const [num1, setNum1] = useState(null);
-  const [num2, setNum2] = useState(null);
-  const [display1, setDisplay1] = useState(0);
-  const [display2, setDisplay2] = useState(0);
-  const [rolling1, setRolling1] = useState(true);
-  const [rolling2, setRolling2] = useState(true);
+  // Global variables to store the dice rolls
+  const [rollNumber, setRollNumber] = useState(null); // player score variable
+  const [playerName, setPlayerName] = useState(""); // stored player name (set on button click)
+  const [inputName, setInputName] = useState(""); // input field value
+  const [displayNumber, setDisplayNumber] = useState(0); // rolling dice display
+  const [rolling, setRolling] = useState(true); // rolling effect toggle
 
-  // Simulate rolling effect for dice 1
-  useEffect(() => {
-    if (!rolling1) return;
-    const interval = setInterval(() => {
-      setDisplay1(Math.floor(Math.random() * 6) + 1);
-    }, 100);
-    return () => clearInterval(interval);
-  }, [rolling1]);
-
-  // Rolling effect for dice 2
-  useEffect(() => {
-    if (!rolling2) return;
-    const interval = setInterval(() => {
-      setDisplay2(Math.floor(Math.random() * 6) + 1);
-    }, 100);
-    return () => clearInterval(interval);
-  }, [rolling2]);
-
-  // Determine winner
-  const getResult = () => {
-    if (num1 === null || num2 === null) return "";
-    if (num1 > num2) return "Player 1 wins!";
-    if (num2 > num1) return "Player 2 wins!";
-    return "It's a draw! Try again.";
+  // Handle player name input button click
+  const handleNameSubmit = () => {
+    if (inputName.trim() === "") {
+      alert("Enter a name first!");
+      return;
+    }
+    setPlayerName(inputName);
   };
 
-  const reset = () => {
-    setNum1(null);
-    setNum2(null);
-    setRolling1(true);
-    setRolling2(true);
+  // Rolling effect for dice
+  useEffect(() => {
+    if (!rolling) return; // stop rolling when user clicks roll
+    const interval = setInterval(() => {
+      setDisplayNumber(Math.floor(Math.random() * 6) + 1);
+    }, 100); // updates every 0.1s
+    return () => clearInterval(interval);
+  }, [rolling]);
+
+  // Roll dice for player
+  const handleRoll = () => {
+    const roll = Math.floor(Math.random() * 6) + 1;
+    setRollNumber(roll); // store player score
+    setDisplayNumber(roll); // show final roll
+    setRolling(false); // stop rolling effect
+  };
+
+  // Reset game
+  const handleReset = () => {
+    window.location.reload();
   };
 
   return (
-    <div className="w-full h-screen flex flex-col items-center justify-start p-6" style={{
-      background: "linear-gradient(#effbf6, #8ce3bf, #3dd092)",
-    }}>
-      <h1 className="text-4xl font-bold mb-4 text-center">Dice Duel</h1>
+    <div
+      style={{
+        height: "100%",
+        textAlign: "center",
+        paddingTop: 40,
+      }}
+    >
+      <h1>Dice Duel</h1>
 
-      <p>Player 1:</p>
-      <p>Player 2:</p>
+      {/* Player Name Input */}
+      {playerName === "" ? (
+        <>
+          <input
+            type="text"
+            placeholder="Please enter your name"
+            value={inputName}
+            onChange={(e) => setInputName(e.target.value)}
+          />
+          <button onClick={handleNameSubmit}>hello</button>
+        </>
+      ) : (
+        <p>{playerName}:</p>
+      )}
 
-      <p className="text-2xl">{display1}</p>
-      <p className="text-2xl">{display2}</p>
+      {/* Dice Number Output */}
+      <p>{displayNumber}</p>
 
-      <div className="flex gap-4 mt-4">
-        <button
-          onClick={() => {
-            setNum1(display1);
-            setRolling1(false);
-          }}
-          disabled={num1 !== null}
-          className="px-4 py-2 bg-white rounded-xl shadow"
-        >
-          roll1
-        </button>
-
-        <button
-          onClick={() => {
-            setNum2(display2);
-            setRolling2(false);
-          }}
-          disabled={num2 !== null}
-          className="px-4 py-2 bg-white rounded-xl shadow"
-        >
-          roll2
-        </button>
-
-        <button
-          onClick={reset}
-          className="px-4 py-2 bg-white rounded-xl shadow"
-        >
-          reset
-        </button>
+      <div style={{ margin: "auto", padding: 10 }}>
+        <button onClick={handleRoll} disabled={rollNumber !== null}> roll </button>
+        <button onClick={handleReset}>reset</button>
       </div>
 
-      <p className="mt-4 text-xl">{getResult()}</p>
     </div>
   );
 }
