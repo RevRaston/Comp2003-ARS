@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Button Masher</title>
+<style>
+    body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #e6e6e6;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    .game-container {
+        text-align: center;
+        background: white;
+        padding: 30px;
+        width: 380px;
+        border-radius: 15px;
+        box-shadow: 0px 4px 12px rgba(0,0,0,0.25);
+        font-size: 28px;
+    }
+
+    #mashButton {
+        font-size: 32px;
+        padding: 25px 50px;
+        background: #ff4747;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        margin-top: 20px;
+    }
+</style>
+</head>
+<body>
+
+<div class="game-container" id="gameContainer"></div>
+
+<script>
+let score = 0;
+let countdownTimer = null;
+let gameTimer = null;
+const container = document.getElementById("gameContainer");
+
+// --- SCREEN 1: INTRO FOR 7 SECONDS ---
+function showIntro() {
+    container.innerHTML = `
+        <h1>Button Masher</h1>
+        <p>Press the button as many times as you can!</p>
+    `;
+
+    setTimeout(showCountdown, 7000);
+}
+
+// --- SCREEN 2: COUNTDOWN (3,2,1) ---
+function showCountdown() {
+    let count = 3;
+    container.innerHTML = `<h1>${count}</h1>`;
+
+    countdownTimer = setInterval(() => {
+        count--;
+        if (count > 0) {
+            container.innerHTML = `<h1>${count}</h1>`;
+        } else {
+            clearInterval(countdownTimer);
+            startGame();
+        }
+    }, 1000);
+}
+
+// --- SCREEN 3: MAIN GAME (10 seconds) ---
+function startGame() {
+    score = 0;
+
+    container.innerHTML = `
+        <div id="timer">Time Left: 10</div>
+        <div id="score">Score: 0</div>
+        <button id="mashButton">MASH!</button>
+    `;
+
+    const timerEl = document.getElementById("timer");
+    const scoreEl = document.getElementById("score");
+    const mashBtn = document.getElementById("mashButton");
+
+    mashBtn.onclick = () => {
+        score++;
+        scoreEl.textContent = "Score: " + score;
+    };
+
+    let timeLeft = 10;
+    gameTimer = setInterval(() => {
+        timeLeft--;
+        timerEl.textContent = "Time Left: " + timeLeft;
+
+        if (timeLeft <= 0) {
+            clearInterval(gameTimer);
+            showVictory();
+        }
+    }, 1000);
+}
+
+// --- SCREEN 4: VICTORY FOR 5 SECONDS ---
+function showVictory() {
+    container.innerHTML = `
+        <h1>Nice! You got ${score}!</h1>
+    `;
+
+    setTimeout(showIntro, 5000);
+}
+
+// Start the whole loop
+showIntro();
+</script>
+
+</body>
+</html>
