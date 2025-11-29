@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aim and Fire!</title>
+<style>
+  body {
+    margin: 0;
+    background: #222;
+    color: white;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  .container { text-align: center; }
+  #gameCanvas {
+    background: #111;
+    border: 3px solid #555;
+    display: block;
+    margin: 0 auto;
+  }
+  #fireBtn {
+    margin-top: 20px;
+    padding: 15px 40px;
+    background: #e63946;
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+  }
+  #gptMessage {
+    margin-top: 15px;
+    font-size: 18px;
+    color: #aee1ff;
+    height: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Aim and Fire!</h1>
+  <canvas id="gameCanvas" width="400" height="500"></canvas>
+  <button id="fireBtn">FIRE</button>
+  <div id="gptMessage"></div>
+</div>
+
+<script>
+// ---------------- GPT CALL FUNCTION ------------------
+
+async function callGPT(message) {
+  const apiKey = "YOUR_OPENAI_API_KEY_HERE"; // ⚠️ Not safe for production
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",    // you can change to gpt-4.1 or gpt-5.1
+      messages: [{ role: "user", content: message }],
+      max_tokens: 30
+    })
+  });
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "(No response)";
+}
+
+// -------------- ORIGINAL GAME CODE BELOW --------------
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let gptMsgBox = document.getElementById("gptMessage");
+
+let dart = { x: 200, y: 450, fired: false, speed: 6 };
+let target = { x: 200, y: 120, radius: 60, dir: 1, speed: 2 };
+let score = 0;
+let dartsLeft = 5;
+let timer = 60;
+let gameOverFlag = false;
+
+let hitParticles = [];
+let hitFlashTimer = 0;
+
+function drawTarget() {
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius + 8, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
+  const g1 = ctx.createRadialGradient(target.x, target.y, 10, target.x, target.y, target.radius);
+  g1.addColorStop(0, "#ff4d4d");
+  g1.addColorStop(1, "#b30000");
+  ctx.fillStyle = g1;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius * 0.6, 0, Math.PI * 2);
+  const g2 = ctx.createRadialGradient(target.x, target.y, 5, target.x, target.y, target.radius * 0.6);
+  g2.addColorStop(0, "white");
+  g2.addColorStop(1, "#ccc");
+  ctx.fillStyle = g2;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius * 0.3, 0, Math.PI * 2);
+  const g3 = ctx.createRadialGradient(target.x, target.y, 2, target.x, target.y, target.radius * 0.3);
+  g3.addColorStop(0, "#3399ff");
+  g3.addColorStop(1, "#003d66");
+  ctx.fillStyle = g3;
+  ctx.fill();
+}
+
+function drawDart() {
+  ctx.fillStyle = "#f2d16b";
+  ctx.fillRect(dart.x - 3, dart.y - 25, 6, 25);
+
+  ctx.beginPath();
+  ctx.moveTo(dart.x, dart.y - 35);
+  ctx.lineTo(dart.x - 5, dart.y - 25);
+  ctx.lineTo(dart.x + 5, dart.y - 25);
+  ctx.fillStyle = "#c0c0c0";
+  ctx.fill();
+
+  ctx.fillStyle = "#ff0066";
+  ctx.beginPath();
+  ctx.moveTo(dart.x - 10, dart.y - 5);
+  ctx.lineTo(dart.x, dart.y - 20);
+  ctx.lineTo(dart.x + 10, dart.y - 5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawUI() {
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+  ctx.fillText("Score: " + score, 20, 30);
+  ctx.fillText("Darts: " + dartsLeft, 300, 30);
+  ctx.fillText("Time: " + timer, 170, 30);
+}
+
+function updateTarget() {
+  target.x += target.dir * target.speed;
+  if (target.x + target.radius >= canvas.width || target.x - target.radius <= 0) target.dir *= -1;
+}
+
+function updateDart() {
+  if (!dart.fired) return;
+  dart.y -= dart.speed;
+  if (dart.y < 0) resetDart();
+}
+
+function resetDart() {
+  dart.x = 200;
+  dart.y = 450;
+  dart.fired = false;
+}
+
+async function fireDart() {
+  if (!dart.fired && dartsLeft > 0 && !gameOverFlag) {
+    dart.fired = true;
+    dartsLeft--;
+
+    // ------ CALL GPT WHEN FIRING ------
+    gptMsgBox.textContent = "Thinking...";
+    const reply = await callGPT("Describe the dramatic firing of a dart in 1 short sentence.");
+    gptMsgBox.textContent = reply;
+  }
+}
+
+document.getElementById("fireBtn").onclick = fireDart;
+
+function checkHit() {
+  if (!dart.fired) return;
+
+  const dx = dart.x - target.x;
+  const dy = dart.y - target.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  let hit = false;
+
+  if (dist < target.radius * 0.3) {
+    score += 50;
+    hitFlashTimer = 14;
+    hit = true;
+  } else if (dist < target.radius * 0.6) {
+    score += 25;
+    hitFlashTimer = 10;
+    hit = true;
+  } else if (dist < target.radius) {
+    score += 10;
+    hitFlashTimer = 8;
+    hit = true;
+  } else return;
+
+  if (hit) {
+    createHitEffect(target.x, target.y);
+    resetDart();
+  }
+}
+
+setInterval(() => {
+  if (timer > 0 && !gameOverFlag) timer--;
+}, 1000);
+
+function gameLoop() {
+  const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  bg.addColorStop(0, "#1a1a1a");
+  bg.addColorStop(1, "#333");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if ((timer <= 0 || (dartsLeft === 0 && !dart.fired)) && !gameOverFlag) gameOverFlag = true;
+
+  if (gameOverFlag) {
+    ctx.fillStyle = "white";
+    ctx.font = "40px Arial";
+    ctx.fillText("GAME OVER", 100, 250);
+    ctx.font = "20px Arial";
+    ctx.fillText("Score: " + score, 150, 290);
+    return;
+  }
+
+  drawTarget();
+  drawDart();
+  drawUI();
+  updateTarget();
+  updateDart();
+  checkHit();
+  drawHitEffects();
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+
+function createHitEffect(x, y) {
+  for (let i = 0; i < 25; i++) {
+    hitParticles.push({ x, y, dx: (Math.random() - 0.5) * 6, dy: (Math.random() - 0.5) * 6, life: 20 });
+  }
+}
+
+function drawHitEffects() {
+  if (hitFlashTimer > 0) {
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, target.radius + 12, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255," + (hitFlashTimer / 14) + ")";
+    ctx.fill();
+    hitFlashTimer--;
+  }
+
+  for (let p of hitParticles) {
+    ctx.fillStyle = "rgba(255,255,255," + p.life / 20 + ")";
+    ctx.fillRect(p.x, p.y, 4, 4);
+    p.x += p.dx;
+    p.y += p.dy;
+    p.life--;
+  }
+
+  hitParticles = hitParticles.filter(p => p.life > 0);
+}
+</script>
+</body>
+</html>
