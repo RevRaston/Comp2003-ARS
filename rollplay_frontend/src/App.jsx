@@ -19,8 +19,9 @@ import Lobby from "./pages/Lobby";
 /* game pages */
 import DiceDuel from "./pages/DiceDuel";
 import QuickDraw from "./pages/QuickDraw";
-// import DiceDuel from "./pages/DiceDuel";
-// import DiceDuel from "./pages/DiceDuel";
+import TopRace from "./pages/TopRace";
+import TipToss from "./pages/TipToss";
+// import TipToss from "./pages/TipToss";
 
 
 export default function App() {
@@ -79,8 +80,9 @@ export default function App() {
           {/* game pages */}
           <Route path="/dice-duel" element={<DiceDuel />} />
           <Route path="/quick-draw" element={<QuickDraw />} />
-          {/* <Route path="/dice-duel" element={<DiceDuel />} /> */}
-          {/* <Route path="/dice-duel" element={<DiceDuel />} /> */}
+          <Route path="/top-race" element={<TopRace />} />
+          <Route path="/tip-toss" element={<TipToss />} />
+          {/* <Route path="/tip-toss" element={<TipToss />} /> */}
           
         </Routes>
       </Router>

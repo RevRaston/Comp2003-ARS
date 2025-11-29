@@ -11,9 +11,11 @@ export default function ChooseGame() {
       <br />
       <Link to="/quick-draw">Quick Draw</Link>
       <br />
-      {/* <Link to="/tip-toss">Tip Toss</Link> */}
+      <Link to="/tip-toss">Tip Toss</Link>
       <br />
-      {/* <Link to="/top-race">Top Race</Link> */}
+      <Link to="/top-race">Top Race</Link>
+      <br />
+      {/* <Link to="/"></Link> */}
       <br />
 
     </div>
