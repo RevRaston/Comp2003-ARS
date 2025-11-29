@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Roulette</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #e6e6e6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  .game-container {
+    text-align: center;
+    background: white;
+    padding: 30px;
+    width: 420px;
+    border-radius: 15px;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.25);
+  }
+  #wheelCanvas {
+    background: #fff;
+    border: 4px solid #333;
+    border-radius: 50%;
+    margin-bottom: 20px;
+  }
+  button {
+    padding: 15px 35px;
+    font-size: 20px;
+    background: #007bff;
+    border: none;
+    color: white;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  button:disabled {
+    background: gray;
+    cursor: not-allowed;
+  }
+</style>
+</head>
+<body>
+<div class="game-container" id="gameContainer"></div>
+
+<script>
+let playerName = "";
+let remainingNames = [];
+let currentRotation = 0; // radians
+
+const container = document.getElementById("gameContainer");
+
+// Small sanity check helper (lightweight "test")
+function debugCheckState() {
+  console.assert(new Set(remainingNames).size === remainingNames.length, "Names should be unique", remainingNames);
+}
+
+// ------------ SCREEN 1: ENTER NAME -------------
+function showNameScreen() {
+  currentRotation = 0; // reset rotation each fresh game
+  remainingNames = [];
+
+  container.innerHTML = `
+    <h1>Roulette</h1>
+    <p>Place your name:</p>
+    <input id="nameInput" style="font-size:20px;padding:5px;width:80%;" />
+    <br><br>
+    <button id="enterBtn" disabled>Enter</button>
+  `;
+
+  const input = document.getElementById("nameInput");
+  const btn = document.getElementById("enterBtn");
+
+  input.oninput = () => {
+    btn.disabled = input.value.trim().length === 0;
+  };
+
+  btn.onclick = () => {
+    playerName = input.value.trim();
+    startNewRoulette();
+  };
+}
+
+// ------------ SET UP A NEW ROULETTE ROUND ------------
+function startNewRoulette() {
+  const baseNames = [
+    "Alex", "Jordan", "Sam", "Riley", "Chris",
+    "Taylor", "Morgan", "Jamie", "Pat", "Cameron"
+  ];
+
+  // Remove player's name from the pool to avoid duplicates
+  const randomNames = baseNames.filter((n) => n !== playerName);
+  randomNames.sort(() => Math.random() - 0.5);
+
+  const picked = [
+    randomNames[0],
+    randomNames[1],
+    randomNames[2],
+    randomNames[3]
+  ];
+
+  remainingNames = [playerName, ...picked];
+
+  // Shuffle so the player's name isn't always in the same slice position
+  remainingNames.sort(() => Math.random() - 0.5);
+
+  currentRotation = 0;
+  debugCheckState();
+  showRouletteScreen();
+}
+
+// ------------ SCREEN 2: SPIN WHEEL -------------
+function showRouletteScreen() {
+  currentRotation = 0; // reset rotation on each new wheel display
+
+  container.innerHTML = `
+    <canvas id="wheelCanvas" width="300" height="300"></canvas>
+    <button id="spinBtn">SPIN</button>
+  `;
+
+  drawWheel();
+  document.getElementById("spinBtn").onclick = spinWheel;
+}
+
+// ------------ DRAW WHEEL WITH ARROW -------------
+function drawWheel() {
+  const wheel = document.getElementById("wheelCanvas");
+  const ctx = wheel.getContext("2d");
+
+  ctx.clearRect(0, 0, 300, 300);
+
+  const slices = remainingNames;
+  const sliceColors = ["#ff9999", "#ffcc99", "#ffff99", "#ccff99", "#99ccff"];
+  const sliceAngle = (2 * Math.PI) / slices.length;
+
+  for (let i = 0; i < slices.length; i++) {
+    const start = currentRotation + i * sliceAngle;
+    const end = start + sliceAngle;
+
+    ctx.beginPath();
+    ctx.moveTo(150, 150);
+    ctx.arc(150, 150, 150, start, end);
+    ctx.fillStyle = sliceColors[i % sliceColors.length];
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(150, 150);
+    ctx.rotate(start + sliceAngle / 2);
+    ctx.font = "18px Arial";
+    ctx.textAlign = "right";
+    ctx.fillStyle = "black";
+    ctx.fillText(slices[i], 140, 10);
+    ctx.restore();
+  }
+
+  // Arrow indicator at the top center (pointing down)
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.moveTo(150, 5);
+  ctx.lineTo(140, 25);
+  ctx.lineTo(160, 25);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ------------ SPIN ANIMATION -------------
+function spinWheel() {
+  const spinBtn = document.getElementById("spinBtn");
+  spinBtn.disabled = true;
+
+  const spinAmount = Math.random() * 4 + 4; // 4–8 full turns
+  const targetRotation = currentRotation + spinAmount * Math.PI * 2;
+  const duration = 3500;
+  const startTime = performance.now();
+  const startRotation = currentRotation;
+
+  function animate(now) {
+    const progress = Math.min((now - startTime) / duration, 1);
+    const easeOut = 1 - Math.pow(1 - progress, 3);
+
+    currentRotation = startRotation + (targetRotation - startRotation) * easeOut;
+    drawWheel();
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      currentRotation = targetRotation;
+      determineWinner();
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// ------------ DETERMINE WINNER -------------
+function determineWinner() {
+  const sliceAngle = (2 * Math.PI) / remainingNames.length;
+
+  // Pointer is at the top (straight up), which is angle -PI/2
+  const pointerAngle = -Math.PI / 2;
+  let relativeAngle = pointerAngle - currentRotation;
+  relativeAngle = (relativeAngle % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+
+  const index = Math.floor(relativeAngle / sliceAngle);
+  const landedName = remainingNames[index];
+
+  debugCheckState();
+
+  if (landedName === playerName) {
+    if (remainingNames.length === 1) {
+      showEndScreen("You Did It!", null);
+    } else {
+      showEndScreen("Darn, Bad Luck", null);
+    }
+  } else {
+    showEndScreen("Luck's on your side", landedName);
+  }
+}
+
+// ------------ SHOW RESULT SCREEN -------------
+// removeName: if non-null, this is the name to be eliminated when continuing
+function showEndScreen(message, removeName) {
+  container.innerHTML = `<h1>${message}</h1>`;
+
+  setTimeout(() => {
+    if (message === "You Did It!") {
+      showNameScreen();
+      return;
+    }
+
+    if (removeName) {
+      // Remove that name and continue with the reduced list
+      remainingNames = remainingNames.filter((n) => n !== removeName);
+      debugCheckState();
+      showRouletteScreen();
+    } else {
+      // Player hit; either bad luck (reset) or final win
+      showNameScreen();
+    }
+  }, 5000);
+}
+
+// Start the app
+showNameScreen();
+</script>
+</body>
+</html>
