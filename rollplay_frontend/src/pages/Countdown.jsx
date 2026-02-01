@@ -8,9 +8,9 @@ export default function Countdown() {
   const [count, setCount] = useState(3);
 
   useEffect(() => {
-    // If no players set (someone hit URL directly), send back to host
-    if (!players || players.length < 2) {
-      navigate("/host");
+    if (!players || players.length < 1) {
+      // If someone refreshed or entered URL manually, go back
+      navigate("/level-select");
       return;
     }
 
@@ -18,7 +18,7 @@ export default function Countdown() {
       setCount((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          navigate("/randomizer");
+          navigate("/choose-game");
           return 0;
         }
         return prev - 1;
@@ -35,3 +35,4 @@ export default function Countdown() {
     </div>
   );
 }
+

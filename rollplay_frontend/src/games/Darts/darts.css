@@ -1,0 +1,50 @@
+/* src/games/Darts/darts.css */
+
+.darts-container {
+  padding-top: 80px;
+  text-align: center;
+  color: #d87f00;
+}
+
+#dartsCanvas {
+  background: #111;
+  border: 3px solid #555;
+  display: block;
+  margin: 0 auto;
+}
+
+.fire-btn {
+  margin-top: 20px;
+  padding: 12px 32px;
+  border: none;
+  border-radius: 10px;
+  font-size: 20px;
+  cursor: pointer;
+  background: #e63946;
+  color: white;
+}
+
+.fire-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.game-message {
+  margin-top: 12px;
+  min-height: 24px;
+  color: #e5b936;
+}
+
+.turn-finished-panel {
+  margin-top: 20px;
+}
+
+.next-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  background: #3a86ff;
+  color: #fff;
+  cursor: pointer;
+}

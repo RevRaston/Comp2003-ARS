@@ -1,8 +1,11 @@
 body {
-  margin: 0;
+   margin: 0;
   padding: 0;
-  background: #0d0d0d;
-  color: white;
+  
+  background-image: url('/BeerBackGroundCartoon.png');
+  background-size: cover;
+  background-position:  center;
+  color: rgb(255, 255, 255);
   font-family: "Inter", sans-serif;
 }
 
@@ -21,4 +24,132 @@ button {
 
 button:hover {
   background: #444;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* LEVEL SELECT PAGE  ------------------------------------ */
+
+.page.level-select-page {
+  padding-top: 80px;
+  padding-left: 40px;
+  padding-right: 40px;
+}
+
+.page-title {
+  font-size: 2.2rem;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  opacity: 0.75;
+  margin-bottom: 20px;
+}
+
+.level-select-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+/* left side: grid of levels */
+
+.level-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.level-card {
+  background: #111;
+  border: 2px solid #444;
+  border-radius: 12px;
+  padding: 14px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.level-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  border-color: #fff;
+}
+
+.level-card--highlight {
+  border-color: #ffd54f;
+  box-shadow: 0 0 0 3px #ffd54f;
+}
+
+.level-card--disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.level-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.level-card-id {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+.level-card-round-tag {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: #ffd54f;
+}
+
+/* right side: sidebar */
+
+.level-sidebar {
+  width: 260px;
+  background: #111;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #333;
+}
+
+.round-list {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 12px;
+}
+
+.round-list li {
+  margin-bottom: 8px;
+}
+
+.round-label {
+  font-weight: 600;
+}
+
+.round-empty {
+  opacity: 0.6;
+}
+
+.primary-btn.full-width {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.start-btn {
+  margin-top: 24px;
 }
