@@ -1,125 +1,112 @@
+// src/pages/HostSession.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useGame } from "../GameContext";
 
 const API_BASE = "http://localhost:3000";
 
 export default function HostSession({ token }) {
   const navigate = useNavigate();
+  const { setSessionInfo, setTotalCost, setRule } = useGame();
 
   const [hostName, setHostName] = useState("");
-  const [totalCost, setTotalCost] = useState("50");
-  const [rule, setRule] = useState("winner_free");
+  const [totalCostInput, setTotalCostInput] = useState(50);
+  const [ruleInput, setRuleInput] = useState("winner_free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [sessionCode, setSessionCode] = useState(null);
 
-  async function handleCreate() {
+  async function createSession() {
     setError("");
 
     if (!token) {
-      setError("You must be signed in to host a session.");
+      setError("You must be signed in.");
       return;
     }
 
-    const totalNum = Number(totalCost);
-    if (!hostName.trim() || Number.isNaN(totalNum) || totalNum <= 0) {
-      setError("Please enter a name and a valid total bill.");
+    if (!hostName.trim()) {
+      setError("Enter your name.");
       return;
     }
+
+    const numericTotal = Number(totalCostInput) || 0;
 
     setLoading(true);
+
     try {
       const res = await fetch(`${API_BASE}/sessions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "X-Player-Id": localStorage.getItem("player_id"),
         },
         body: JSON.stringify({
-          host_name: hostName.trim(),
-          total_cost: totalNum,
-          rule,
+          host_name: hostName,
+          total_cost: numericTotal,
+          rule: ruleInput,
         }),
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create session.");
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create session");
-      }
+      // Store in context
+      setSessionInfo({
+        sessionId: data.session_id,
+        sessionCode: data.code,
+        isHost: true,
+      });
 
-      // store code so Lobby & Join page can use it
-      localStorage.setItem("session_code", data.code);
-      localStorage.setItem("session_is_host", "true");
-      localStorage.setItem("host_name", hostName.trim());
+      setTotalCost(numericTotal);
+      setRule(ruleInput);
 
-      setSessionCode(data.code);
-
-      // small delay so they can see the code, then go to lobby
-      setTimeout(() => navigate("/lobby"), 1200);
+      navigate("/lobby");
     } catch (err) {
-      console.error("Error creating session:", err);
       setError(err.message);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ paddingTop: 80, maxWidth: 420, margin: "0 auto" }}>
-      <h1>Host a Session</h1>
-      <p>Create a lobby that others can join with a code.</p>
+    <div className="HostSessionBox">
+      <h1>Host a Game</h1>
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Your name
-        <input
-          style={{ width: "100%", marginTop: 4 }}
-          value={hostName}
-          onChange={(e) => setHostName(e.target.value)}
-          placeholder="Ryan"
-        />
-      </label>
+      <label>Your Name</label>
+      <input
+        value={hostName}
+        onChange={(e) => setHostName(e.target.value)}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Total bill (£)
-        <input
-          style={{ width: "100%", marginTop: 4 }}
-          type="number"
-          min="0"
-          value={totalCost}
-          onChange={(e) => setTotalCost(e.target.value)}
-        />
-      </label>
+      <label>Total Cost (£)</label>
+      <input
+        type="number"
+        min="1"
+        value={totalCostInput}
+        onChange={(e) => setTotalCostInput(e.target.value)}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Rule
-        <select
-          style={{ width: "100%", marginTop: 4 }}
-          value={rule}
-          onChange={(e) => setRule(e.target.value)}
-        >
-          <option value="winner_free">Winner drinks free 🧊</option>
-          <option value="even_split">Even split 💷</option>
-        </select>
-      </label>
-
-      {error && (
-        <p style={{ color: "red", marginTop: 12 }}>{error}</p>
-      )}
-
-      <button
-        style={{ marginTop: 20, padding: "10px 18px" }}
-        onClick={handleCreate}
-        disabled={loading}
+      <label>Rule</label>
+      <select
+        value={ruleInput}
+        onChange={(e) => setRuleInput(e.target.value)}
+        style={{ width: "100%", marginBottom: 12 }}
       >
-        {loading ? "Creating Session..." : "Create Session"}
-      </button>
+        <option value="winner_free">Winner Drinks Free</option>
+        <option value="leaderboard">Leaderboard Decides</option>
+        <option value="last_place_tax">Last Place Tax</option>
+        <option value="top_half_safe">Top Half Safe</option>
+        <option value="random_twist">Random Twist</option>
+      </select>
 
-      {sessionCode && (
-        <p style={{ marginTop: 16 }}>
-          Session code: <strong>{sessionCode}</strong>
-        </p>
-      )}
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      <button onClick={createSession} disabled={loading}>
+        {loading ? "Creating..." : "Create Session"}
+      </button>
     </div>
   );
 }

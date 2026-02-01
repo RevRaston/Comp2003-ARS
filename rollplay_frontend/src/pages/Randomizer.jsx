@@ -1,54 +1,91 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useGame } from "../GameContext";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../supabase";
 
 export default function Randomizer() {
   const navigate = useNavigate();
-  const { players, totalCost, rule, setResults } = useGame();
+  const { sessionId, setResults } = useGame();
+
+  const [rolling, setRolling] = useState("...");
+  const [winner, setWinner] = useState(null);
 
   useEffect(() => {
-    if (!players || players.length < 2) {
-      navigate("/host");
+    if (!sessionId) {
+      navigate("/join-session");
       return;
     }
 
-    // Shuffle players
-    const shuffled = [...players].sort(() => Math.random() - 0.5);
-    const n = shuffled.length;
+    async function run() {
+      const { data: players } = await supabase
+        .from("session_players")
+        .select("*")
+        .eq("session_id", sessionId);
 
-    let results;
-    if (rule === "even_split") {
-      const share = totalCost / n;
-      results = shuffled.map((name, index) => ({
-        name,
-        rank: index + 1,
-        recommended: Number(share.toFixed(2)),
-      }));
-    } else {
-      // winner_free
-      const losersCount = Math.max(n - 1, 1);
-      const loserShare = totalCost / losersCount;
-      results = shuffled.map((name, index) => ({
-        name,
-        rank: index + 1,
-        recommended:
-          index === 0 ? 0 : Number(loserShare.toFixed(2)), // winner pays 0
-      }));
+      if (!players || players.length < 2) {
+        navigate("/lobby");
+        return;
+      }
+
+      const shuffled = [...players].sort(() => Math.random() - 0.5);
+
+      let i = 0;
+      const interval = setInterval(() => {
+        setRolling(shuffled[i % shuffled.length].name);
+        i++;
+      }, 120);
+
+      setTimeout(() => {
+        clearInterval(interval);
+
+        const winPlayer = shuffled[0];
+        setWinner(winPlayer.name);
+
+        const rule = winPlayer.rule ?? "winner_free";
+        const total = winPlayer.total_cost ?? 50;
+
+        let results;
+
+        if (rule === "even_split") {
+          const share = total / players.length;
+          results = shuffled.map((p, idx) => ({
+            name: p.name,
+            rank: idx + 1,
+            recommended: Number(share.toFixed(2)),
+          }));
+        } else {
+          const losers = shuffled.slice(1);
+          const share = total / losers.length;
+
+          results = shuffled.map((p, idx) => ({
+            name: p.name,
+            rank: idx + 1,
+            recommended: idx === 0 ? 0 : Number(share.toFixed(2)),
+          }));
+        }
+
+        setResults(results);
+
+        setTimeout(() => navigate("/results"), 1500);
+      }, 3000);
     }
 
-    setResults(results);
-
-    const timer = setTimeout(() => {
-      navigate("/results");
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [players, totalCost, rule, setResults, navigate]);
+    run();
+  }, [sessionId, setResults, navigate]);
 
   return (
     <div style={{ paddingTop: 80, textAlign: "center" }}>
-      <h1>Shuffling players...</h1>
-      <p>Rolling the dice to see who pays what 👀</p>
+      {!winner ? (
+        <>
+          <h1>🎲 Rolling...</h1>
+          <h2 style={{ fontSize: 40 }}>{rolling}</h2>
+        </>
+      ) : (
+        <>
+          <h1>Winner!</h1>
+          <h2 style={{ fontSize: 48 }}>{winner}</h2>
+        </>
+      )}
     </div>
   );
 }

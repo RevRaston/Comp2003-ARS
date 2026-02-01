@@ -13,16 +13,16 @@ export default function Lobby({ token }) {
     sessionCode,
     isHost,
     setSessionInfo,
-    players,          // ✅ FROM CONTEXT
-    setPlayers,       // ✅ FROM CONTEXT
+    players,
+    setPlayers,
+    setTotalCost,
+    setRule,
   } = useGame();
 
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
 
-  // ------------------------------------------------------------
   // Restore session info from localStorage if missing
-  // ------------------------------------------------------------
   useEffect(() => {
     if (!sessionCode) {
       const storedCode = localStorage.getItem("session_code");
@@ -40,9 +40,7 @@ export default function Lobby({ token }) {
     }
   }, [sessionCode, sessionId, navigate, setSessionInfo]);
 
-  // ------------------------------------------------------------
   // Poll backend for lobby state (every 2s)
-  // ------------------------------------------------------------
   useEffect(() => {
     if (!token) return;
 
@@ -63,6 +61,14 @@ export default function Lobby({ token }) {
         setSession(data.session);
         setPlayers(data.players || []);
 
+        // sync rule + total cost into context (for GameRunner later)
+        if (data.session?.total_cost != null) {
+          setTotalCost(Number(data.session.total_cost));
+        }
+        if (data.session?.rule) {
+          setRule(data.session.rule);
+        }
+
         const computedIsHost =
           Boolean(
             data.current_user_id &&
@@ -76,7 +82,7 @@ export default function Lobby({ token }) {
           isHost: computedIsHost,
         });
 
-        // If host already started the game → move everyone on
+        // If host already started the game → push all players to choose-game
         if (data.session.status === "started") {
           navigate("/choose-game");
         }
@@ -89,11 +95,9 @@ export default function Lobby({ token }) {
     loadLobby();
     const interval = setInterval(loadLobby, 2000);
     return () => clearInterval(interval);
-  }, [sessionCode, token, navigate, setSessionInfo, setPlayers]);
+  }, [sessionCode, token, navigate, setSessionInfo, setPlayers, setTotalCost, setRule]);
 
-  // ------------------------------------------------------------
   // HOST — Start game
-  // ------------------------------------------------------------
   async function startGame() {
     setError("");
 
@@ -126,10 +130,7 @@ export default function Lobby({ token }) {
     sessionCode || localStorage.getItem("session_code") || "N/A";
 
   return (
-    <div
-      className="LobbyBox"
-      style={{ paddingTop: 80, maxWidth: 480, margin: "0 auto" }}
-    >
+    <div className="LobbyBox" style={{ paddingTop: 80, maxWidth: 480, margin: "0 auto" }}>
       <h1>Lobby</h1>
 
       <p>
@@ -145,10 +146,10 @@ export default function Lobby({ token }) {
 
       <h3 style={{ marginTop: 24 }}>Players:</h3>
 
-      {players.length === 0 && <p>No players yet…</p>}
+      {(!players || players.length === 0) && <p>No players yet…</p>}
 
       <ul>
-        {players.map((p) => (
+        {players?.map((p) => (
           <li key={p.id}>
             {p.name} {p.is_host ? "(Host)" : ""}
           </li>
@@ -167,9 +168,7 @@ export default function Lobby({ token }) {
           Start Game
         </button>
       ) : (
-        <p style={{ marginTop: 16 }}>
-          Waiting for host to start the game…
-        </p>
+        <p style={{ marginTop: 16 }}>Waiting for host to start the game…</p>
       )}
     </div>
   );

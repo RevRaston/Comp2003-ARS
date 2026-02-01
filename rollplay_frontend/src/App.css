@@ -1,10 +1,11 @@
-#root {
+#root { 
   max-width: 1280px;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
 }
 
+/* Shared Vite defaults */
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -19,12 +20,8 @@
 }
 
 @keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -39,4 +36,213 @@
 
 .read-the-docs {
   color: #888;
+}
+
+/* Your actual RollPay interface styling */
+.JoinSessionBox {
+  padding-top: 80px; 
+  max-width: 420px;
+  background: #5d5d63;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: Papyrus, fantasy;
+}
+
+.JoinSessionBox h1 {
+  font-weight: bolder;
+}
+
+.HostSessionBox {
+  padding-top: 80px; 
+  max-width: 420px;
+  background: #5d5d63;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: Papyrus, fantasy;
+}
+
+.CardBox { 
+  padding-top: 80px; 
+  max-width: 420px;
+  background: #5d5d63;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: Papyrus, fantasy;
+}
+
+.ChooseGameBox h1 {
+  padding-top: 80px; 
+  max-width: 420px;
+  background: #5d5d63;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: Papyrus, fantasy;
+}
+
+.ChooseGameBox .Game1But,
+.ChooseGameBox .Game2But,
+.ChooseGameBox .Game3But {
+  background-size: cover;
+  background-position: center;
+  width: 400px;
+  height: 200px;
+  border-radius: 20px;
+  margin-right: 10px;
+}
+
+.ChooseGameBox .Game1But { background-image: url('/ProtoImg1.png'); }
+.ChooseGameBox .Game2But { background-image: url('/ProtoImg2.png'); }
+.ChooseGameBox .Game3But { background-image: url('/ProtoImg3.png'); }
+
+.ResultsBox {
+  padding-top: 80px; 
+  max-width: 420px;
+  background: #5d5d63;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: Papyrus, fantasy;
+}
+
+.LobbyBox{
+  padding-top: 80px; 
+  max-width: 420px;
+  background: #5d5d63;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  
+}
+
+.LobbyBox h1{
+  font-family: Papyrus, fantasy;
+}
+
+/* ===============================
+   Beer Bubble Page Transition
+   =============================== */
+
+.page-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 998;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+
+  animation: beerFade 0.9s ease-in-out forwards;
+}
+
+
+/* Foam strip at top */
+.page-transition-foam {
+  height: 90px;
+  background:
+    radial-gradient(circle at 20% 120%, #ffffff 0, #ffffff 55%, transparent 60%),
+    radial-gradient(circle at 50% 125%, #ffffff 0, #ffffff 55%, transparent 60%),
+    radial-gradient(circle at 80% 130%, #ffffff 0, #ffffff 55%, transparent 60%);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Beer body with rising bubbles */
+.page-transition-beer {
+  flex: 1;
+  background: linear-gradient(#f7d36b, #f0a800);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Individual bubbles */
+.page-transition-bubble {
+  position: absolute;
+  bottom: -40px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle at 30% 30%, #ffffff, rgba(255, 255, 255, 0.1));
+  opacity: 0.7;
+  animation: bubbleRise 2.4s linear infinite;
+}
+
+/* Staggered positions & timings for variety */
+.page-transition-bubble:nth-child(1)  { left: 10%;  animation-delay: 0s;   animation-duration: 2.4s; }
+.page-transition-bubble:nth-child(2)  { left: 20%;  animation-delay: 0.2s; animation-duration: 2.1s; }
+.page-transition-bubble:nth-child(3)  { left: 30%;  animation-delay: 0.4s; animation-duration: 2.5s; }
+.page-transition-bubble:nth-child(4)  { left: 40%;  animation-delay: 0.1s; animation-duration: 2.2s; }
+.page-transition-bubble:nth-child(5)  { left: 50%;  animation-delay: 0.3s; animation-duration: 2.6s; }
+.page-transition-bubble:nth-child(6)  { left: 60%;  animation-delay: 0.5s; animation-duration: 2.3s; }
+.page-transition-bubble:nth-child(7)  { left: 70%;  animation-delay: 0.1s; animation-duration: 2.7s; }
+.page-transition-bubble:nth-child(8)  { left: 80%;  animation-delay: 0.4s; animation-duration: 2.2s; }
+.page-transition-bubble:nth-child(9)  { left: 15%;  animation-delay: 0.6s; animation-duration: 2.8s; }
+.page-transition-bubble:nth-child(10) { left: 35%;  animation-delay: 0.8s; animation-duration: 2.4s; }
+.page-transition-bubble:nth-child(11) { left: 55%;  animation-delay: 0.7s; animation-duration: 2.1s; }
+.page-transition-bubble:nth-child(12) { left: 75%;  animation-delay: 0.9s; animation-duration: 2.5s; }
+.page-transition-bubble:nth-child(13) { left: 25%;  animation-delay: 1.0s; animation-duration: 2.6s; }
+.page-transition-bubble:nth-child(14) { left: 45%;  animation-delay: 1.2s; animation-duration: 2.3s; }
+.page-transition-bubble:nth-child(15) { left: 65%;  animation-delay: 1.1s; animation-duration: 2.7s; }
+.page-transition-bubble:nth-child(16) { left: 85%;  animation-delay: 1.3s; animation-duration: 2.2s; }
+.page-transition-bubble:nth-child(17) { left: 12%;  animation-delay: 1.5s; animation-duration: 2.9s; }
+.page-transition-bubble:nth-child(18) { left: 32%;  animation-delay: 1.4s; animation-duration: 2.4s; }
+.page-transition-bubble:nth-child(19) { left: 52%;  animation-delay: 1.6s; animation-duration: 2.8s; }
+.page-transition-bubble:nth-child(20) { left: 72%;  animation-delay: 1.7s; animation-duration: 2.3s; }
+
+@keyframes bubbleRise {
+  0% {
+    transform: translateY(0) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-110vh) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes beerFade {
+  0% {
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 1;
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }

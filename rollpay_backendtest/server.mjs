@@ -1,3 +1,4 @@
+// server.mjs
 console.log("🔥 RUNNING SERVER:");
 console.log("🔥 PATH:", import.meta.url);
 
@@ -8,13 +9,16 @@ import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// ⭐ SESSION LEVELS ROUTES (only /:sessionCode/levels)
+import sessionLevelsRoutes from "./routes/sessionLevels.mjs";
+
 dotenv.config();
 
 /* ---------------------------------------
    SESSION CODE GENERATOR
 ----------------------------------------- */
 function generateSessionCode(length = 6) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoids similar chars
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   for (let i = 0; i < length; i++) {
     code += chars[Math.floor(Math.random() * chars.length)];
@@ -23,12 +27,12 @@ function generateSessionCode(length = 6) {
 }
 
 /* ---------------------------------------
-   MINI-MVP GAME STATE (LOCAL ONLY)
+   LOCAL GAME STATE (OLD MINI MVP MODE)
 ----------------------------------------- */
 let currentGame = {
   players: [],
   total_cost: 0,
-  rule: "winner_free"
+  rule: "winner_free",
 };
 
 /* ---------------------------------------
@@ -42,16 +46,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+export const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
+// helper for authed Supabase instance
 function supaForRequest(req) {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
-    global: { headers: { Authorization: req.headers.authorization || "" } }
+    global: { headers: { Authorization: req.headers.authorization || "" } },
   });
 }
 
 /* ---------------------------------------
-   ROOT ROUTE
+   BASIC TEST ROUTE
 ----------------------------------------- */
 app.get("/", (req, res) => {
   res.send("✅ RollPay backend is running!");
@@ -62,9 +70,10 @@ app.get("/", (req, res) => {
 ----------------------------------------- */
 app.post("/signup", async (req, res) => {
   const { email, password } = req.body;
-  const { data, error } = await supabase.auth.signUp({ email, password });
 
+  const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) return res.status(400).json({ error: error.message });
+
   res.json({ message: "User created!", data });
 });
 
@@ -73,24 +82,28 @@ app.post("/signup", async (req, res) => {
 ----------------------------------------- */
 app.post("/signin", async (req, res) => {
   const { email, password } = req.body;
+
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
-    password
+    password,
   });
 
   if (error) return res.status(400).json({ error: error.message });
+
   res.json({ message: "Signed in!", data });
 });
 
 /* ---------------------------------------
-   GET /cards
+   CARDS
 ----------------------------------------- */
-console.log("🔧 REGISTERING GET /cards ROUTE");
-
 app.get("/cards", async (req, res) => {
   const supa = supaForRequest(req);
 
-  const { data: { user }, error: userErr } = await supa.auth.getUser();
+  const {
+    data: { user },
+    error: userErr,
+  } = await supa.auth.getUser();
+
   if (userErr || !user) return res.status(401).json({ error: "Unauthorized" });
 
   const { data, error } = await supa
@@ -104,17 +117,14 @@ app.get("/cards", async (req, res) => {
   res.json({ cards: data });
 });
 
-/* ---------------------------------------
-   POST /cards
------------------------------------------ */
-console.log("🔧 REGISTERING POST /cards ROUTE");
-
 app.post("/cards", async (req, res) => {
-  console.log("AUTH HEADER:", req.headers.authorization);
-
   const supa = supaForRequest(req);
 
-  const { data: { user }, error: userErr } = await supa.auth.getUser();
+  const {
+    data: { user },
+    error: userErr,
+  } = await supa.auth.getUser();
+
   if (userErr || !user) return res.status(401).json({ error: "Unauthorized" });
 
   const { card_holder, card_number, expiry_month, expiry_year, cvv } = req.body;
@@ -128,8 +138,8 @@ app.post("/cards", async (req, res) => {
         card_number,
         expiry_month,
         expiry_year,
-        cvv
-      }
+        cvv,
+      },
     ])
     .select();
 
@@ -138,46 +148,33 @@ app.post("/cards", async (req, res) => {
   res.json({ message: "Card added!", data });
 });
 
-/* ---------------------------------------
-   DELETE /cards/:id
------------------------------------------ */
-console.log("🔧 REGISTERING DELETE /cards/:id ROUTE");
-
 app.delete("/cards/:id", async (req, res) => {
-  console.log("🔥 DELETE ROUTE HIT");
-  console.log("🔥 AUTH HEADER:", req.headers.authorization);
-
   const supa = supaForRequest(req);
-  const userInfo = await supa.auth.getUser();
 
-  console.log("🔥 SUPABASE getUser() RESULT:", JSON.stringify(userInfo, null, 2));
+  const userInfo = await supa.auth.getUser();
 
   if (userInfo.error || !userInfo.data.user) {
     return res.status(401).json({
       error: "Token invalid",
-      detail: userInfo.error
+      detail: userInfo.error,
     });
   }
 
   const user = userInfo.data.user;
-  const cardId = req.params.id;
 
   const { error } = await supa
     .from("cards")
     .delete()
-    .eq("id", cardId)
+    .eq("id", req.params.id)
     .eq("user_id", user.id);
 
-  if (error) {
-    console.log("🔥 SUPABASE DELETE ERROR:", error);
-    return res.status(400).json({ error: error.message });
-  }
+  if (error) return res.status(400).json({ error: error.message });
 
   res.json({ message: "Card deleted!" });
 });
 
 /* ---------------------------------------
-   🎮 MINI-MVP GAME LOGIC
+   MINI-MVP GAME LOGIC (LOCAL ONLY)
 ----------------------------------------- */
 app.post("/game/players", (req, res) => {
   const { players, total_cost, rule } = req.body;
@@ -186,123 +183,90 @@ app.post("/game/players", (req, res) => {
     return res.status(400).json({ error: "Provide at least 2 players." });
   }
 
-  const cleanPlayers = players
-    .map((p) => String(p).trim())
-    .filter((p) => p.length > 0);
-  if (cleanPlayers.length < 2) {
-    return res.status(400).json({ error: "Player names cannot be empty." });
-  }
-
+  const cleanPlayers = players.map((p) => ({ name: String(p).trim() }));
   const total = Number(total_cost);
-  if (Number.isNaN(total) || total <= 0) {
-    return res.status(400).json({ error: "total_cost must be positive." });
-  }
 
-  const ruleToUse = rule === "even_split" ? "even_split" : "winner_free";
+  if (Number.isNaN(total) || total <= 0) {
+    return res.status(400).json({ error: "Invalid total_cost" });
+  }
 
   currentGame = {
-    players: cleanPlayers.map((name) => ({ name })),
+    players: cleanPlayers,
     total_cost: total,
-    rule: ruleToUse
+    rule: rule === "even_split" ? "even_split" : "winner_free",
   };
 
-  console.log("🎮 NEW GAME SET:", currentGame);
-
-  res.json({
-    message: "Game created in memory.",
-    game: currentGame
-  });
+  res.json({ message: "Game created.", game: currentGame });
 });
 
 app.post("/game/start", (req, res) => {
   if (!currentGame.players || currentGame.players.length < 2) {
-    return res
-      .status(400)
-      .json({ error: "No game set. Call /game/players first." });
+    return res.status(400).json({ error: "No game set." });
   }
 
   const { players, total_cost, rule } = currentGame;
-  const n = players.length;
 
   const shuffled = [...players].sort(() => Math.random() - 0.5);
 
-  shuffled.forEach((p, idx) => (p.rank = idx + 1));
+  shuffled.forEach((p, i) => (p.rank = i + 1));
 
   let results;
-
   if (rule === "even_split") {
-    const share = total_cost / n;
+    const share = total_cost / players.length;
     results = shuffled.map((p) => ({
-      name: p.name,
-      rank: p.rank,
-      recommended: Number(share.toFixed(2))
+      ...p,
+      recommended: Number(share.toFixed(2)),
     }));
   } else {
     const losers = shuffled.slice(1);
     const loserShare = total_cost / losers.length;
 
-    results = shuffled.map((p, idx) => ({
-      name: p.name,
-      rank: p.rank,
-      recommended: idx === 0 ? 0 : Number(loserShare.toFixed(2))
+    results = shuffled.map((p, i) => ({
+      ...p,
+      recommended: i === 0 ? 0 : Number(loserShare.toFixed(2)),
     }));
   }
 
   currentGame.players = results;
 
-  console.log("🎮 GAME RESULT:", { rule, total_cost, players: results });
-
-  res.json({
-    rule,
-    total_cost,
-    players: results
-  });
+  res.json({ players: results, rule, total_cost });
 });
 
 /* ---------------------------------------
-   ⭐ SESSION HOSTING — NEW ROUTES
+   SESSION HOSTING (NEW SYSTEM)
 ----------------------------------------- */
 
-/* -----------------------
-   POST /sessions (host)
-------------------------- */
+// Host creates session
 app.post("/sessions", async (req, res) => {
   const supa = supaForRequest(req);
 
-  const { data: { user }, error: userErr } = await supa.auth.getUser();
-  if (userErr || !user)
-    return res.status(401).json({ error: "Unauthorized" });
+  const {
+    data: { user },
+  } = await supa.auth.getUser();
+
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   let { total_cost, rule, host_name } = req.body;
 
   const total = Number(total_cost);
   if (Number.isNaN(total) || total <= 0) {
-    return res.status(400).json({ error: "total_cost must be > 0" });
+    return res.status(400).json({ error: "Invalid cost" });
   }
 
-  if (!["winner_free", "even_split"].includes(rule)) {
-    rule = "winner_free";
-  }
-
-  // generate unique session code
   let code;
-  let attempts = 0;
-  while (!code && attempts < 10) {
-    const candidate = generateSessionCode();
-    const { data: existing } = await supa
+  // generate unique code
+  for (let i = 0; i < 10; i++) {
+    const test = generateSessionCode();
+    const { data: exists } = await supa
       .from("sessions")
       .select("id")
-      .eq("code", candidate)
+      .eq("code", test)
       .maybeSingle();
 
-    if (!existing) code = candidate;
-    attempts++;
-  }
-
-  if (!code) {
-    return res
-      .status(500)
-      .json({ error: "Could not generate session code" });
+    if (!exists) {
+      code = test;
+      break;
+    }
   }
 
   const { data: session, error } = await supa
@@ -313,8 +277,8 @@ app.post("/sessions", async (req, res) => {
         host_id: user.id,
         total_cost: total,
         rule,
-        status: "waiting"
-      }
+        status: "waiting",
+      },
     ])
     .select()
     .single();
@@ -327,29 +291,23 @@ app.post("/sessions", async (req, res) => {
         session_id: session.id,
         user_id: user.id,
         name: host_name,
-        is_host: true
-      }
+        is_host: true,
+      },
     ]);
   }
 
   res.json({
     session_id: session.id,
     code: session.code,
-    status: session.status,
+    total_cost: session.total_cost,
     rule: session.rule,
-    total_cost: session.total_cost
   });
 });
 
-/* -----------------------
-   GET /sessions/:code
-   (lobby state)
-------------------------- */
-app.get("/sessions/:code", async (req, res) => {
+// Host starts the session
+app.post("/sessions/:code/start", async (req, res) => {
   const { code } = req.params;
   const supa = supaForRequest(req);
-
-  const { data: { user } } = await supa.auth.getUser();
 
   const { data: session, error: sessionErr } = await supa
     .from("sessions")
@@ -361,82 +319,34 @@ app.get("/sessions/:code", async (req, res) => {
     return res.status(404).json({ error: "Session not found" });
   }
 
-  const { data: players, error: playersErr } = await supa
-    .from("session_players")
-    .select("*")
-    .eq("session_id", session.id);
-
-  if (playersErr) {
-    return res.status(400).json({ error: playersErr.message });
-  }
-
-  res.json({
-    session,
-    players,
-    current_user_id: user ? user.id : null
-  });
-});
-
-/* ----------------------------
-   POST /sessions/:code/join
------------------------------ */
-app.post("/sessions/:code/join", async (req, res) => {
-  const { code } = req.params;
-  const { name } = req.body;
-
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Name is required." });
-  }
-
-  const supa = supaForRequest(req);
-  const { data: { user } } = await supa.auth.getUser();
-
-  const { data: session, error: sessionErr } = await supa
-    .from("sessions")
-    .select("*")
-    .eq("code", code)
-    .single();
-
-  if (sessionErr || !session) {
-    return res.status(404).json({ error: "Session not found." });
-  }
-
   if (session.status !== "waiting") {
-    return res.status(400).json({ error: "Session is not joinable." });
+    return res.status(400).json({ error: "Session already started" });
   }
 
-  const { data: player, error: joinErr } = await supa
-    .from("session_players")
-    .insert([
-      {
-        session_id: session.id,
-        user_id: user ? user.id : null,
-        name: name.trim(),
-        is_host: false
-      }
-    ])
-    .select()
-    .single();
+  const { error: updateErr } = await supa
+    .from("sessions")
+    .update({ status: "in_progress" })
+    .eq("id", session.id);
 
-  if (joinErr) return res.status(400).json({ error: joinErr.message });
+  if (updateErr) {
+    return res.status(400).json({ error: updateErr.message });
+  }
 
   res.json({
+    success: true,
+    message: "Session started!",
     session_id: session.id,
-    player_id: player.id,
-    name: player.name
   });
 });
 
-/* ----------------------------
-   POST /sessions/:code/start
------------------------------ */
-app.post("/sessions/:code/start", async (req, res) => {
-  const { code } = req.params;
+// Lobby state
+app.get("/sessions/:code", async (req, res) => {
   const supa = supaForRequest(req);
+  const { code } = req.params;
 
-  const { data: { user }, error: userErr } = await supa.auth.getUser();
-  if (userErr || !user)
-    return res.status(401).json({ error: "Unauthorized" });
+  const {
+    data: { user },
+  } = await supa.auth.getUser();
 
   const { data: session, error } = await supa
     .from("sessions")
@@ -448,23 +358,75 @@ app.post("/sessions/:code/start", async (req, res) => {
     return res.status(404).json({ error: "Session not found" });
   }
 
-  if (session.host_id !== user.id) {
-    return res.status(403).json({ error: "Only host can start the game." });
+  const { data: players } = await supa
+    .from("session_players")
+    .select("*")
+    .eq("session_id", session.id);
+
+  res.json({
+    session,
+    players,
+    current_user_id: user ? user.id : null,
+  });
+});
+
+// Join session
+app.post("/sessions/:code/join", async (req, res) => {
+  const { code } = req.params;
+  const { name } = req.body;
+
+  const supa = supaForRequest(req);
+
+  const {
+    data: { user },
+  } = await supa.auth.getUser();
+
+  const { data: session, error } = await supa
+    .from("sessions")
+    .select("*")
+    .eq("code", code)
+    .single();
+
+  if (error || !session) {
+    return res.status(404).json({ error: "Session not found" });
   }
 
-  const { error: updErr } = await supa
-    .from("sessions")
-    .update({ status: "in_progress" })
-    .eq("id", session.id);
+  if (session.status !== "waiting") {
+    return res.status(400).json({ error: "Session already started" });
+  }
 
-  if (updErr) return res.status(400).json({ error: updErr.message });
+  const { data: row, error: joinErr } = await supa
+    .from("session_players")
+    .insert([
+      {
+        session_id: session.id,
+        user_id: user?.id || null,
+        name,
+        is_host: false,
+      },
+    ])
+    .select()
+    .single();
 
-  res.json({ message: "Game started." });
+  if (joinErr) return res.status(400).json({ error: joinErr.message });
+
+  res.json({
+    session_id: session.id,
+    player_id: row.id,
+    name: row.name,
+  });
 });
+
+/* ---------------------------------------
+   ⭐ SESSION LEVEL ROUTES (MOUNTED LAST)
+----------------------------------------- */
+
+// These handle only /sessions/:sessionCode/levels
+app.use("/sessions", sessionLevelsRoutes);
 
 /* ---------------------------------------
    START SERVER
 ----------------------------------------- */
 app.listen(process.env.PORT, () => {
-  console.log(`✅ Server running on http://localhost:${process.env.PORT}`);
+  console.log(`🚀 Server running at http://localhost:${process.env.PORT}`);
 });
