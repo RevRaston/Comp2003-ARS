@@ -6,9 +6,8 @@ const API_BASE = "http://localhost:3000";
 
 export default function JoinSession({ token }) {
   const navigate = useNavigate();
-  const { setSessionInfo } = useGame();
+  const { setSessionInfo, profile } = useGame();
 
-  const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
 
@@ -19,8 +18,14 @@ export default function JoinSession({ token }) {
       setError("You must be signed in.");
       return;
     }
-    if (!name.trim() || !code.trim()) {
-      setError("Enter your name and session code.");
+
+    if (!profile) {
+      setError("You need to complete your profile first.");
+      return;
+    }
+
+    if (!code.trim()) {
+      setError("Enter the session code.");
       return;
     }
 
@@ -34,7 +39,7 @@ export default function JoinSession({ token }) {
           Authorization: `Bearer ${token}`,
           "X-Player-Id": localStorage.getItem("player_id"),
         },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name: profile.displayName }),
       });
 
       const data = await res.json();
@@ -56,12 +61,10 @@ export default function JoinSession({ token }) {
     <div className="JoinSessionBox">
       <h1>Join a Session</h1>
 
-      <label>Your Name</label>
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        style={{ width: "100%", marginBottom: 12 }}
-      />
+      <p style={{ marginBottom: 12 }}>
+        Signed in as:{" "}
+        <strong>{profile ? profile.displayName : "Unknown"}</strong>
+      </p>
 
       <label>Session Code</label>
       <input
@@ -74,6 +77,14 @@ export default function JoinSession({ token }) {
       {error && <p style={{ color: "red" }}>{error}</p>}
 
       <button onClick={join}>Join</button>
+
+      <button
+        style={{ marginTop: 12 }}
+        onClick={() => navigate("/profile")}
+        type="button"
+      >
+        Edit Profile
+      </button>
     </div>
   );
 }

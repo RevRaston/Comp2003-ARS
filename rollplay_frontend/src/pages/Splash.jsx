@@ -1,36 +1,84 @@
 // src/pages/Splash.jsx
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useGame } from "../GameContext";
 
 export default function Splash() {
+  const navigate = useNavigate();
+  const { profile, canHost } = useGame();
+
+  const loggedIn = !!profile;
+
+  function handleHostClick() {
+    if (!loggedIn) {
+      navigate("/login?mode=host");
+      return;
+    }
+
+    if (!canHost) {
+      navigate("/profile"); // go upgrade
+      return;
+    }
+
+    navigate("/host-session");
+  }
+
+  function handleJoinClick() {
+    if (!loggedIn) {
+      navigate("/login?mode=player");
+      return;
+    }
+    navigate("/join-session");
+  }
+
+  const hostLabel = !loggedIn
+    ? "Sign in to Host"
+    : canHost
+    ? "Host Game"
+    : "Upgrade to Host";
+
+  const hostDisabledStyle = !canHost && loggedIn;
+
   return (
     <div className="splash-page" style={outerStyle}>
       <div style={overlayStyle}>
         <h1 style={titleStyle}>RollPlay</h1>
         <p style={subtitleStyle}>
-          Turn splitting the bill into a game.  
+          Turn splitting the bill into a game.
+          <br />
           Pick the rule, play the rounds, let the leaderboard decide who pays.
         </p>
 
         <div style={buttonRowStyle}>
-          {/* HOST */}
-          <Link to="/host-session" style={{ textDecoration: "none" }}>
-            <button style={{ ...btnStyle, ...primaryBtn }}>
-              Host Game
-            </button>
-          </Link>
+          <button
+            onClick={handleHostClick}
+            style={{
+              ...btnStyle,
+              ...(hostDisabledStyle ? disabledBtn : primaryBtn),
+            }}
+          >
+            {hostLabel}
+          </button>
 
-          {/* JOIN */}
-          <Link to="/join-session" style={{ textDecoration: "none" }}>
-            <button style={{ ...btnStyle, ...secondaryBtn }}>
-              Join Game
-            </button>
-          </Link>
+          <button
+            onClick={handleJoinClick}
+            style={{ ...btnStyle, ...secondaryBtn }}
+          >
+            Join Game
+          </button>
         </div>
 
-        <p style={smallTextStyle}>
-          Use your existing account. Once everyone’s in the lobby,  
-          the host starts the session.
-        </p>
+        {!canHost && loggedIn && (
+          <p style={smallTextStyle}>
+            You currently have a <strong>Player</strong> account.
+            Tap “Upgrade to Host” to unlock hosting.
+          </p>
+        )}
+
+        {!loggedIn && (
+          <p style={smallTextStyle}>
+            Hosting requires an account. Joining friends is always free.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -43,7 +91,7 @@ const outerStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  backgroundImage: "url(/beer-bubbles-bg.png)", // keep whatever you had
+  backgroundImage: "url(/beer-bubbles-bg.png)",
   backgroundSize: "cover",
   backgroundPosition: "center",
 };
@@ -84,13 +132,19 @@ const btnStyle = {
   fontSize: "18px",
   cursor: "pointer",
   fontWeight: 600,
-  minWidth: "160px",
+  minWidth: "180px",
 };
 
 const primaryBtn = {
   background: "#ffcc33",
   color: "#222",
   boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
+};
+
+const disabledBtn = {
+  background: "#444",
+  color: "#aaa",
+  cursor: "pointer", // still clickable, just looks disabled-ish
 };
 
 const secondaryBtn = {
@@ -101,6 +155,6 @@ const secondaryBtn = {
 
 const smallTextStyle = {
   fontSize: "14px",
-  opacity: 0.85,
-  marginTop: "6px",
+  opacity: 0.9,
+  marginTop: "10px",
 };

@@ -1,175 +1,281 @@
-// src/pages/Lobby.jsx
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+// src/pages/Login.jsx
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { supabase } from "../supabase";
 import { useGame } from "../GameContext";
 
-const API_BASE = "http://localhost:3000";
-
-export default function Lobby({ token }) {
+export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams(); // ?mode=host or ?mode=player (optional)
+  const { setProfile } = useGame();
 
-  const {
-    sessionId,
-    sessionCode,
-    isHost,
-    setSessionInfo,
-    players,
-    setPlayers,
-    setTotalCost,
-    setRule,
-  } = useGame();
-
-  const [session, setSession] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState(searchParams.get("mode") || "host");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Restore session info from localStorage if missing
-  useEffect(() => {
-    if (!sessionCode) {
-      const storedCode = localStorage.getItem("session_code");
-      const storedIsHost = localStorage.getItem("session_is_host");
+  // -------- Helper: load / create profile --------
+  async function loadOrCreateProfile(user) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
 
-      if (storedCode) {
-        setSessionInfo({
-          sessionId: sessionId ?? null,
-          sessionCode: storedCode,
-          isHost: storedIsHost === "true",
-        });
-      } else {
-        navigate("/join-session");
-      }
-    }
-  }, [sessionCode, sessionId, navigate, setSessionInfo]);
-
-  // Poll backend for lobby state (every 2s)
-  useEffect(() => {
-    if (!token) return;
-
-    const code = sessionCode || localStorage.getItem("session_code");
-    if (!code) return;
-
-    async function loadLobby() {
-      try {
-        const res = await fetch(`${API_BASE}/sessions/${code}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load lobby");
-
-        setSession(data.session);
-        setPlayers(data.players || []);
-
-        // sync rule + total cost into context (for GameRunner later)
-        if (data.session?.total_cost != null) {
-          setTotalCost(Number(data.session.total_cost));
-        }
-        if (data.session?.rule) {
-          setRule(data.session.rule);
-        }
-
-        const computedIsHost =
-          Boolean(
-            data.current_user_id &&
-            data.session.host_id &&
-            data.current_user_id === data.session.host_id
-          );
-
-        setSessionInfo({
-          sessionId: data.session.id,
-          sessionCode: data.session.code,
-          isHost: computedIsHost,
-        });
-
-        // If host already started the game → push all players to choose-game
-        if (data.session.status === "started") {
-          navigate("/choose-game");
-        }
-      } catch (err) {
-        console.error("Lobby error:", err);
-        setError(err.message);
-      }
+    // If it's a real error (not "no rows"), throw
+    if (error && error.code !== "PGRST116") {
+      throw error;
     }
 
-    loadLobby();
-    const interval = setInterval(loadLobby, 2000);
-    return () => clearInterval(interval);
-  }, [sessionCode, token, navigate, setSessionInfo, setPlayers, setTotalCost, setRule]);
+    if (!data) {
+      // Create default profile
+      const defaultDisplayName = user.email?.split("@")[0] || "Player";
 
-  // HOST — Start game
-  async function startGame() {
+      const { data: inserted, error: insertError } = await supabase
+        .from("profiles")
+        .insert({
+          id: user.id,
+          display_name: defaultDisplayName,
+          avatar_key: "beer-mug",
+          card_brand: null,
+          card_last4: null,
+          // optional tier flags can be null/"player" by default
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      return {
+        id: inserted.id,
+        displayName: inserted.display_name,
+        avatarKey: inserted.avatar_key,
+        cardBrand: inserted.card_brand,
+        cardLast4: inserted.card_last4,
+        tier: inserted.tier || "player",
+        isAdmin: inserted.is_admin || false,
+        canHost:
+          inserted.tier === "host" || inserted.is_admin === true,
+      };
+    }
+
+    return {
+      id: data.id,
+      displayName: data.display_name,
+      avatarKey: data.avatar_key,
+      cardBrand: data.card_brand,
+      cardLast4: data.card_last4,
+      tier: data.tier || "player",
+      isAdmin: data.is_admin || false,
+      canHost: data.tier === "host" || data.is_admin === true,
+    };
+  }
+
+  // -------- On mount: if already logged in, just hydrate profile (no redirect) --------
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session?.user) {
+        const user = data.session.user;
+        try {
+          const profile = await loadOrCreateProfile(user);
+          setProfile(profile);
+          if (user.email) setEmail(user.email);
+        } catch (err) {
+          console.error("Failed to hydrate profile on login screen:", err);
+        }
+      }
+    });
+  }, [setProfile]);
+
+  // -------- Sign in / sign up handler --------
+  async function handleAuth(type) {
     setError("");
+    if (!email || !password) {
+      setError("Please enter email and password.");
+      return;
+    }
 
     try {
-      const code = sessionCode || localStorage.getItem("session_code");
-      if (!code) {
-        setError("No session code found.");
-        return;
+      setLoading(true);
+
+      let result;
+      if (type === "signup") {
+        result = await supabase.auth.signUp({
+          email,
+          password,
+        });
+      } else {
+        result = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
       }
 
-      const res = await fetch(`${API_BASE}/sessions/${code}/start`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-User-Id": localStorage.getItem("user_id"),
-        },
-      });
+      if (result.error) throw result.error;
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to start game");
+      const user = result.data.session?.user;
+      if (!user) throw new Error("No user returned from Supabase");
 
-      navigate("/choose-game");
+      // Store user_id for backend headers just like before
+      localStorage.setItem("user_id", user.id);
+
+      // Load or create profile
+      const profile = await loadOrCreateProfile(user);
+      setProfile(profile);
+
+      // Decide where to go next
+      if (!profile.displayName) {
+        navigate("/profile");
+      } else {
+        if (mode === "player") {
+          navigate("/join-session");
+        } else {
+          navigate("/host-session");
+        }
+      }
     } catch (err) {
-      console.error("Start game error:", err);
-      setError(err.message);
+      console.error(err);
+      setError(err.message || "Authentication failed");
+    } finally {
+      setLoading(false);
     }
   }
 
-  const codeToShow =
-    sessionCode || localStorage.getItem("session_code") || "N/A";
-
   return (
-    <div className="LobbyBox" style={{ paddingTop: 80, maxWidth: 480, margin: "0 auto" }}>
-      <h1>Lobby</h1>
-
-      <p>
-        Session Code: <strong>{codeToShow}</strong>
+    <div
+      style={{
+        paddingTop: 80,
+        minHeight: "100vh",
+        color: "white",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+      }}
+    >
+      <h1 style={{ marginBottom: 8 }}>Sign In</h1>
+      <p style={{ opacity: 0.7, marginBottom: 24 }}>
+        Use one account for hosting and playing.
       </p>
 
-      {session && (
-        <p>
-          Rule: <strong>{session.rule}</strong> — Total bill:{" "}
-          <strong>£{session.total_cost}</strong>
-        </p>
-      )}
-
-      <h3 style={{ marginTop: 24 }}>Players:</h3>
-
-      {(!players || players.length === 0) && <p>No players yet…</p>}
-
-      <ul>
-        {players?.map((p) => (
-          <li key={p.id}>
-            {p.name} {p.is_host ? "(Host)" : ""}
-          </li>
-        ))}
-      </ul>
+      {/* Host vs Player mode toggle (optional) */}
+      <div style={{ display: "flex", marginBottom: 20, gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setMode("host")}
+          style={{
+            padding: "6px 14px",
+            borderRadius: 999,
+            border: "1px solid #777",
+            background: mode === "host" ? "#ffcc33" : "transparent",
+            color: mode === "host" ? "#222" : "white",
+            cursor: "pointer",
+          }}
+        >
+          Host
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("player")}
+          style={{
+            padding: "6px 14px",
+            borderRadius: 999,
+            border: "1px solid #777",
+            background: mode === "player" ? "#ffcc33" : "transparent",
+            color: mode === "player" ? "#222" : "white",
+            cursor: "pointer",
+          }}
+        >
+          Player
+        </button>
+      </div>
 
       {error && (
-        <p style={{ color: "red", marginTop: 16 }}>{error}</p>
+        <p style={{ color: "salmon", marginBottom: 12 }}>{error}</p>
       )}
 
-      {isHost ? (
-        <button
-          style={{ marginTop: 24, padding: "10px 18px" }}
-          onClick={startGame}
+      <div style={{ width: "90%", maxWidth: 360 }}>
+        <label style={{ display: "block", marginBottom: 4 }}>Email</label>
+        <input
+          type="email"
+          style={inputStyle}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+
+        <label
+          style={{ display: "block", marginBottom: 4, marginTop: 12 }}
         >
-          Start Game
-        </button>
-      ) : (
-        <p style={{ marginTop: 16 }}>Waiting for host to start the game…</p>
-      )}
+          Password
+        </label>
+        <input
+          type="password"
+          style={inputStyle}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <div
+          style={{
+            marginTop: 20,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <button
+            onClick={() => handleAuth("signin")}
+            disabled={loading}
+            style={btnPrimary}
+          >
+            {loading ? "Working..." : "Sign In"}
+          </button>
+
+          <button
+            onClick={() => handleAuth("signup")}
+            disabled={loading}
+            style={btnSecondary}
+          >
+            {loading ? "Working..." : "Create Account"}
+          </button>
+        </div>
+
+        <p style={{ marginTop: 20, fontSize: 13, opacity: 0.7 }}>
+          This uses Supabase auth. Card details are demo-only and not
+          real payments.
+        </p>
+      </div>
     </div>
   );
 }
+
+const inputStyle = {
+  width: "100%",
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: "1px solid #666",
+  background: "#111",
+  color: "white",
+  fontSize: 16,
+};
+
+const btnPrimary = {
+  padding: "10px 16px",
+  borderRadius: 999,
+  border: "none",
+  background: "#ffcc33",
+  color: "#222",
+  cursor: "pointer",
+  fontSize: 16,
+  fontWeight: 600,
+};
+
+const btnSecondary = {
+  padding: "8px 16px",
+  borderRadius: 999,
+  border: "1px solid #888",
+  background: "#222",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 14,
+};

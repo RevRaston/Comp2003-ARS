@@ -4,10 +4,10 @@ import { createContext, useContext, useState, useEffect } from "react";
 const GameContext = createContext(null);
 
 export function GameProvider({ children }) {
-  // Bill / rules / results
+  // Bill / randomizer stuff
   const [players, setPlayers] = useState([]);
   const [totalCost, setTotalCost] = useState(0);
-  const [rule, setRule] = useState("winner_free"); // default rule
+  const [rule, setRule] = useState("winner_free");
   const [results, setResults] = useState(null);
 
   // Session info
@@ -20,7 +20,10 @@ export function GameProvider({ children }) {
   const [maxRounds] = useState(3);
   const [selectedLevels, setSelectedLevels] = useState([]);
 
-  // Restore session from localStorage on app load
+  // User profile (auth)
+  const [profile, setProfile] = useState(null);
+
+  // Restore session from localStorage
   useEffect(() => {
     const storedCode = localStorage.getItem("session_code");
     const storedId = localStorage.getItem("session_id");
@@ -31,18 +34,15 @@ export function GameProvider({ children }) {
     if (storedIsHost !== null) setIsHost(storedIsHost === "true");
   }, []);
 
-  // Store any new session info
   function setSessionInfo({ sessionId, sessionCode, isHost }) {
     if (sessionId !== undefined) {
       setSessionId(sessionId);
       localStorage.setItem("session_id", sessionId);
     }
-
     if (sessionCode !== undefined) {
       setSessionCode(sessionCode);
       localStorage.setItem("session_code", sessionCode);
     }
-
     if (isHost !== undefined) {
       setIsHost(!!isHost);
       localStorage.setItem("session_is_host", isHost ? "true" : "false");
@@ -50,7 +50,6 @@ export function GameProvider({ children }) {
   }
 
   const value = {
-    // money + rules
     players,
     setPlayers,
     totalCost,
@@ -60,18 +59,23 @@ export function GameProvider({ children }) {
     results,
     setResults,
 
-    // sessions
     sessionId,
     sessionCode,
     isHost,
     setSessionInfo,
 
-    // rounds / levels
     round,
     maxRounds,
     setRound,
+
     selectedLevels,
     setSelectedLevels,
+
+    profile,
+    setProfile,
+
+    // handy flag for UI:
+    canHost: profile?.canHost ?? false,
   };
 
   return (

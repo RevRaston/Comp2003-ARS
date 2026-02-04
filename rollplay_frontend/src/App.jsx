@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { GameProvider } from "./GameContext";
 import "./App.css";
+import { useGame } from "./GameContext";
 
 /* Pages */
 import Splash from "./pages/Splash";
@@ -21,6 +22,7 @@ import Randomizer from "./pages/Randomizer";
 import RandomWheel from "./pages/RandomWheel";
 import Login from "./pages/Login";
 import GameRunner from "./pages/GameRunner";
+import Profile from "./pages/Profile";
 
 /* Session pages */
 import HostSession from "./pages/HostSession";
@@ -36,12 +38,14 @@ if (!localStorage.getItem("player_id")) {
 
 /**
  * Inner app that has access to the router (so we can use useLocation).
+ * This is wrapped by <GameProvider> and <Router> in the root App component.
  */
 function AppInner({ token }) {
   const location = useLocation();
 
   return (
     <>
+      {/* Admin-only debug nav */}
       <AdminNav />
 
       {/* Beer bubble curtain between route changes */}
@@ -65,8 +69,11 @@ function AppInner({ token }) {
           element={<RandomWheel token={token} />}
         />
 
-        {/* Session pages */}
+        {/* Auth / profile */}
         <Route path="/login" element={<Login />} />
+        <Route path="/profile" element={<Profile />} />
+
+        {/* Session pages */}
         <Route path="/cards" element={<Cards token={token} />} />
         <Route
           path="/host-session"
@@ -133,6 +140,13 @@ export default function App() {
 
 /* ADMIN NAV */
 function AdminNav() {
+  const { profile } = useGame();
+
+  // Only show to admins
+  if (!profile?.isAdmin) {
+    return null;
+  }
+
   return (
     <div
       style={{
