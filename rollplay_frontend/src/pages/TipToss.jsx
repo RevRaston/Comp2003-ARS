@@ -17,6 +17,20 @@ export default function TipToss() {
     const [startLabel, setStartLabel] = useState("starts");
     const [tossMode, setTossMode] = useState(false);
 
+    //  Coin flip state
+    const [flipping, setFlipping] = useState(false);
+
+    const coinimg = "/coin.png";
+    const coinGoodSound = new Audio("/good-coin.mp3");
+    const coinBadSound = new Audio("/bad-coin.mp3");
+    const coinRingingSound = new Audio("/coin-ringing.mp3");
+
+    // Optional: adjust volume
+    coinGoodSound.volume = 1;
+    coinBadSound.volume = 0.7;
+    coinRingingSound.volume = 0.7;
+
+
     // Animate the power bar
     useEffect(() => {
         if (!running) return;
@@ -37,7 +51,7 @@ export default function TipToss() {
                     return prev - 2;
                 }
             });
-        }, 30);
+        }, 10);
 
         return () => clearInterval(id);
     }, [running, increasing]);
@@ -53,21 +67,40 @@ export default function TipToss() {
         setResetEnabled(true);
     };
 
-    // First click: show bar + switch button to toss mode
+    // Start
     const handleStart = () => {
         setStartLabel("toss");
         setPowerVisible(true);
         setRunning(true);
         setTossMode(true);
+        setFlipping(true);
+        coinRingingSound.play();
     };
 
-    // Second click: stop bar & show result
+    // Toss
     const handleToss = () => {
         setRunning(false);
+        setFlipping(false);
 
-        if (power < 30) setResult("Weak Toss!");
-        else if (power < 70) setResult("Nice Toss!");
-        else setResult("Perfect Toss!");
+        if (power < 30) {
+            setResult("Weak Toss!");
+            coinBadSound.currentTime = 0;
+            coinBadSound.play();
+        }
+        else if (power < 70) {
+            setResult("Nice Toss!");
+            coinGoodSound.volume = 0.5;
+            coinBadSound.volume = 0.2;
+            coinBadSound.currentTime = 0;
+            coinGoodSound.currentTime = 0;
+            coinBadSound.play();
+            coinGoodSound.play();
+        }
+        else {
+            setResult("Perfect Toss!");
+            coinGoodSound.currentTime = 0;
+            coinGoodSound.play();
+        }
 
         setStartEnabled(false);
     };
@@ -95,20 +128,31 @@ export default function TipToss() {
                     </>
                 )}
 
-                <div id="bored">
-                    <div id="bored_fill"></div>
+                {/*  Coin */}
+                {powerVisible && (
+                    <div className={`coin ${flipping ? "flip" : ""}`}>
+                        <img src={coinimg} alt="coin" style={{ width: "100%", height: "100%" }} />
+                    </div>
+                )}
+
+                {/* ✅ BUTTONS ON NEW LINES */}
+                <div style={{ marginTop: "15px" }}>
+                    <button
+                        onClick={tossMode ? handleToss : handleStart}
+                        disabled={!startEnabled}
+                        style={{ display: "block", margin: "10px auto" }}
+                    >
+                        start
+                    </button>
+
+                    <button
+                        onClick={reset}
+                        disabled={!resetEnabled}
+                        style={{ display: "block", margin: "10px auto" }}
+                    >
+                        reset
+                    </button>
                 </div>
-
-                <button
-                    onClick={tossMode ? handleToss : handleStart}
-                    disabled={!startEnabled}
-                >
-                    {startLabel}
-                </button>
-
-                <button onClick={reset} disabled={!resetEnabled}>
-                    reset
-                </button>
             </div>
 
             {/* POWER BAR */}
@@ -129,16 +173,39 @@ export default function TipToss() {
                         style={{
                             width: "100%",
                             height: `${power}%`,
-                            background: "rgba(0,0,0,0.4)", // darker block
+                            background: "rgba(0,0,0,0.4)",
                             position: "absolute",
                             bottom: 0,
                             transition: "height 0.05s"
                         }}
-                    ></div>
+                    />
                 </div>
             )}
 
             <h2>{result}</h2>
+
+            {/* Coin CSS */}
+            <style>{`
+                .coin {
+                    font-size: 60px;
+                    margin: 20px auto;
+                    width: 60px;
+                    height: 60px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transform-style: preserve-3d;
+                }
+
+                .flip {
+                    animation: coinFlip 0.4s linear infinite;
+                }
+
+                @keyframes coinFlip {
+                    0% { transform: rotateY(0deg); }
+                    100% { transform: rotateY(360deg); }
+                }
+            `}</style>
         </div>
     );
 }

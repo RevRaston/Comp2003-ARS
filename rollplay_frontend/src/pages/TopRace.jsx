@@ -7,6 +7,12 @@ export default function TopRace() {
     const [time, setTime] = useState("");
     const [tapEnabled, setTapEnabled] = useState(false);
     const [resetEnabled, setResetEnabled] = useState(false);
+    const [buttonPressed, setButtonPressed] = useState(false);
+
+    const beepSound = new Audio("/beep.mp3");
+    const goSound = new Audio("/go.mp3");
+    beepSound.volume = 0.6;
+
 
     // First countdown
     const startFirstCountdown = () => {
@@ -15,6 +21,10 @@ export default function TopRace() {
 
         const interval1 = setInterval(() => {
             timeLeft--;
+
+            beepSound.currentTime = 0;
+            beepSound.play(); // play beep each second 
+
             if (timeLeft <= -1) {
                 clearInterval(interval1);
                 setTime("Go!");
@@ -31,15 +41,22 @@ export default function TopRace() {
     const startSecondCountdown = () => {
         let timeLeft = 11;
 
+        goSound.currentTime = 0;
+        goSound.play(); // play beep each second 
+
         const interval2 = setInterval(() => {
             timeLeft--;
             if (timeLeft <= -1) {
                 clearInterval(interval2);
                 setTapEnabled(false);
                 setTime("");
+                goSound.play(); // play beep each second 
             } else {
                 setTime(`You have ${timeLeft} Seconds`);
             }
+            beepSound.currentTime = 0;
+            beepSound.play(); // play beep each second 
+
         }, 1000);
     };
 
@@ -84,7 +101,20 @@ export default function TopRace() {
             <p id="output">{counter}</p>
 
             <div className="myDiv">
-                <button disabled={!tapEnabled} onClick={() => setCounter(counter + 1)}>
+                <button disabled={!tapEnabled} onClick={() => {
+                        setCounter(counter + 1);
+                        // Trigger animation
+                        setButtonPressed(true);
+                        // Reset animation after short delay
+                        setTimeout(() => setButtonPressed(false), 100);
+                    }
+                }
+                style={{
+                    transform: buttonPressed ? "scale(1.2)" : "scale(1)",
+                    backgroundColor: buttonPressed ? "rgb(243, 17, 17)" : "",
+                    transition: "transform 0.1s, background-color 0.1s"
+                }}
+                    >
                     Tap
                 </button>
 

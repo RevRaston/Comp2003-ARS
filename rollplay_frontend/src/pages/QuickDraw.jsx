@@ -16,6 +16,12 @@ export default function QuickDraw() {
   // Winner message
   const [winner, setWinner] = useState("");
 
+  const beepSound = new Audio("/beep.mp3");
+  const goSound = new Audio("/go.mp3");
+  const gunshotSound = new Audio("/gun.mp3");
+  gunshotSound.volume = 0.8;
+
+
   // --------------------------------------------------
   // Countdown only begins when BOTH names confirmed
   // --------------------------------------------------
@@ -24,8 +30,12 @@ export default function QuickDraw() {
 
     if (counter < 0) {
       setGameActive(true); // enable draw buttons
+      goSound.play();
       return;
     }
+
+    beepSound.currentTime = 0;
+    beepSound.play(); // play beep each second 
 
     const t = setInterval(() => setCounter((prev) => prev - 1), 1000);
     return () => clearInterval(t);
@@ -54,11 +64,15 @@ export default function QuickDraw() {
   // Winner handlers
   // --------------------------------------------------
   const player1Win = () => {
+    gunshotSound.currentTime = 0;
+    gunshotSound.play();
     setWinner(`${player1Name} wins!`);
     setGameActive(false);
   };
 
   const player2Win = () => {
+    gunshotSound.currentTime = 0;
+    gunshotSound.play();
     setWinner(`${player2Name} wins!`);
     setGameActive(false);
   };
