@@ -8,9 +8,13 @@ import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import { fileURLToPath } from "url";
+import http from "http";
 
 // ⭐ SESSION LEVELS ROUTES (only /:sessionCode/levels)
 import sessionLevelsRoutes from "./routes/sessionLevels.mjs";
+
+// ✅ WebSockets
+import { attachWs } from "./wsServer.mjs";
 
 dotenv.config();
 
@@ -207,7 +211,6 @@ app.post("/game/start", (req, res) => {
   const { players, total_cost, rule } = currentGame;
 
   const shuffled = [...players].sort(() => Math.random() - 0.5);
-
   shuffled.forEach((p, i) => (p.rank = i + 1));
 
   let results;
@@ -425,8 +428,17 @@ app.post("/sessions/:code/join", async (req, res) => {
 app.use("/sessions", sessionLevelsRoutes);
 
 /* ---------------------------------------
-   START SERVER
+   START SERVER (HTTP + WS)
 ----------------------------------------- */
-app.listen(process.env.PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${process.env.PORT}`);
+const PORT = Number(process.env.PORT) || 3000;
+
+// Create a real HTTP server so ws can attach
+const server = http.createServer(app);
+
+// Attach WebSocket server
+attachWs(server);
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🧠 WS running at ws://localhost:${PORT}`);
 });
