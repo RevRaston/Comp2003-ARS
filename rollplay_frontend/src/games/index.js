@@ -1,7 +1,10 @@
 import StackAttack from "./StackAttack/StackAttack";
 import DartsGame from "./Darts/DartsGame";
+import DiceDuel from "./DiceDuel/DiceDuel";
 
-export const games = {
+export const GAME_COMPONENTS = {
+  darts: DartsGame,
   stack_attack: StackAttack,
-  darts: DartsGame
+  roulette: Roulette,
+  dice_duel: DiceDuel,
 };

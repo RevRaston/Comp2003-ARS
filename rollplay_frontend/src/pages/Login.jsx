@@ -4,9 +4,27 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useGame } from "../GameContext";
 
+// Default avatar config for brand-new accounts
+const DEFAULT_AVATAR = {
+  displayName: "Player",
+  bodyShape: "round",
+  skin: "#F2C7A5",
+  hairStyle: "short",
+  hair: "#2C1E1A",
+  eyeStyle: "dots",
+  eye: "#1A2433",
+  mouthStyle: "smile",
+  accessory: "none",
+  outfit: "hoodie",
+  outfitColor: "#7C5CFF",
+  bg: "nebula",
+  tilt: 0,
+  badge: "common",
+};
+
 export default function Login() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams(); // ?mode=host or ?mode=player (optional)
+  const [searchParams] = useSearchParams(); // ?mode=host or ?mode=player
   const { setProfile } = useGame();
 
   const [email, setEmail] = useState("");
@@ -15,7 +33,27 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // -------- Helper: load / create profile --------
+  // ---------- helper: map DB row -> profile shape ----------
+  function mapProfileRow(row) {
+    if (!row) return null;
+
+    const isAdmin = !!row.is_admin;
+    const tier = row.tier || "player";
+
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      avatarKey: row.avatar_key,          // legacy fallback
+      avatarJson: row.avatar_json || null,
+      cardBrand: row.card_brand || null,
+      cardLast4: row.card_last4 || null,
+      tier,
+      isAdmin,
+      canHost: tier === "host" || isAdmin,
+    };
+  }
+
+  // ---------- helper: load or create profile ----------
   async function loadOrCreateProfile(user) {
     const { data, error } = await supabase
       .from("profiles")
@@ -23,72 +61,52 @@ export default function Login() {
       .eq("id", user.id)
       .maybeSingle();
 
-    // If it's a real error (not "no rows"), throw
+    // real error
     if (error && error.code !== "PGRST116") {
       throw error;
     }
 
+    // no profile yet → create default row
     if (!data) {
-      // Create default profile
-      const defaultDisplayName = user.email?.split("@")[0] || "Player";
+      const baseName = user.email?.split("@")[0] || "Player";
 
       const { data: inserted, error: insertError } = await supabase
         .from("profiles")
         .insert({
           id: user.id,
-          display_name: defaultDisplayName,
+          display_name: baseName,
           avatar_key: "beer-mug",
-          card_brand: null,
-          card_last4: null,
-          // optional tier flags can be null/"player" by default
+          avatar_json: {
+            ...DEFAULT_AVATAR,
+            displayName: baseName,
+          },
+          tier: "player",
         })
         .select()
         .single();
 
       if (insertError) throw insertError;
-
-      return {
-        id: inserted.id,
-        displayName: inserted.display_name,
-        avatarKey: inserted.avatar_key,
-        cardBrand: inserted.card_brand,
-        cardLast4: inserted.card_last4,
-        tier: inserted.tier || "player",
-        isAdmin: inserted.is_admin || false,
-        canHost:
-          inserted.tier === "host" || inserted.is_admin === true,
-      };
+      return mapProfileRow(inserted);
     }
 
-    return {
-      id: data.id,
-      displayName: data.display_name,
-      avatarKey: data.avatar_key,
-      cardBrand: data.card_brand,
-      cardLast4: data.card_last4,
-      tier: data.tier || "player",
-      isAdmin: data.is_admin || false,
-      canHost: data.tier === "host" || data.is_admin === true,
-    };
+    return mapProfileRow(data);
   }
 
-  // -------- On mount: if already logged in, just hydrate profile (no redirect) --------
+  // ---------- auto-login on refresh ----------
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session?.user) {
-        const user = data.session.user;
         try {
-          const profile = await loadOrCreateProfile(user);
+          const profile = await loadOrCreateProfile(data.session.user);
           setProfile(profile);
-          if (user.email) setEmail(user.email);
         } catch (err) {
-          console.error("Failed to hydrate profile on login screen:", err);
+          console.error("Error loading profile on refresh:", err);
         }
       }
     });
   }, [setProfile]);
 
-  // -------- Sign in / sign up handler --------
+  // ---------- sign in / sign up ----------
   async function handleAuth(type) {
     setError("");
     if (!email || !password) {
@@ -117,22 +135,17 @@ export default function Login() {
       const user = result.data.session?.user;
       if (!user) throw new Error("No user returned from Supabase");
 
-      // Store user_id for backend headers just like before
+      // store user_id for backend headers
       localStorage.setItem("user_id", user.id);
 
-      // Load or create profile
       const profile = await loadOrCreateProfile(user);
       setProfile(profile);
 
-      // Decide where to go next
-      if (!profile.displayName) {
-        navigate("/profile");
+      // route based on host / player mode
+      if (mode === "player") {
+        navigate("/join-session");
       } else {
-        if (mode === "player") {
-          navigate("/join-session");
-        } else {
-          navigate("/host-session");
-        }
+        navigate("/host-session");
       }
     } catch (err) {
       console.error(err);
@@ -158,7 +171,7 @@ export default function Login() {
         Use one account for hosting and playing.
       </p>
 
-      {/* Host vs Player mode toggle (optional) */}
+      {/* Host vs Player toggle */}
       <div style={{ display: "flex", marginBottom: 20, gap: 8 }}>
         <button
           type="button"

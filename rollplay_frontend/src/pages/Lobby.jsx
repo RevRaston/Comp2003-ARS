@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
+import { supabase } from "../supabase";
 
 const API_BASE = "http://localhost:3000";
 
@@ -13,16 +14,61 @@ export default function Lobby({ token }) {
     sessionCode,
     isHost,
     setSessionInfo,
-    players,          // ✅ FROM CONTEXT
-    setPlayers,       // ✅ FROM CONTEXT
+    players,
+    setPlayers,
   } = useGame();
 
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
 
-  // ------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Helper: fetch Supabase profiles for all players in this lobby
+  // and merge display_name + avatar_json into the player objects.
+  // IMPORTANT: backend likely exposes `user_id`, not `id`.
+  // ------------------------------------------------------------------
+  async function attachProfilesToPlayers(rawPlayers) {
+    if (!rawPlayers || rawPlayers.length === 0) return [];
+
+    // Use user_id if available, otherwise fall back to id.
+    const ids = rawPlayers
+      .map((p) => p.user_id || p.id)
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i); // unique
+
+    if (ids.length === 0) return rawPlayers;
+
+    const { data: profiles, error: profError } = await supabase
+      .from("profiles")
+      .select("id, display_name, avatar_json")
+      .in("id", ids);
+
+    if (profError) {
+      console.error("Lobby profiles fetch error:", profError);
+      return rawPlayers;
+    }
+
+    const byId = new Map(profiles.map((p) => [p.id, p]));
+
+    return rawPlayers.map((p) => {
+      const profileId = p.user_id || p.id;
+      const prof = byId.get(profileId);
+      if (!prof) return p;
+
+      return {
+        ...p,
+        // normalise names
+        name: p.name || prof.display_name,
+        display_name: prof.display_name,
+        // expose avatar for both snake + camel just in case
+        avatar_json: prof.avatar_json,
+        avatarJson: prof.avatar_json,
+      };
+    });
+  }
+
+  // ------------------------------------------------------------------
   // Restore session info from localStorage if missing
-  // ------------------------------------------------------------
+  // ------------------------------------------------------------------
   useEffect(() => {
     if (!sessionCode) {
       const storedCode = localStorage.getItem("session_code");
@@ -40,9 +86,10 @@ export default function Lobby({ token }) {
     }
   }, [sessionCode, sessionId, navigate, setSessionInfo]);
 
-  // ------------------------------------------------------------
+  // ------------------------------------------------------------------
   // Poll backend for lobby state (every 2s)
-  // ------------------------------------------------------------
+  // and enrich players with profile data (avatars)
+  // ------------------------------------------------------------------
   useEffect(() => {
     if (!token) return;
 
@@ -61,13 +108,17 @@ export default function Lobby({ token }) {
         if (!res.ok) throw new Error(data.error || "Failed to load lobby");
 
         setSession(data.session);
-        setPlayers(data.players || []);
+
+        // Enrich players with avatar_json + display_name from Supabase
+        const rawPlayers = data.players || [];
+        const playersWithProfiles = await attachProfilesToPlayers(rawPlayers);
+        setPlayers(playersWithProfiles);
 
         const computedIsHost =
           Boolean(
             data.current_user_id &&
-            data.session.host_id &&
-            data.current_user_id === data.session.host_id
+              data.session.host_id &&
+              data.current_user_id === data.session.host_id
           );
 
         setSessionInfo({
@@ -77,8 +128,8 @@ export default function Lobby({ token }) {
         });
 
         // If host already started the game → move everyone on
-        if (data.session.status === "started") {
-          navigate("/choose-game");
+        if (data.session.status === "in_progress") {
+          navigate("/arena");
         }
       } catch (err) {
         console.error("Lobby error:", err);
@@ -91,9 +142,9 @@ export default function Lobby({ token }) {
     return () => clearInterval(interval);
   }, [sessionCode, token, navigate, setSessionInfo, setPlayers]);
 
-  // ------------------------------------------------------------
+  // ------------------------------------------------------------------
   // HOST — Start game
-  // ------------------------------------------------------------
+  // ------------------------------------------------------------------
   async function startGame() {
     setError("");
 
@@ -115,7 +166,7 @@ export default function Lobby({ token }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start game");
 
-      navigate("/choose-game");
+      navigate("/arena");
     } catch (err) {
       console.error("Start game error:", err);
       setError(err.message);
@@ -149,15 +200,13 @@ export default function Lobby({ token }) {
 
       <ul>
         {players.map((p) => (
-          <li key={p.id}>
-            {p.name} {p.is_host ? "(Host)" : ""}
+          <li key={p.id || p.user_id}>
+            {p.display_name || p.name} {p.is_host ? "(Host)" : ""}
           </li>
         ))}
       </ul>
 
-      {error && (
-        <p style={{ color: "red", marginTop: 16 }}>{error}</p>
-      )}
+      {error && <p style={{ color: "red", marginTop: 16 }}>{error}</p>}
 
       {isHost ? (
         <button
@@ -167,9 +216,7 @@ export default function Lobby({ token }) {
           Start Game
         </button>
       ) : (
-        <p style={{ marginTop: 16 }}>
-          Waiting for host to start the game…
-        </p>
+        <p style={{ marginTop: 16 }}>Waiting for host to start the game…</p>
       )}
     </div>
   );

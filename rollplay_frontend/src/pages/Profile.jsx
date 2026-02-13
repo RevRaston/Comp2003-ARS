@@ -1,5 +1,5 @@
 // src/pages/Profile.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useGame } from "../GameContext";
@@ -9,12 +9,17 @@ export default function Profile() {
   const navigate = useNavigate();
   const { profile, setProfile } = useGame();
 
-  const [displayName, setDisplayName] = useState(profile?.displayName || "");
-  // Keep avatarKey so we don't break any existing emoji-based usage elsewhere.
-  const [avatarKey, setAvatarKey] = useState(profile?.avatarKey || "beer-mug");
+  const [displayName, setDisplayName] = useState(
+    profile?.displayName || profile?.display_name || ""
+  );
 
-  // New: local state for Alex-style avatar JSON (not persisted yet)
-  const [avatarJson, setAvatarJson] = useState(null);
+  // avatarJson is ALWAYS a string in React state
+  const [avatarJson, setAvatarJson] = useState(() => {
+    if (!profile) return null;
+    if (profile.avatarJson) return profile.avatarJson;
+    if (profile.avatar_json) return JSON.stringify(profile.avatar_json);
+    return null;
+  });
 
   const [cardBrand, setCardBrand] = useState(profile?.cardBrand || "");
   const [cardLast4, setCardLast4] = useState(profile?.cardLast4 || "");
@@ -22,6 +27,22 @@ export default function Profile() {
   const [savingCard, setSavingCard] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [error, setError] = useState("");
+  const [editingAvatar, setEditingAvatar] = useState(false);
+
+  const isHost = !!profile?.canHost;
+  const isAdmin = !!profile?.isAdmin;
+
+  useEffect(() => {
+    if (!profile) return;
+    setDisplayName(profile.displayName || profile.display_name || "");
+    if (profile.avatarJson) {
+      setAvatarJson(profile.avatarJson);
+    } else if (profile.avatar_json) {
+      setAvatarJson(JSON.stringify(profile.avatar_json));
+    }
+    setCardBrand(profile.cardBrand || "");
+    setCardLast4(profile.cardLast4 || "");
+  }, [profile]);
 
   if (!profile) {
     return (
@@ -34,9 +55,6 @@ export default function Profile() {
       </div>
     );
   }
-
-  const isHost = profile.canHost;
-  const isAdmin = !!profile.isAdmin;
 
   function generateFakeCard() {
     const brands = ["DemoCard", "VISA", "MasterCard"];
@@ -55,13 +73,13 @@ export default function Profile() {
     try {
       setLoading(true);
 
+      const avatarObject = avatarJson ? JSON.parse(avatarJson) : null;
+
       const { data, error: updateError } = await supabase
         .from("profiles")
         .update({
           display_name: displayName.trim(),
-          // keep avatar_key logic as-is for now
-          avatar_key: avatarKey,
-          // later: add avatar_json column and persist avatarJson here
+          avatar_json: avatarObject,
         })
         .eq("id", profile.id)
         .select()
@@ -69,10 +87,15 @@ export default function Profile() {
 
       if (updateError) throw updateError;
 
+      const updatedAvatarObj = data.avatar_json ?? avatarObject;
+      const updatedAvatarJson = updatedAvatarObj
+        ? JSON.stringify(updatedAvatarObj)
+        : null;
+
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
-        avatarKey: data.avatar_key,
+        avatarJson: updatedAvatarJson,
         cardBrand: data.card_brand || profile.cardBrand || null,
         cardLast4: data.card_last4 || profile.cardLast4 || null,
         tier: data.tier || profile.tier || "player",
@@ -81,9 +104,11 @@ export default function Profile() {
       };
 
       setProfile(updatedProfile);
+      setAvatarJson(updatedProfile.avatarJson);
       setCardBrand(updatedProfile.cardBrand || "");
       setCardLast4(updatedProfile.cardLast4 || "");
-      navigate("/");
+      // stay on page after save; if you want to bounce home uncomment:
+      // navigate("/");
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to save profile");
@@ -113,7 +138,7 @@ export default function Profile() {
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
-        avatarKey: data.avatar_key,
+        avatarJson: avatarJson, // avatar doesn't change here
         cardBrand: data.card_brand || null,
         cardLast4: data.card_last4 || null,
         tier: data.tier || profile.tier || "player",
@@ -142,12 +167,15 @@ export default function Profile() {
         ? generateFakeCard()
         : { brand: cardBrand, last4: cardLast4 };
 
+      const avatarObject = avatarJson ? JSON.parse(avatarJson) : null;
+
       const { data, error: updateError } = await supabase
         .from("profiles")
         .update({
           tier: "host",
           card_brand: brand,
           card_last4: last4,
+          avatar_json: avatarObject,
         })
         .eq("id", profile.id)
         .select()
@@ -155,10 +183,15 @@ export default function Profile() {
 
       if (updateError) throw updateError;
 
+      const updatedAvatarObj = data.avatar_json ?? avatarObject;
+      const updatedAvatarJson = updatedAvatarObj
+        ? JSON.stringify(updatedAvatarObj)
+        : null;
+
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
-        avatarKey: data.avatar_key,
+        avatarJson: updatedAvatarJson,
         cardBrand: data.card_brand || null,
         cardLast4: data.card_last4 || null,
         tier: data.tier || "host",
@@ -167,6 +200,7 @@ export default function Profile() {
       };
 
       setProfile(updatedProfile);
+      setAvatarJson(updatedProfile.avatarJson);
       setCardBrand(updatedProfile.cardBrand || "");
       setCardLast4(updatedProfile.cardLast4 || "");
     } catch (err) {
@@ -204,11 +238,9 @@ export default function Profile() {
         {isAdmin && " · Admin / Dev"}
       </p>
 
-      {error && (
-        <p style={{ color: "salmon", marginBottom: 16 }}>{error}</p>
-      )}
+      {error && <p style={{ color: "salmon", marginBottom: 16 }}>{error}</p>}
 
-      {/* Display name */}
+      {/* Display name (profile-level) */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <label style={label}>Display Name</label>
         <input
@@ -219,41 +251,87 @@ export default function Profile() {
         />
       </div>
 
-      {/* Avatar builder (Alex-style) */}
+      {/* Avatar section */}
       <div
         style={{
           width: "100%",
-          marginBottom: 16,
+          marginTop: 8,
           padding: 16,
-          borderRadius: 12,
-          background: "rgba(0,0,0,0.35)",
+          borderRadius: 18,
+          background: "rgba(0,0,0,0.45)",
           border: "1px solid rgba(255,255,255,0.1)",
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 8 }}>Avatar</h3>
-        <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 10 }}>
-          Tweak your avatar look. This builder is based on Alex&apos;s prototype,
-          refactored into the app. (Saving to the database comes in the next
-          iteration.)
-        </p>
+        <h3 style={{ marginTop: 0, marginBottom: 12 }}>Avatar</h3>
 
-        <AvatarBuilder
-          initialAvatar={avatarJson}
-          onAvatarChange={(av) => {
-            try {
-              setAvatarJson(JSON.stringify(av));
-            } catch {
-              // ignore parse errors
-            }
-          }}
-        />
+        {!editingAvatar && (
+          <>
+            <div style={{ maxWidth: 520, margin: "0 auto" }}>
+              <AvatarBuilder
+                initialAvatar={avatarJson}
+                // read-only preview: just ignore changes
+                onAvatarChange={null}
+              />
+            </div>
+            <button
+              type="button"
+              style={{ ...btnSecondary, marginTop: 16 }}
+              onClick={() => setEditingAvatar(true)}
+            >
+              Edit Appearance
+            </button>
+          </>
+        )}
+
+        {editingAvatar && (
+          <>
+            <div style={{ maxWidth: 520, margin: "0 auto" }}>
+              <AvatarBuilder
+                initialAvatar={avatarJson}
+                onAvatarChange={(model) => {
+                  setAvatarJson(JSON.stringify(model));
+                }}
+              />
+            </div>
+            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                style={btnPrimary}
+                onClick={() => {
+                  // we already stored latest model in avatarJson,
+                  // just exit edit mode. Full profile save uses Save Profile.
+                  setEditingAvatar(false);
+                }}
+              >
+                Done Editing
+              </button>
+              <button
+                type="button"
+                style={btnGhost}
+                onClick={() => {
+                  // reset to profile value
+                  if (profile.avatarJson) {
+                    setAvatarJson(profile.avatarJson);
+                  } else if (profile.avatar_json) {
+                    setAvatarJson(JSON.stringify(profile.avatar_json));
+                  } else {
+                    setAvatarJson(null);
+                  }
+                  setEditingAvatar(false);
+                }}
+              >
+                Cancel Changes
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Demo card + upgrade section */}
       <div
         style={{
           width: "100%",
-          marginTop: 8,
+          marginTop: 24,
           padding: 16,
           borderRadius: 12,
           background: "rgba(0,0,0,0.35)",
@@ -271,9 +349,7 @@ export default function Profile() {
             <strong>{cardBrand}</strong> • **** **** **** {cardLast4}
           </p>
         ) : (
-          <p style={{ marginBottom: 12, opacity: 0.7 }}>
-            No demo card yet.
-          </p>
+          <p style={{ marginBottom: 12, opacity: 0.7 }}>No demo card yet.</p>
         )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -343,7 +419,7 @@ const wrapper = {
   alignItems: "center",
   color: "white",
   textAlign: "left",
-  maxWidth: 900, // widened for avatar builder
+  maxWidth: 720,
   margin: "0 auto",
 };
 

@@ -6,6 +6,10 @@ import { useGame } from "../GameContext";
 import DartsGame from "../games/Darts/DartsGame";
 import StackAttack from "../games/StackAttack/StackAttack";
 import Roulette from "../games/Roulette/Roulette";
+import DiceDuel from "../games/DiceDuel/DiceDuel";
+import QuickDraw from "../games/QuickDraw/QuickDraw";
+import TipToss from "../games/TipToss/TipToss";   // 👈 NEW
+import TopRace from "../games/TopRace/TopRace";
 
 import GameWrapper from "../components/GameWrapper";
 
@@ -13,7 +17,13 @@ const GAME_COMPONENTS = {
   darts: DartsGame,
   stack_attack: StackAttack,
   roulette: Roulette,
+  dice_duel: DiceDuel,
+  quick_draw: QuickDraw,
+  tip_toss: TipToss,
+  top_race: TopRace,          // 👈 NEW
 };
+
+
 
 // helper: clamp weird / missing totals
 function normaliseBill(totalCost, playerCount) {

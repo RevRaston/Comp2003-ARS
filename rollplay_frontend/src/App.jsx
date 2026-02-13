@@ -8,9 +8,8 @@ import {
 } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
-import { GameProvider } from "./GameContext";
+import { GameProvider, useGame } from "./GameContext";
 import "./App.css";
-import { useGame } from "./GameContext";
 
 /* Pages */
 import Splash from "./pages/Splash";
@@ -28,6 +27,9 @@ import Profile from "./pages/Profile";
 import HostSession from "./pages/HostSession";
 import JoinSession from "./pages/JoinSession";
 import Lobby from "./pages/Lobby";
+
+/* Arena (new shared game stage) */
+import Arena from "./pages/Arena";
 
 /* Visual transition */
 import PageTransition from "./components/PageTransition";
@@ -59,8 +61,11 @@ function AppInner({ token }) {
         <Route path="/countdown" element={<Countdown />} />
         <Route path="/results" element={<Results />} />
 
-        {/* Game runner (handles timer + progression) */}
+        {/* Game runner (legacy per-game route) */}
         <Route path="/game/:gameId" element={<GameRunner />} />
+
+        {/* New shared arena */}
+        <Route path="/arena" element={<Arena />} />
 
         {/* Debug / tools */}
         <Route path="/randomizer" element={<Randomizer />} />
@@ -177,6 +182,7 @@ function AdminNav() {
         <Link to="/host-session">Host Session</Link>
         <Link to="/join-session">Join Session</Link>
         <Link to="/lobby">Lobby</Link>
+        <Link to="/arena">Arena</Link>
       </div>
     </div>
   );

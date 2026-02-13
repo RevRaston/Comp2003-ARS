@@ -1,3 +1,4 @@
+// src/components/AvatarBuilder.jsx
 import { useState, useMemo, useEffect } from "react";
 
 /**
@@ -9,23 +10,23 @@ const DEFAULT_AVATAR = {
   displayName: "Player",
   badge: "common", // common | rare | epic (for future use)
 
-  bodyShape: "round",   // round | square | bean
+  bodyShape: "round", // round | square | bean
   skin: "#F2C7A5",
 
-  hairStyle: "short",   // short | puff | long | none
+  hairStyle: "short", // short | puff | long | none
   hair: "#2C1E1A",
 
-  eyeStyle: "dots",     // dots | happy | sleepy
+  eyeStyle: "dots", // dots | happy | sleepy
   eye: "#1A2433",
 
-  mouthStyle: "smile",  // smile | neutral | open
+  mouthStyle: "smile", // smile | neutral | open
 
-  accessory: "none",    // none | glasses | earring | cap
+  accessory: "none", // none | glasses | earring | cap
 
-  outfit: "hoodie",     // hoodie | tee | armor
+  outfit: "hoodie", // hoodie | tee | armor
   outfitColor: "#7C5CFF",
 
-  bg: "nebula",         // nebula | sunset | mint | none
+  bg: "nebula", // nebula | sunset | mint | none
   tilt: 0,
 };
 
@@ -77,12 +78,22 @@ const BACKGROUNDS = [
 // Simple palettes for randomize
 const PALETTES = {
   skins: [
-    "#F7D4B5", "#F2C7A5", "#E9B894", "#DDA57E",
-    "#C98F6B", "#B97B58", "#A86949", "#8E553D",
+    "#F7D4B5",
+    "#F2C7A5",
+    "#E9B894",
+    "#DDA57E",
+    "#C98F6B",
+    "#B97B58",
+    "#A86949",
+    "#8E553D",
   ],
   hairs: [
-    "#2C1E1A", "#3A2B22", "#1A1A1A",
-    "#6B4B3A", "#B8865B", "#D7C29B",
+    "#2C1E1A",
+    "#3A2B22",
+    "#1A1A1A",
+    "#6B4B3A",
+    "#B8865B",
+    "#D7C29B",
   ],
   eyes: ["#1A2433", "#0B1020", "#2C3E50", "#2D1E55", "#1F3B33"],
   outfits: ["#7C5CFF", "#20D48A", "#FF5C86", "#FFD166", "#4DD0FF", "#B3FF75"],
@@ -352,16 +363,40 @@ function renderAvatarSVG(model) {
 /* --- React component --- */
 
 export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
+  // handle both string and object for initialAvatar
   const [avatar, setAvatar] = useState(() => {
     if (initialAvatar) {
       try {
-        return { ...DEFAULT_AVATAR, ...JSON.parse(initialAvatar) };
+        if (typeof initialAvatar === "string") {
+          return { ...DEFAULT_AVATAR, ...JSON.parse(initialAvatar) };
+        }
+        if (typeof initialAvatar === "object") {
+          return { ...DEFAULT_AVATAR, ...initialAvatar };
+        }
       } catch {
-        return { ...DEFAULT_AVATAR };
+        // ignore and fall back to default
       }
     }
     return { ...DEFAULT_AVATAR };
   });
+
+  // resync local state when parent passes a NEW initialAvatar
+  useEffect(() => {
+    if (!initialAvatar) return;
+    try {
+      let base;
+      if (typeof initialAvatar === "string") {
+        base = JSON.parse(initialAvatar);
+      } else if (typeof initialAvatar === "object") {
+        base = initialAvatar;
+      } else {
+        return;
+      }
+      setAvatar({ ...DEFAULT_AVATAR, ...base });
+    } catch {
+      // keep existing avatar if parse fails
+    }
+  }, [initialAvatar]);
 
   // push changes up if parent wants them
   useEffect(() => {
