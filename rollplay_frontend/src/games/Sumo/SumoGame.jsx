@@ -1,19 +1,16 @@
 // src/games/Sumo/SumoGame.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../../supabase";
 
 /**
- * Sumo (MVP) — Supabase Realtime multiplayer simulation (hardened)
+ * Sumo (MVP) — WebSocket multiplayer simulation (Option A: Host-authoritative)
  *
  * Host-authoritative:
- *  - Host runs physics and broadcasts "state" (~25hz)
- *  - Clients send only "input" (~20hz)
- *  - Clients render mirrored state
+ *  - Host runs physics + broadcasts state at ~25hz
+ *  - Clients send input at ~20hz
+ *  - Clients render host state
  *
- * Additions:
- *  - Rate limiting (prevents channel overload / freeze)
- *  - Connection status + error logging
- *  - Host heartbeat monitor (clients detect stalled host)
+ * Transport: WebSocket (ws://localhost:3000)
+ * Later (Option B): move simulation to server, keep message shapes.
  */
 export default function SumoGame({
   sessionCode,
@@ -25,11 +22,16 @@ export default function SumoGame({
   const canvasRef = useRef(null);
 
   const [statusLine, setStatusLine] = useState("");
-  const [connLine, setConnLine] = useState("connecting…");
+  const [connLine, setConnLine] = useState("disconnected");
 
-  // Keep channel + runtime refs stable without re-subscribing on every render
-  const channelRef = useRef(null);
+  const wsRef = useRef(null);
   const runningRef = useRef(false);
+
+  // Host storage for client input
+  const inputByKeyRef = useRef(new Map()); // key -> { ax, ay, t }
+  const lastHostStateAtRef = useRef(performance.now());
+
+  // ---- Helpers -------------------------------------------------
 
   function getUserKey(p) {
     if (!p) return "";
@@ -46,7 +48,6 @@ export default function SumoGame({
   }
 
   const code = sessionCode || localStorage.getItem("session_code") || "local";
-  const channelName = useMemo(() => `sumo:${code}`, [code]);
 
   const active = useMemo(() => {
     const list = Array.isArray(players) ? players : [];
@@ -61,27 +62,36 @@ export default function SumoGame({
 
   const myId = myUserId ? String(myUserId) : "";
 
+  // Which seat does THIS client control? 0,1 or -1 spectator
   const myControlIndex = useMemo(() => {
     if (!active.hasTwo) return -1;
 
+    // strongest: match auth/profile id
     if (myId && myId === active.p1Key) return 0;
     if (myId && myId === active.p2Key) return 1;
 
+    // fallback: seat index passed from Arena
     if (mySeatIndex === 0) return 0;
     if (mySeatIndex === 1) return 1;
 
     return -1;
   }, [active.hasTwo, active.p1Key, active.p2Key, myId, mySeatIndex]);
 
+  function wsSend(obj) {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(obj));
+  }
+
+  // ---- Main effect -------------------------------------------------
   useEffect(() => {
     if (!active.hasTwo) return;
 
-    // Prevent double-start if React strict mode mounts twice (dev)
+    // Prevent double-mount loop (React strict mode dev)
     if (runningRef.current) return;
     runningRef.current = true;
 
     let raf = 0;
-    let channel = null;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -94,23 +104,38 @@ export default function SumoGame({
     canvas.width = W;
     canvas.height = H;
 
-    const arena = { x: W / 2, y: H / 2, radius: Math.min(W, H) * 0.40 };
+    // focus helper
+    function onCanvasPointerDown() {
+      canvas.focus?.();
+      window.focus();
+    }
+    canvas.addEventListener("pointerdown", onCanvasPointerDown);
+
+    const arena = { x: W / 2, y: H / 2, radius: Math.min(W, H) * 0.4 };
     const P_RADIUS = 18;
 
-    // World (authoritative on host)
+    // World (host authoritative)
     const worldRef = {
       tick: 0,
       players: [
-        { key: active.p1Key, x: arena.x - 70, y: arena.y, r: P_RADIUS, vx: 0, vy: 0 },
-        { key: active.p2Key, x: arena.x + 70, y: arena.y, r: P_RADIUS, vx: 0, vy: 0 },
+        {
+          key: active.p1Key,
+          x: arena.x - 70,
+          y: arena.y,
+          r: P_RADIUS,
+          vx: 0,
+          vy: 0,
+        },
+        {
+          key: active.p2Key,
+          x: arena.x + 70,
+          y: arena.y,
+          r: P_RADIUS,
+          vx: 0,
+          vy: 0,
+        },
       ],
     };
-
-    // Inputs stored on host
-    const inputByKey = new Map();
-
-    // Latest state time (clients use to detect stall)
-    let lastHostStateAt = performance.now();
 
     // Local input
     const keys = new Set();
@@ -119,6 +144,10 @@ export default function SumoGame({
     function computeAxes() {
       let ax = 0;
       let ay = 0;
+
+      // IMPORTANT:
+      // Each client can use either scheme; host only applies its own local input
+      // to the seat it controls, and applies remote input to the other seat.
       if (keys.has("w") || keys.has("W") || keys.has("ArrowUp")) ay -= 1;
       if (keys.has("s") || keys.has("S") || keys.has("ArrowDown")) ay += 1;
       if (keys.has("a") || keys.has("A") || keys.has("ArrowLeft")) ax -= 1;
@@ -139,16 +168,10 @@ export default function SumoGame({
       keys.delete(e.key);
     }
 
-    function onCanvasPointerDown() {
-      canvas.focus?.();
-      window.focus();
-    }
-
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
-    canvas.addEventListener("pointerdown", onCanvasPointerDown);
 
-    // Physics
+    // Physics tuning
     const ACCEL = 0.55;
     const MAX_SPEED = 6.2;
     const FRICTION = 0.88;
@@ -175,8 +198,10 @@ export default function SumoGame({
     function integrate(p) {
       p.x += p.vx;
       p.y += p.vy;
+
       p.vx *= FRICTION;
       p.vy *= FRICTION;
+
       if (Math.abs(p.vx) < 0.01) p.vx = 0;
       if (Math.abs(p.vy) < 0.01) p.vy = 0;
     }
@@ -189,6 +214,7 @@ export default function SumoGame({
 
       if (dist > maxDist) {
         const [nx, ny] = normalize(dx, dy);
+
         p.x = arena.x + nx * maxDist;
         p.y = arena.y + ny * maxDist;
 
@@ -211,11 +237,13 @@ export default function SumoGame({
         const nx = dx / dist;
         const ny = dy / dist;
 
+        // separate
         a.x -= nx * (overlap / 2);
         a.y -= ny * (overlap / 2);
         b.x += nx * (overlap / 2);
         b.y += ny * (overlap / 2);
 
+        // impulse
         const rvx = b.vx - a.vx;
         const rvy = b.vy - a.vy;
         const velAlongNormal = rvx * nx + rvy * ny;
@@ -232,11 +260,18 @@ export default function SumoGame({
       }
     }
 
-    // Drawing
+    // Draw
     function drawArena() {
       ctx.clearRect(0, 0, W, H);
 
-      const grd = ctx.createRadialGradient(arena.x, arena.y, 10, arena.x, arena.y, arena.radius);
+      const grd = ctx.createRadialGradient(
+        arena.x,
+        arena.y,
+        10,
+        arena.x,
+        arena.y,
+        arena.radius
+      );
       grd.addColorStop(0, "rgba(255,255,255,0.06)");
       grd.addColorStop(1, "rgba(0,0,0,0.65)");
 
@@ -253,12 +288,28 @@ export default function SumoGame({
     }
 
     function drawPlayer(p, color) {
+      // shadow
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y + p.r + 6, p.r * 1.1, p.r * 0.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(
+        p.x,
+        p.y + p.r + 6,
+        p.r * 1.1,
+        p.r * 0.5,
+        0,
+        0,
+        Math.PI * 2
+      );
       ctx.fillStyle = "rgba(0,0,0,0.25)";
       ctx.fill();
 
-      const g = ctx.createRadialGradient(p.x - p.r * 0.4, p.y - p.r * 0.4, 4, p.x, p.y, p.r);
+      const g = ctx.createRadialGradient(
+        p.x - p.r * 0.4,
+        p.y - p.r * 0.4,
+        4,
+        p.x,
+        p.y,
+        p.r
+      );
       g.addColorStop(0, "rgba(255,255,255,0.55)");
       g.addColorStop(1, color);
 
@@ -289,121 +340,149 @@ export default function SumoGame({
 
       const w = worldRef.players;
 
-      // "you are blue on your screen"
+      // "you are blue on YOUR screen"
       const blueIndex = myControlIndex === 1 ? 1 : 0;
       const redIndex = blueIndex === 0 ? 1 : 0;
 
       drawPlayer(w[blueIndex], "#4DD0FF");
       drawPlayer(w[redIndex], "#FF5C86");
 
-      const stalled = !isHost && performance.now() - lastHostStateAt > 1200;
+      const stalled =
+        !isHost && performance.now() - lastHostStateAtRef.current > 1200;
 
       drawHUD([
-        "Click the game, then move (WASD or Arrow Keys).",
-        myControlIndex === -1 ? "Spectating (not P1/P2)." : `You control P${myControlIndex + 1} (BLUE).`,
+        "Click the game then move (WASD or Arrow Keys).",
+        myControlIndex === -1
+          ? "Spectating (not P1/P2)."
+          : `You control P${myControlIndex + 1} (BLUE).`,
         stalled ? "⚠ Host state stalled (no updates)." : "No win condition yet — just push!",
       ]);
     }
 
-    // Realtime
-    function sendBroadcast(event, payload) {
-      channel?.send({ type: "broadcast", event, payload });
+    // ---- WebSocket wiring ----------------------------------------
+
+    const WS_URL = "ws://localhost:3000";
+
+    function connectWs() {
+      setConnLine("connecting…");
+
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setConnLine("connected ✅");
+
+        wsSend({
+          type: "join",
+          sessionCode: code,
+          userId: myId || null,
+        });
+
+        setStatusLine(
+          `Sumo WS: ${isHost ? "HOST" : "CLIENT"} — room=${code} — ` +
+            `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"} control=${myControlIndex}`
+        );
+      };
+
+      ws.onclose = () => {
+        setConnLine("disconnected");
+      };
+
+      ws.onerror = () => {
+        setConnLine("error");
+      };
+
+      ws.onmessage = (ev) => {
+        let msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch {
+          return;
+        }
+
+        if (!msg || msg.sessionCode !== code) return;
+
+        if (msg.type === "state") {
+          // clients apply host state
+          if (isHost) return;
+
+          lastHostStateAtRef.current = performance.now();
+
+          const payload = msg.payload;
+          if (!payload?.players || payload.players.length < 2) return;
+
+          worldRef.tick = payload.tick ?? worldRef.tick;
+
+          for (let i = 0; i < 2; i++) {
+            const s = payload.players[i];
+            const p = worldRef.players[i];
+            if (!s || !p) continue;
+            p.key = s.key ?? p.key;
+            p.x = s.x ?? p.x;
+            p.y = s.y ?? p.y;
+            p.vx = s.vx ?? p.vx;
+            p.vy = s.vy ?? p.vy;
+            p.r = s.r ?? p.r;
+          }
+        }
+
+        if (msg.type === "input") {
+          // host receives client input
+          if (!isHost) return;
+
+          const payload = msg.payload;
+          const k = payload?.key ? String(payload.key) : "";
+          if (!k) return;
+
+          inputByKeyRef.current.set(k, {
+            ax: Number(payload.ax) || 0,
+            ay: Number(payload.ay) || 0,
+            t: Number(payload.t) || 0,
+          });
+        }
+      };
     }
 
-    function applyStateFromHost(payload) {
-      if (!payload?.players || payload.players.length < 2) return;
+    connectWs();
 
-      lastHostStateAt = performance.now();
-      worldRef.tick = payload.tick ?? worldRef.tick;
+    // ---- Rate limiting ------------------------------------------
 
-      for (let i = 0; i < 2; i++) {
-        const s = payload.players[i];
-        const p = worldRef.players[i];
-        if (!s || !p) continue;
-
-        p.key = s.key ?? p.key;
-        p.x = s.x ?? p.x;
-        p.y = s.y ?? p.y;
-        p.vx = s.vx ?? p.vx;
-        p.vy = s.vy ?? p.vy;
-        p.r = s.r ?? p.r;
-      }
-    }
-
-    // --- IMPORTANT RATE LIMITS ---
-    const INPUT_HZ = 20;   // clients -> host
-    const STATE_HZ = 25;   // host -> clients
+    const INPUT_HZ = 20; // client -> host
+    const STATE_HZ = 25; // host -> clients
     const INPUT_MS = 1000 / INPUT_HZ;
     const STATE_MS = 1000 / STATE_HZ;
 
     let lastInputSend = 0;
     let lastStateSend = 0;
 
-    // Subscribe
-    channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
-    channelRef.current = channel;
+    // Host control seat: if host isn't recognized, default P1
+    const hostControlIndex = isHost && myControlIndex !== -1 ? myControlIndex : 0;
 
-    channel.on("broadcast", { event: "input" }, ({ payload }) => {
-      if (!isHost) return;
-      const k = payload?.key ? String(payload.key) : "";
-      if (!k) return;
+    // ---- Game loop ----------------------------------------------
 
-      inputByKey.set(k, {
-        ax: Number(payload.ax) || 0,
-        ay: Number(payload.ay) || 0,
-        t: Number(payload.t) || 0,
-      });
-    });
-
-    channel.on("broadcast", { event: "state" }, ({ payload }) => {
-      if (isHost) return;
-      applyStateFromHost(payload);
-    });
-
-    channel.subscribe((s) => {
-      setConnLine(String(s));
-      if (s === "SUBSCRIBED") {
-        setConnLine("SUBSCRIBED ✅");
-      }
-      if (s === "CHANNEL_ERROR") {
-        console.error("Sumo channel error:", channelName);
-      }
-      if (s === "TIMED_OUT") {
-        console.warn("Sumo channel timed out:", channelName);
-      }
-      if (s === "CLOSED") {
-        console.warn("Sumo channel closed:", channelName);
-      }
-    });
-
-    setStatusLine(
-      `Sumo realtime: ${isHost ? "HOST" : "CLIENT"} — ${channelName} — ` +
-        `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"} control=${myControlIndex}`
-    );
-
-    // Loop
     let lastNow = performance.now();
     const STEP = 1000 / 60;
     let acc = 0;
-
-    const hostControlIndex = isHost && myControlIndex !== -1 ? myControlIndex : 0;
 
     function tick(now) {
       const dt = now - lastNow;
       lastNow = now;
       acc += dt;
 
-      // Local axes (from keyboard)
       const axes = computeAxes();
       localAxes.ax = axes.ax;
       localAxes.ay = axes.ay;
 
-      // CLIENT: send input at ~20Hz only (prevents spam freeze)
+      // CLIENT: send input at 20hz
       if (!isHost && myControlIndex !== -1 && now - lastInputSend >= INPUT_MS) {
         lastInputSend = now;
         const myKey = myControlIndex === 0 ? active.p1Key : active.p2Key;
         if (myKey) {
-          sendBroadcast("input", { key: String(myKey), ax: localAxes.ax, ay: localAxes.ay, t: now });
+          wsSend({
+            type: "input",
+            sessionCode: code,
+            payload: { key: String(myKey), ax: localAxes.ax, ay: localAxes.ay, t: now },
+          });
         }
       }
 
@@ -420,7 +499,7 @@ export default function SumoGame({
               ay = localAxes.ay;
             } else {
               const otherKey = idx === 0 ? active.p1Key : active.p2Key;
-              const inp = otherKey ? inputByKey.get(String(otherKey)) : null;
+              const inp = otherKey ? inputByKeyRef.current.get(String(otherKey)) : null;
               ax = inp?.ax || 0;
               ay = inp?.ay || 0;
             }
@@ -443,19 +522,23 @@ export default function SumoGame({
 
       drawFrame();
 
-      // HOST: broadcast state at ~25Hz only (prevents spam freeze)
+      // HOST: broadcast state at 25hz
       if (isHost && now - lastStateSend >= STATE_MS) {
         lastStateSend = now;
-        sendBroadcast("state", {
-          tick: worldRef.tick,
-          players: worldRef.players.map((p) => ({
-            key: p.key,
-            x: p.x,
-            y: p.y,
-            vx: p.vx,
-            vy: p.vy,
-            r: p.r,
-          })),
+        wsSend({
+          type: "state",
+          sessionCode: code,
+          payload: {
+            tick: worldRef.tick,
+            players: worldRef.players.map((p) => ({
+              key: p.key,
+              x: p.x,
+              y: p.y,
+              vx: p.vx,
+              vy: p.vy,
+              r: p.r,
+            })),
+          },
         });
       }
 
@@ -466,19 +549,23 @@ export default function SumoGame({
 
     return () => {
       cancelAnimationFrame(raf);
+
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("pointerdown", onCanvasPointerDown);
 
-      if (channel) supabase.removeChannel(channel);
-      channelRef.current = null;
+      try {
+        wsRef.current?.close();
+      } catch {}
+      wsRef.current = null;
+
       runningRef.current = false;
     };
   }, [
     active.hasTwo,
     active.p1Key,
     active.p2Key,
-    channelName,
+    code,
     isHost,
     myControlIndex,
     myId,

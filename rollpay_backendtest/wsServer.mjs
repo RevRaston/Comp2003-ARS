@@ -2,14 +2,13 @@
 import { WebSocketServer } from "ws";
 
 /**
- * Rooms keyed by sessionCode.
- * First message must be: { type: "join", sessionCode }
- * After joining, messages are relayed to everyone else in the same room.
+ * Attach a WebSocket server to an existing HTTP server.
+ * Defaults to path "/ws".
  */
-export function attachWs(server) {
-  const wss = new WebSocketServer({ server });
+export function attachWs(server, { path = "/ws" } = {}) {
+  const wss = new WebSocketServer({ server, path });
 
-  // sessionCode -> Set<WebSocket>
+  // sessionCode -> Set of sockets
   const rooms = new Map();
 
   function joinRoom(code, ws) {
@@ -21,19 +20,15 @@ export function attachWs(server) {
   function leaveRoom(ws) {
     const code = ws._roomCode;
     if (!code) return;
-
     const set = rooms.get(code);
     if (!set) return;
-
     set.delete(ws);
     if (set.size === 0) rooms.delete(code);
-    ws._roomCode = null;
   }
 
   function broadcast(code, data, exceptWs = null) {
     const set = rooms.get(code);
     if (!set) return;
-
     for (const client of set) {
       if (client.readyState === 1 && client !== exceptWs) {
         client.send(data);
@@ -63,7 +58,7 @@ export function attachWs(server) {
       // Must join first
       if (!ws._roomCode) return;
 
-      // Relay to everyone else in the same room
+      // Relay to everyone else in the same sessionCode room
       broadcast(sessionCode, JSON.stringify(msg), ws);
     });
 
@@ -71,5 +66,5 @@ export function attachWs(server) {
     ws.on("error", () => leaveRoom(ws));
   });
 
-  console.log("✅ WebSocket server ready");
+  console.log(`✅ WebSocket server ready (path: ${path})`);
 }

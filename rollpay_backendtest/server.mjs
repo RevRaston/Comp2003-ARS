@@ -13,7 +13,7 @@ import http from "http";
 // ⭐ SESSION LEVELS ROUTES (only /:sessionCode/levels)
 import sessionLevelsRoutes from "./routes/sessionLevels.mjs";
 
-// ✅ WebSockets
+// ✅ WebSocket attach
 import { attachWs } from "./wsServer.mjs";
 
 dotenv.config();
@@ -43,7 +43,29 @@ let currentGame = {
    EXPRESS + SUPABASE SETUP
 ----------------------------------------- */
 const app = express();
-app.use(cors());
+
+// ✅ CORS (tight but dev-friendly)
+// Add your Netlify domain(s) here:
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  // Replace this with your real Netlify site URL(s)
+  // Example:
+  // "https://your-site.netlify.app",
+];
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // allow non-browser clients (curl/postman)
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error("CORS blocked: " + origin));
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
@@ -211,6 +233,7 @@ app.post("/game/start", (req, res) => {
   const { players, total_cost, rule } = currentGame;
 
   const shuffled = [...players].sort(() => Math.random() - 0.5);
+
   shuffled.forEach((p, i) => (p.rank = i + 1));
 
   let results;
@@ -257,7 +280,6 @@ app.post("/sessions", async (req, res) => {
   }
 
   let code;
-  // generate unique code
   for (let i = 0; i < 10; i++) {
     const test = generateSessionCode();
     const { data: exists } = await supa
@@ -423,22 +445,18 @@ app.post("/sessions/:code/join", async (req, res) => {
 /* ---------------------------------------
    ⭐ SESSION LEVEL ROUTES (MOUNTED LAST)
 ----------------------------------------- */
-
-// These handle only /sessions/:sessionCode/levels
 app.use("/sessions", sessionLevelsRoutes);
 
 /* ---------------------------------------
    START SERVER (HTTP + WS)
 ----------------------------------------- */
 const PORT = Number(process.env.PORT) || 3000;
-
-// Create a real HTTP server so ws can attach
 const server = http.createServer(app);
 
-// Attach WebSocket server
-attachWs(server);
+// ✅ Attach WebSocket server at /ws (IMPORTANT)
+attachWs(server, { path: "/ws" });
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
-  console.log(`🧠 WS running at ws://localhost:${PORT}`);
+  console.log(`🧠 WS running at ws://localhost:${PORT}/ws`);
 });
