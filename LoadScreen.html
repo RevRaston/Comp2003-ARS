@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RollPay Loading</title>
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(circle at center, #050505, #000 70%);
+  color: white;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.title {
+  font-size: 3.2rem;
+  letter-spacing: 3px;
+  font-weight: 800;
+  margin-bottom: 40px;
+  text-shadow:
+    0 0 8px #00ff9c,
+    0 0 20px #00ff9c,
+    0 0 40px rgba(0,255,156,0.6);
+}
+
+/* ================= WHEEL STRUCTURE ================= */
+
+.wheel-wrapper {
+  position: relative;
+  width: 340px;
+  height: 340px;
+  margin-bottom: 40px;
+}
+
+.outer-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #6d4320, #3b220f 70%);
+  box-shadow:
+    inset 0 0 40px rgba(0,0,0,0.9),
+    0 0 30px rgba(0,255,156,0.15);
+}
+
+.ball-track {
+  position: absolute;
+  inset: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+      transparent 70%,
+      #d0d0d0 72%,
+      #777 76%,
+      transparent 78%
+  );
+}
+
+.wheel {
+  position: absolute;
+  inset: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: inset 0 0 25px rgba(0,0,0,0.9);
+}
+
+.segment {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.separators {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    rgba(212,175,55,0.9) 0deg 1deg,
+    transparent 1deg 9.73deg
+  );
+  pointer-events: none;
+}
+
+/* ===== NUMBERS CORRECTLY ORBITING THE RING ===== */
+.number {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 0 4px black;
+  transform-origin: center;
+}
+
+.inner-bowl {
+  position: absolute;
+  inset: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #0d4a24, #062413);
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.9);
+}
+
+.center {
+  position: absolute;
+  inset: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffd86b, #b8942e);
+  box-shadow: 0 0 15px rgba(255,215,0,0.6);
+}
+
+.pointer {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-bottom: 30px solid #00ff9c;
+  filter: drop-shadow(0 0 8px #00ff9c);
+  z-index: 20;
+}
+
+/* ================= BALL SYSTEM ================= */
+
+.ball-orbit {
+  position: absolute;
+  inset: 16px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ball-holder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateY(-148px);
+}
+
+.ball {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 0 12px white, 0 0 20px white;
+}
+
+.fact {
+  max-width: 380px;
+  text-align: center;
+  line-height: 1.6;
+  opacity: 0.95;
+  font-size: 1.05rem;
+  padding: 0 20px;
+  min-height: 60px;
+  transition: opacity 0.6s ease;
+}
+</style>
+</head>
+
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+
+const { useEffect, useRef, useState } = React;
+
+const rouletteNumbers = [
+  0, 32, 15, 19, 4, 21, 2, 25, 17, 34,
+  6, 27, 13, 36, 11, 30, 8, 23, 10, 5,
+  24, 16, 33, 1, 20, 14, 31, 9, 22, 18,
+  29, 7, 28, 12, 35, 3, 26
+];
+
+const redNumbers = new Set([
+  1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36
+]);
+
+const beerFacts = [
+  "Beer is the third most consumed drink in the world after water and tea.",
+  "The oldest known beer recipe is over 4,000 years old.",
+  "Ancient Egyptians sometimes paid workers in beer.",
+  "There are over 100 styles of beer worldwide.",
+  "The foam helps lock in aroma and flavour.",
+  "Germany's beer purity law dates back to 1516.",
+  "Some beers have more antioxidants than wine.",
+  "The strongest beers can exceed 60% ABV.",
+  "Hops were first widely used around the 9th century.",
+  "Beer was brewed before written language existed."
+];
+
+function RollPayLoader() {
+  const wheelRef = useRef(null);
+  const ballOrbitRef = useRef(null);
+
+  const [factIndex, setFactIndex] = useState(0);
+  const [factVisible, setFactVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFactVisible(false);
+      setTimeout(() => {
+        setFactIndex(i => (i + 1) % beerFacts.length);
+        setFactVisible(true);
+      }, 600);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let wheelAngle = 0;
+    let ballAngle = 0;
+    let speed = 20;
+
+    function animate() {
+      speed *= 0.992;
+      if (speed < 0.3) speed = 20;
+
+      wheelAngle += speed;
+      ballAngle -= speed * 1.8;
+
+      if (wheelRef.current)
+        wheelRef.current.style.transform = `rotate(${wheelAngle}deg)`;
+
+      if (ballOrbitRef.current)
+        ballOrbitRef.current.style.transform = `rotate(${ballAngle}deg)`;
+
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  }, []);
+
+  const segmentAngle = 360 / rouletteNumbers.length;
+  const numberRadius = 115; // distance from center to number ring
+
+  return (
+    <div className="app">
+      <div className="title">rollpay</div>
+
+      <div className="wheel-wrapper">
+        <div className="pointer" />
+        <div className="outer-rim" />
+        <div className="ball-track" />
+
+        <div className="wheel" ref={wheelRef}>
+          {rouletteNumbers.map((num, i) => {
+            const start = i * segmentAngle;
+            const end = start + segmentAngle;
+            const color = num === 0 ? "#0a7d32" : redNumbers.has(num) ? "#e63946" : "#111";
+
+            return (
+              <div
+                key={i}
+                className="segment"
+                style={{
+                  background: `conic-gradient(${color} ${start}deg ${end}deg, transparent ${end}deg)`
+                }}
+              />
+            );
+          })}
+
+          <div className="separators" />
+
+          {/* PERFECT CIRCULAR NUMBER PLACEMENT */}
+          {rouletteNumbers.map((num, i) => {
+            const angle = i * segmentAngle + segmentAngle / 2;
+            return (
+              <div
+                key={`n${i}`}
+                className="number"
+                style={{
+                  transform: `rotate(${angle}deg) translate(0, -${numberRadius}px) rotate(-${angle}deg)`
+                }}
+              >
+                {num}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="inner-bowl" />
+        <div className="center" />
+
+        <div className="ball-orbit" ref={ballOrbitRef}>
+          <div className="ball-holder">
+            <div className="ball" />
+          </div>
+        </div>
+      </div>
+
+      <div className="fact" style={{opacity: factVisible ? 1 : 0}}>
+        🍺 Fun beer fact: {beerFacts[factIndex]}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<RollPayLoader />);
+
+</script>
+</body>
+</html>
