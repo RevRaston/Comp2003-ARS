@@ -1,0 +1,301 @@
+import React, { useRef, useEffect, useState } from "react";
+
+/*
+PREMIUM STACK GAME (NO 3D LIBRARIES)
+------------------------------------
+✓ Works everywhere (no Three.js)
+✓ Falling cut-off physics
+✓ Perfect placement system
+✓ Particles + juice
+✓ Smooth camera follow
+✓ Endless height
+✓ Mobile tap ready
+✓ 3D styled shading (fake 3D)
+*/
+
+export default function StackGame() {
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+  const gameRef = useRef(null);
+
+  const [score, setScore] = useState(0);
+  const [gameOver, setGameOver] = useState(false);
+  const [perfectFlash, setPerfectFlash] = useState(false);
+
+  useEffect(() => {
+    startGame();
+    return stopGame;
+  }, []);
+
+  function startGame() {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    const DPR = window.devicePixelRatio || 1;
+    const width = 400;
+    const height = 600;
+
+    canvas.width = width * DPR;
+    canvas.height = height * DPR;
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    const BLOCK_HEIGHT = 30;
+    const PERFECT_TOL = 6;
+
+    function randomColor() {
+      const hue = Math.floor(Math.random() * 360);
+      return `hsl(${hue},70%,55%)`;
+    }
+
+    function shade(hsl, amt) {
+      const m = hsl.match(/hsl\((\d+),(\d+)%,(\d+)%\)/);
+      if (!m) return hsl;
+      let h = +m[1];
+      let s = +m[2];
+      let l = Math.max(0, Math.min(100, +m[3] + amt));
+      return `hsl(${h},${s}%,${l}%)`;
+    }
+
+    function drawBlock(x, y, w, color) {
+      const depth = 10;
+
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, w, BLOCK_HEIGHT);
+
+      ctx.fillStyle = shade(color, 15);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + depth, y - depth);
+      ctx.lineTo(x + w + depth, y - depth);
+      ctx.lineTo(x + w, y);
+      ctx.fill();
+
+      ctx.fillStyle = shade(color, -12);
+      ctx.beginPath();
+      ctx.moveTo(x + w, y);
+      ctx.lineTo(x + w + depth, y - depth);
+      ctx.lineTo(x + w + depth, y + BLOCK_HEIGHT - depth);
+      ctx.lineTo(x + w, y + BLOCK_HEIGHT);
+      ctx.fill();
+    }
+
+    const state = {
+      cameraY: 0,
+      running: true,
+      blocks: [
+        {
+          x: (width - 180) / 2,
+          y: height - BLOCK_HEIGHT,
+          width: 180,
+          color: randomColor(),
+        },
+      ],
+      moving: {
+        x: -180,
+        y: height - BLOCK_HEIGHT * 2,
+        width: 180,
+        dir: 1,
+        speed: 3,
+        color: randomColor(),
+      },
+      falling: [],
+      particles: [],
+    };
+
+    gameRef.current = state;
+
+    function spawnNext(widthNew, y) {
+      const fromLeft = Math.random() < 0.5;
+      state.moving = {
+        x: fromLeft ? -widthNew : width,
+        y,
+        width: widthNew,
+        dir: fromLeft ? 1 : -1,
+        speed: Math.min(10, 3 + state.blocks.length * 0.15),
+        color: randomColor(),
+      };
+    }
+
+    function spawnParticles(x, y, color) {
+      for (let i = 0; i < 20; i++) {
+        state.particles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 6,
+          vy: Math.random() * -6,
+          size: 6,
+          color,
+        });
+      }
+    }
+
+    function update(dt) {
+      const m = state.moving;
+
+      // horizontal movement
+      m.x += m.dir * m.speed;
+
+      if (m.x <= 0 && m.dir < 0) m.dir = 1;
+      if (m.x + m.width >= width && m.dir > 0) m.dir = -1;
+
+      // camera follow
+      const screenY = m.y + state.cameraY;
+      const target = height * 0.35;
+      if (screenY < target) state.cameraY += (target - screenY) * 0.1;
+
+      // falling physics
+      state.falling.forEach((f) => {
+        f.vy += 0.5;
+        f.y += f.vy;
+        f.x += f.vx;
+        f.rot += 0.05;
+      });
+
+      state.falling = state.falling.filter((f) => f.y < height + 200);
+
+      // particles
+      state.particles.forEach((p) => {
+        p.vy += 0.3;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.size *= 0.96;
+      });
+
+      state.particles = state.particles.filter((p) => p.size > 0.5);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      // sky gradient based on height
+      const t = Math.min(1, state.blocks.length / 80);
+      const sky = ctx.createLinearGradient(0, 0, 0, height);
+      sky.addColorStop(0, `hsl(210,40%,${80 - t * 50}%)`);
+      sky.addColorStop(1, `hsl(220,30%,${50 - t * 40}%)`);
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, width, height);
+
+      state.blocks.forEach((b) =>
+        drawBlock(b.x, b.y + state.cameraY, b.width, b.color)
+      );
+
+      const m = state.moving;
+      if (state.running)
+        drawBlock(m.x, m.y + state.cameraY, m.width, m.color);
+
+      // falling
+      state.falling.forEach((f) =>
+        drawBlock(f.x, f.y + state.cameraY, f.width, f.color)
+      );
+
+      // particles
+      state.particles.forEach((p) => {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y + state.cameraY, p.size, p.size);
+      });
+    }
+
+    function loop() {
+      update();
+      draw();
+      if (state.running) rafRef.current = requestAnimationFrame(loop);
+    }
+
+    function place() {
+      if (!state.running) return;
+
+      const m = state.moving;
+      const top = state.blocks[state.blocks.length - 1];
+
+      const overlap = Math.min(m.x + m.width, top.x + top.width) - Math.max(m.x, top.x);
+
+      const delta = Math.abs(m.x - top.x);
+
+      // PERFECT
+      if (delta < PERFECT_TOL) {
+        m.x = top.x;
+        spawnParticles(m.x + m.width / 2, m.y, m.color);
+        setPerfectFlash(true);
+        setTimeout(() => setPerfectFlash(false), 120);
+      }
+
+      if (overlap <= 0) {
+        state.running = false;
+        setGameOver(true);
+        return;
+      }
+
+      const newX = Math.max(m.x, top.x);
+      const cut = m.width - overlap;
+
+      if (cut > 0.5) {
+        state.falling.push({
+          x: m.x < top.x ? m.x : newX + overlap,
+          y: m.y,
+          width: cut,
+          color: m.color,
+          vx: (Math.random() - 0.5) * 4,
+          vy: -4,
+          rot: 0,
+        });
+      }
+
+      state.blocks.push({
+        x: newX,
+        y: m.y,
+        width: overlap,
+        color: m.color,
+      });
+
+      setScore((s) => s + 1);
+
+      spawnNext(overlap, m.y - BLOCK_HEIGHT);
+    }
+
+    canvas.addEventListener("pointerdown", place);
+    loop();
+  }
+
+  function stopGame() {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  }
+
+  function restart() {
+    stopGame();
+    setScore(0);
+    setGameOver(false);
+    setTimeout(startGame, 50);
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-black gap-4">
+      <h1 className="text-white text-3xl font-bold">Stack</h1>
+
+      <div className="relative">
+        <canvas ref={canvasRef} className="rounded-xl shadow-2xl" />
+
+        {perfectFlash && (
+          <div className="absolute inset-0 bg-white/20 rounded-xl pointer-events-none" />
+        )}
+
+        {gameOver && (
+          <div className="absolute inset-0 bg-black/70 rounded-xl flex flex-col items-center justify-center gap-4 text-white">
+            <div className="text-3xl font-bold">Game Over</div>
+            <div>Score: {score}</div>
+            <button
+              onClick={restart}
+              className="bg-white text-black px-4 py-2 rounded-lg"
+            >
+              Play Again
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="text-white text-xl">Score: {score}</div>
+      <div className="text-white/60">Tap or click to stack</div>
+    </div>
+  );
+}
