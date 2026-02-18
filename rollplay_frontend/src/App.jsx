@@ -21,7 +21,7 @@ import DiceDuel from "./pages/DiceDuel";
 import QuickDraw from "./pages/QuickDraw";
 import TopRace from "./pages/TopRace";
 import TipToss from "./pages/TipToss";
-// import TipToss from "./pages/TipToss";
+import GuessingCard from "./pages/GuessingCard";
 
 
 export default function App() {
@@ -80,7 +80,7 @@ export default function App() {
           <Route path="/quick-draw" element={<QuickDraw />} />
           <Route path="/top-race" element={<TopRace />} />
           <Route path="/tip-toss" element={<TipToss />} />
-          {/* <Route path="/tip-toss" element={<TipToss />} /> */}
+          <Route path="/guessing-card" element={<GuessingCard />} />
           
         </Routes>
       </Router>

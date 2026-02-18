@@ -15,7 +15,7 @@ export default function ChooseGame() {
       <br />
       <Link to="/top-race">Top Race</Link>
       <br />
-      {/* <Link to="/"></Link> */}
+      <Link to="/guessing-card">guessing-card</Link>
       <br />
 
     </div>
