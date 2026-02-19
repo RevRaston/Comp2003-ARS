@@ -1,7 +1,7 @@
 /* GuessingCard.css */
 
 /* Body styling */
-body {
+.guessing-card-page {
     background-image: url("BeerBackGroundCartoon.png");
     background-size: cover;
     background-position: center;
@@ -9,7 +9,8 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
+    padding-top: 40px;
     text-align: center;
     margin: 0;
 }
@@ -27,9 +28,9 @@ body {
     display: flex;
     gap: 40px;
     margin: 20px 0;
-    transform: scale(1.2);
     justify-content: center;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 /* Individual Card */
@@ -49,4 +50,12 @@ body {
 /* Card Images */
 .card img {
     width: 96px;
+}
+
+/* Player Controls */
+.player-controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 10px;
 }

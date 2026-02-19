@@ -1,0 +1,9 @@
+players:
+  - id: 1
+    username: "Bob2"
+  - id: 2
+    username: "Jone"
+  - id: 3
+    username: "matikanefukukitaru"
+  - id: 4
+    username: "Roland"

@@ -1,191 +1,163 @@
 import React, { useEffect, useState } from "react";
-import "./GuessingCard.css"; // import CSS here
+import yaml from 'js-yaml';
+import playersYAML from './players.yml?raw';
+import "./GuessingCard.css";
 
 export default function GuessingCard() {
   const [timer, setTimer] = useState(3);
   const [gameStarted, setGameStarted] = useState(false);
-  const [rollNumber, setRollNumber] = useState(
-    Math.floor(Math.random() * 13) + 1
-  );
+  const [rollNumber, setRollNumber] = useState(Math.floor(Math.random() * 13) + 1);
 
-  const [player1Value, setPlayer1Value] = useState("1");
-  const [player2Value, setPlayer2Value] = useState("1");
-
+  const [players, setPlayers] = useState([]);
   const [aiPreview, setAiPreview] = useState("");
-  const [player1Locked, setPlayer1Locked] = useState(false);
-  const [player2Locked, setPlayer2Locked] = useState(false);
-
   const [outcome, setOutcome] = useState("");
 
   const beepSound = new Audio("/beep.mp3");
   const goSound = new Audio("/go.mp3");
 
-  // Card Images
-  function cardSpades(value) {
-    const names = { 1: "ace", 11: "jack", 12: "queen", 13: "king" };
-    const name = names[value] || value;
-    return `PNG-cards-1.3/${name}_of_spades.png`;
-  }
+  // Load players from YAML, fallback to default two players
+  useEffect(() => {
+    try {
+      const doc = yaml.load(playersYAML);
+      if (doc && doc.players && doc.players.length > 0) {
+        setPlayers(doc.players.map(p => ({
+          id: p.id,
+          username: p.username && p.username.trim() ? p.username : "Username",
+          value: "1",
+          locked: false
+        })));
+      } else {
+        // Fallback to default two players
+        setPlayers([
+          { id: 1, username: "Player1", value: "1", locked: false },
+          { id: 2, username: "Player2", value: "1", locked: false }
+        ]);
+      }
+    } catch (e) {
+      console.error("Failed to load YAML", e);
+      // Fallback to default two players
+      setPlayers([
+        { id: 1, username: "Player1", value: "1", locked: false },
+        { id: 2, username: "Player2", value: "1", locked: false }
+      ]);
+    }
+  }, []);
 
-  function cardClubs(value) {
+  // Card helpers
+  const getCardName = (value) => {
     const names = { 1: "ace", 11: "jack", 12: "queen", 13: "king" };
-    const name = names[value] || value;
-    return `PNG-cards-1.3/${name}_of_clubs.png`;
-  }
+    return names[value] || value;
+  };
 
-  function cardDiamonds(value) {
-    const names = { 1: "ace", 11: "jack", 12: "queen", 13: "king" };
-    const name = names[value] || value;
-    return `PNG-cards-1.3/${name}_of_diamonds.png`;
-  }
+  const cardSpades = (value) => `PNG-cards-1.3/${getCardName(value)}_of_spades.png`;
+  const cardClubs = (value) => `PNG-cards-1.3/${getCardName(value)}_of_clubs.png`;
+  const cardDiamonds = (value) => `PNG-cards-1.3/${getCardName(value)}_of_diamonds.png`;
+  const cardHearts = (value) => `PNG-cards-1.3/${getCardName(value)}_of_hearts.png`;
 
-  // AI Preview Animation
+  const suitFunctions = [cardClubs, cardDiamonds, cardHearts, cardSpades];
+
+  // AI Rolling Preview
   useEffect(() => {
     if (gameStarted) return;
-
     const rolling = setInterval(() => {
       const randomNum = Math.floor(Math.random() * 13) + 1;
       setAiPreview(cardSpades(randomNum));
     }, 100);
-
     return () => clearInterval(rolling);
   }, [gameStarted]);
 
-    // Countdown Timer
-    useEffect(() => {
+  // Countdown
+  useEffect(() => {
     if (timer < 0) {
-        setGameStarted(true);
-        setAiPreview(""); // <-- Hide AI preview when countdown ends
-        goSound.play();
-        return;
+      setGameStarted(true);
+      setAiPreview("");
+      goSound.play();
+      return;
     }
-
     beepSound.currentTime = 0;
-    beepSound.play(); // play beep each second 
-
-
-    const interval = setInterval(() => {
-        setTimer((prev) => prev - 1);
-    }, 1000);
-
+    beepSound.play();
+    const interval = setInterval(() => setTimer(prev => prev - 1), 1000);
     return () => clearInterval(interval);
-    }, [timer]);
+  }, [timer]);
 
+  // Lock player
+  const lockPlayer = (id) => {
+    setPlayers(prev => prev.map(p => p.id === id ? { ...p, locked: true } : p));
+  };
+
+  // Update player value
+  const updatePlayerValue = (id, value) => {
+    setPlayers(prev => prev.map(p => p.id === id ? { ...p, value } : p));
+  };
 
   // Check Winner
-  function checkClosest() {
-    const p1 = Number(player1Value);
-    const p2 = Number(player2Value);
-    const ai = rollNumber;
-
-    const diff1 = Math.abs(p1 - ai);
-    const diff2 = Math.abs(p2 - ai);
-
-    if (diff1 < diff2) setOutcome("Player 1 wins 🎉");
-    else if (diff2 < diff1) setOutcome("Player 2 wins 🎉");
-    else setOutcome("It's a tie!");
-  }
-
   useEffect(() => {
-    if (player1Locked && player2Locked) checkClosest();
-  }, [player1Locked, player2Locked]);
+    if (!players.length) return;
+    const allLocked = players.every(p => p.locked);
+    if (!allLocked) return;
+
+    const ai = rollNumber;
+    let smallestDiff = Infinity;
+    let winners = [];
+
+    players.forEach(player => {
+      const diff = Math.abs(Number(player.value) - ai);
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        winners = [player.id];
+      } else if (diff === smallestDiff) {
+        winners.push(player.id);
+      }
+    });
+
+    if (winners.length === 1) {
+      const winner = players.find(p => p.id === winners[0]);
+      setOutcome(`${winner.username} wins 🎉`);
+    } else {
+      const winnerNames = winners.map(id => players.find(p => p.id === id).username);
+      setOutcome(`It's a tie between ${winnerNames.join(", ")}!`);
+    }
+  }, [players, rollNumber]);
 
   return (
-    <div>
+    <div className="guessing-card-page">
       <h1 className="title">Guessing Card</h1>
 
-      <div>
-        {timer >= 0 ? (
-          <h2>{timer === 0 ? "Go!" : `${timer} Seconds`}</h2>
-        ) : (
-          <h2>Choose your cards!</h2>
-        )}
-      </div>
+      <div>{timer >= 0 ? <h2>{timer === 0 ? "Go!" : `${timer} Seconds`}</h2> : <h2>Choose your cards!</h2>}</div>
 
       <div className="card-row">
-        <div className="card">
-          <p>Player 1 Card</p>
-          <img src={cardClubs(player1Value)} alt="Player1" />
-        </div>
+        {players.map((player, index) => (
+          <div className="card" key={player.id}>
+            <p>{player.username}</p>
+            <img src={suitFunctions[index](player.value)} alt={player.username} />
+          </div>
+        ))}
 
+        {/* AI Card */}
         <div className="card">
-            <p>AI Card</p>
-            {!gameStarted ? (
-                // During countdown, show rolling AI preview
-                <img src={aiPreview} alt="AI preview" />
-            ) : player1Locked && player2Locked ? (
-                // Once both players have locked, show final AI card
-                <img src={cardSpades(rollNumber)} alt="AI final" />
-            ) : (
-                // Otherwise, hide AI card
-                <img src="" alt="AI hidden" />
-            )}
-        </div>
-
-
-        <div className="card">
-          <p>Player 2 Card</p>
-          <img src={cardDiamonds(player2Value)} alt="Player2" />
+          <p>AI Card</p>
+          {!gameStarted ? <img src={aiPreview} alt="AI preview" /> : players.every(p => p.locked) ? <img src={cardSpades(rollNumber)} alt="AI final" /> : <img src="" alt="AI hidden" />}
         </div>
       </div>
 
-      <div>
-        <select
-          disabled={!gameStarted || player1Locked}
-          value={player1Value}
-          onChange={(e) => setPlayer1Value(e.target.value)}
-        >
-          {[...Array(13)].map((_, i) => (
-            <option key={i + 1} value={i + 1}>
-              {i + 1 === 1
-                ? "A"
-                : i + 1 === 11
-                ? "J"
-                : i + 1 === 12
-                ? "Q"
-                : i + 1 === 13
-                ? "K"
-                : i + 1}
-            </option>
-          ))}
-        </select>
-
-        <button
-          disabled={!gameStarted || player1Locked}
-          onClick={() => setPlayer1Locked(true)}
-        >
-          Lock Player 1
-        </button>
-      </div>
-
-      <div style={{ marginTop: 20 }}>
-        <select
-          disabled={!gameStarted || player2Locked}
-          value={player2Value}
-          onChange={(e) => setPlayer2Value(e.target.value)}
-        >
-          {[...Array(13)].map((_, i) => (
-            <option key={i + 1} value={i + 1}>
-              {i + 1 === 1
-                ? "A"
-                : i + 1 === 11
-                ? "J"
-                : i + 1 === 12
-                ? "Q"
-                : i + 1 === 13
-                ? "K"
-                : i + 1}
-            </option>
-          ))}
-        </select>
-
-        <button
-          disabled={!gameStarted || player2Locked}
-          onClick={() => setPlayer2Locked(true)}
-        >
-          Lock Player 2
-        </button>
-      </div>
+      {/* Controls */}
+      {players.map(player => (
+        <div key={player.id} style={{ marginTop: 20 }}>
+          <p>{player.username}</p>
+          <div className="player-controls">
+            <select disabled={!gameStarted || player.locked} value={player.value} onChange={e => updatePlayerValue(player.id, e.target.value)}>
+              {[...Array(13)].map((_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {i + 1 === 1 ? "A" : i + 1 === 11 ? "J" : i + 1 === 12 ? "Q" : i + 1 === 13 ? "K" : i + 1}
+                </option>
+              ))}
+            </select>
+            <button disabled={!gameStarted || player.locked} onClick={() => lockPlayer(player.id)}>
+              Lock {player.username}
+            </button>
+          </div>
+        </div>
+      ))}
 
       <h2 style={{ marginTop: 30 }}>{outcome}</h2>
     </div>
