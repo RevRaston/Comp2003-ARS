@@ -42,44 +42,15 @@ let currentGame = {
 /* ---------------------------------------
    EXPRESS + SUPABASE SETUP
 ----------------------------------------- */
-const app = express();
 
 /* ------------------ SUPER SIMPLE GLOBAL CORS ------------------ */
 
-const ALLOWED_ORIGINS = new Set([
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "https://rollpay.netlify.app",
-]);
+const app = express();
 
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
+// 🔓 Allow all origins (temporary to eliminate CORS issues)
+app.use(cors());
 
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
-  }
-
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Player-Id"
-  );
-
-  // Handle preflight requests quickly
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
-
-/* -------------------------------------------------------------- */
-
+// Parse JSON
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
