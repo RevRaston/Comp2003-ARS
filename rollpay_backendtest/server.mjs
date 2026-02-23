@@ -44,11 +44,24 @@ let currentGame = {
 ----------------------------------------- */
 const app = express();
 
-// ✅ CORS — development friendly: allow any origin
+// ✅ CORS (tight but dev-friendly)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://rollpay.netlify.app",   // 👈 add this
+];
+
 app.use(
   cors({
-    origin: true,        // reflect the request Origin header
-    credentials: true,   // allow cookies/auth headers
+    origin: (origin, cb) => {
+      // allow non-browser clients (curl/postman)
+      if (!origin) return cb(null, true);        // direct hits / Postman etc.
+      if (allowedOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      return cb(new Error("CORS blocked: " + origin));
+    },
+    credentials: true,
   })
 );
 
