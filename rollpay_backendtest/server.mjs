@@ -3,7 +3,7 @@ console.log("🔥 RUNNING SERVER:");
 console.log("🔥 PATH:", import.meta.url);
 
 import express from "express";
-import cors from "cors"; // now optional, but fine to keep
+import cors from "cors";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import path from "path";
@@ -42,15 +42,18 @@ let currentGame = {
 /* ---------------------------------------
    EXPRESS + SUPABASE SETUP
 ----------------------------------------- */
-
-/* ------------------ SUPER SIMPLE GLOBAL CORS ------------------ */
-
 const app = express();
 
-// 🔓 Allow all origins (temporary to eliminate CORS issues)
+/**
+ * ✅ SIMPLE GLOBAL CORS
+ *
+ * For now we just allow all origins. This will add
+ *   Access-Control-Allow-Origin: *
+ * and make the Netlify → Render requests pass CORS.
+ *
+ * Once everything works we can tighten it if we want.
+ */
 app.use(cors());
-
-// Parse JSON
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
@@ -359,7 +362,6 @@ app.post("/sessions/:code/start-round", async (req, res) => {
   const roundNum = Number(round_number) || 1;
 
   try {
-    // 1) find session by code
     const { data: session, error: sessionErr } = await supa
       .from("sessions")
       .select("*")
@@ -380,7 +382,6 @@ app.post("/sessions/:code/start-round", async (req, res) => {
       roundNum
     );
 
-    // 2) update current_round
     const { data: updated, error: updateErr } = await supa
       .from("sessions")
       .update({ current_round: roundNum })
