@@ -1,89 +1,106 @@
+// src/pages/JoinSession.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 
-const API_BASE = "http://localhost:3000";
+// ✅ Use env var in production (Netlify), fallback to localhost for local dev
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(
+  /\/$/,
+  ""
+);
 
 export default function JoinSession({ token }) {
   const navigate = useNavigate();
   const { setSessionInfo, profile } = useGame();
 
   const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function join() {
+  async function handleJoin() {
     setError("");
 
-    if (!token) {
-      setError("You must be signed in.");
-      return;
-    }
-
-    if (!profile) {
-      setError("You need to complete your profile first.");
-      return;
-    }
-
     if (!code.trim()) {
-      setError("Enter the session code.");
+      setError("Please enter a code.");
       return;
     }
 
-    const sessionCode = code.trim().toUpperCase();
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
+
+    setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/sessions/${sessionCode}/join`, {
+      const res = await fetch(`${API_BASE}/sessions/${code.trim()}/join`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-Player-Id": localStorage.getItem("player_id"),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ name: profile.displayName }),
+        body: JSON.stringify({
+          name: name.trim(),
+        }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      let data = null;
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
 
+      if (!res.ok) {
+        const msg =
+          data?.error ||
+          data?.message ||
+          `Failed to join session (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+
+      // store session + player info in context
       setSessionInfo({
         sessionId: data.session_id,
-        sessionCode,
+        sessionCode: code.trim(),
         isHost: false,
+        playerId: data.player_id,
+        playerName: data.name,
       });
 
       navigate("/lobby");
     } catch (err) {
-      setError(err.message);
+      console.error(err);
+      setError(err?.message || "Failed to join session");
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
     <div className="JoinSessionBox">
-      <h1>Join a Session</h1>
+      <h1>Join a Game</h1>
 
-      <p style={{ marginBottom: 12 }}>
-        Signed in as:{" "}
-        <strong>{profile ? profile.displayName : "Unknown"}</strong>
-      </p>
-
-      <label>Session Code</label>
+      <label>Code</label>
       <input
         value={code}
-        onChange={(e) => setCode(e.target.value)}
-        placeholder="ABC123"
+        onChange={(e) => setCode(e.target.value.toUpperCase())}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
+
+      <label>Your Name</label>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
         style={{ width: "100%", marginBottom: 12 }}
       />
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
-      <button onClick={join}>Join</button>
-
-      <button
-        style={{ marginTop: 12 }}
-        onClick={() => navigate("/profile")}
-        type="button"
-      >
-        Edit Profile
+      <button onClick={handleJoin} disabled={loading}>
+        {loading ? "Joining..." : "Join Session"}
       </button>
     </div>
   );
