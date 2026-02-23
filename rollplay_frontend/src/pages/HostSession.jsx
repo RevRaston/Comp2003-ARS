@@ -1,12 +1,20 @@
+// src/pages/HostSession.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 
-// ✅ Use env var in production (Netlify), fallback to localhost for local dev
-const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(
-  /\/$/,
-  ""
-);
+// Decide a sensible default depending on where we are running
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
+// ✅ Use env var if present, otherwise fall back to the default above
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL || // extra safety if you set this instead
+  defaultBase
+).replace(/\/$/, "");
 
 export default function HostSession({ token }) {
   const navigate = useNavigate();
