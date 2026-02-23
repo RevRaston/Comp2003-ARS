@@ -1,10 +1,13 @@
-// src/pages/Lobby.jsx
+// src/pages/Lobby.jsx 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
 
-const API_BASE = "http://localhost:3000";
+// ✅ Use env var in production, fallback to localhost for local dev
+const API_BASE = (
+  import.meta.env.VITE_API_URL || "http://localhost:3000"
+).replace(/\/$/, "");
 
 export default function Lobby({ token }) {
   const navigate = useNavigate();
@@ -127,9 +130,9 @@ export default function Lobby({ token }) {
           isHost: computedIsHost,
         });
 
-        // If host already started the game → move everyone on
+        // If host already started the game → move everyone to Choose Game
         if (data.session.status === "in_progress") {
-          navigate("/arena");
+          navigate("/choose-game"); // 👈 match your real URL
         }
       } catch (err) {
         console.error("Lobby error:", err);
@@ -166,7 +169,8 @@ export default function Lobby({ token }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start game");
 
-      navigate("/arena");
+      // ✅ Go to Choose Game screen (which is LevelSelect under the hood)
+      navigate("/choose-game"); // 👈 match your router
     } catch (err) {
       console.error("Start game error:", err);
       setError(err.message);

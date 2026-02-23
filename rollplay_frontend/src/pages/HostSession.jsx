@@ -2,7 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 
-const API_BASE = "http://localhost:3000";
+// ✅ Use env var in production (Netlify), fallback to localhost for local dev
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(
+  /\/$/,
+  ""
+);
 
 export default function HostSession({ token }) {
   const navigate = useNavigate();
@@ -34,7 +38,7 @@ export default function HostSession({ token }) {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
-          "X-Player-Id": localStorage.getItem("player_id"),
+          "X-Player-Id": localStorage.getItem("player_id") || "",
         },
         body: JSON.stringify({
           host_name: profile.displayName,
@@ -43,8 +47,22 @@ export default function HostSession({ token }) {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create session");
+      // Try to parse JSON, but don't crash if backend returns non-JSON
+      let data = null;
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        const msg =
+          data?.error ||
+          data?.message ||
+          `Failed to create session (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
 
       setSessionInfo({
         sessionId: data.session_id,
@@ -54,7 +72,7 @@ export default function HostSession({ token }) {
 
       navigate("/lobby");
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || "Failed to create session");
       console.error(err);
     } finally {
       setLoading(false);
@@ -86,9 +104,7 @@ export default function HostSession({ token }) {
         style={{ width: "100%", marginBottom: 12 }}
       >
         <option value="winner_free">Winner Drinks Free</option>
-        <option value="leaderboard_weighted">
-          Leaderboard Weighted Split
-        </option>
+        <option value="leaderboard_weighted">Leaderboard Weighted Split</option>
         <option value="loser_pays_most">Loser Pays Most</option>
         <option value="roulette_payer">Random Roulette Payer</option>
         <option value="even_split">Even Split</option>

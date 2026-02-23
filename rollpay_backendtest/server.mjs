@@ -45,20 +45,16 @@ let currentGame = {
 const app = express();
 
 // ✅ CORS (tight but dev-friendly)
-// Add your Netlify domain(s) here:
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  // Replace this with your real Netlify site URL(s)
-  // Example:
-  // "https://your-site.netlify.app",
+  // add your Netlify URL(s) here when deploying
 ];
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      // allow non-browser clients (curl/postman)
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true); // allow non-browser clients
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error("CORS blocked: " + origin));
     },
@@ -77,7 +73,7 @@ export const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// helper for authed Supabase instance
+// helper for authed Supabase instance (respects JWT / RLS)
 function supaForRequest(req) {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
     global: { headers: { Authorization: req.headers.authorization || "" } },
@@ -303,6 +299,7 @@ app.post("/sessions", async (req, res) => {
         total_cost: total,
         rule,
         status: "waiting",
+        current_round: null, // new column defaults
       },
     ])
     .select()
@@ -329,7 +326,7 @@ app.post("/sessions", async (req, res) => {
   });
 });
 
-// Host starts the session
+// Host starts the session (status -> in_progress)
 app.post("/sessions/:code/start", async (req, res) => {
   const { code } = req.params;
   const supa = supaForRequest(req);
@@ -362,6 +359,65 @@ app.post("/sessions/:code/start", async (req, res) => {
     message: "Session started!",
     session_id: session.id,
   });
+});
+
+// ⭐ NEW: Host starts a specific round (sets current_round)
+app.post("/sessions/:code/start-round", async (req, res) => {
+  const { code } = req.params;
+  const { round_number } = req.body || {};
+  const supa = supaForRequest(req);
+
+  const roundNum = Number(round_number) || 1;
+
+  try {
+    // 1) find session by code
+    const { data: session, error: sessionErr } = await supa
+      .from("sessions")
+      .select("*")
+      .eq("code", code)
+      .single();
+
+    if (sessionErr || !session) {
+      console.error("[start-round] session lookup error:", sessionErr);
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    console.log(
+      "[start-round] updating session",
+      session.id,
+      "code",
+      session.code,
+      "to round",
+      roundNum
+    );
+
+    // 2) update current_round
+    const { data: updated, error: updateErr } = await supa
+      .from("sessions")
+      .update({ current_round: roundNum })
+      .eq("id", session.id)
+      .select("id, code, current_round")
+      .single();
+
+    if (updateErr) {
+      console.error("[start-round] updateErr:", updateErr);
+      return res.status(500).json({
+        error: "Failed to update current_round",
+        detail: updateErr.message,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      session: updated,
+    });
+  } catch (err) {
+    console.error("[start-round] unexpected error:", err);
+    return res.status(500).json({
+      error: "Failed to update current_round",
+      detail: String(err),
+    });
+  }
 });
 
 // Lobby state

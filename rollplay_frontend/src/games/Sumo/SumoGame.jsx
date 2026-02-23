@@ -2,49 +2,73 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Sumo (MVP) — WebSocket multiplayer simulation (Option A: Host-authoritative)
+ * Sumo — WebSocket multiplayer simulation with win conditions.
  *
- * Host-authoritative:
- *  - Host runs physics + broadcasts state at ~25hz
- *  - Clients send input at ~20hz
- *  - Clients render host state
+ * Host:
+ *  - Runs physics + timer + win logic
+ *  - Broadcasts state regularly
  *
- * Transport: WebSocket (ws://localhost:3000)
- * Later (Option B): move simulation to server, keep message shapes.
+ * Clients:
+ *  - Send input to host
+ *  - Render host state
+ *
+ * Win:
+ *  1) If a player is pushed out of the ring → other player wins.
+ *  2) If 20s timer expires → whoever is closest to centre wins.
  */
+
+const WS_URL =
+  (import.meta.env.VITE_WS_URL &&
+    import.meta.env.VITE_WS_URL.replace(/\/$/, "")) ||
+  "ws://localhost:3000/ws";
+
+const ROUND_TIME = 20; // seconds
+
+function getUserKey(p) {
+  if (!p) return "";
+  const k =
+    p.user_id ??
+    p.userId ??
+    p.auth_user_id ??
+    p.profile_id ??
+    p.profileId ??
+    p.owner_id ??
+    p.ownerId ??
+    p.id;
+  return k ? String(k) : "";
+}
+
 export default function SumoGame({
   sessionCode,
   isHost,
   players,
   myUserId,
   mySeatIndex,
+  // 👇 NEW: optional callback fired once when round finishes
+  onRoundComplete,
 }) {
   const canvasRef = useRef(null);
 
   const [statusLine, setStatusLine] = useState("");
   const [connLine, setConnLine] = useState("disconnected");
+  const [summaryLine, setSummaryLine] = useState("");
 
   const wsRef = useRef(null);
   const runningRef = useRef(false);
 
-  // Host storage for client input
-  const inputByKeyRef = useRef(new Map()); // key -> { ax, ay, t }
-  const lastHostStateAtRef = useRef(performance.now());
+  // host: latest input per user key
+  const inputByKeyRef = useRef(new Map());
+  // host + clients: last state we render
+  const lastHostStateRef = useRef(null);
+  const lastHostStateAtRef = useRef(0);
 
-  // ---- Helpers -------------------------------------------------
+  // make sure we only call onRoundComplete *once*
+  const announcedRef = useRef(false);
 
-  function getUserKey(p) {
-    if (!p) return "";
-    const k =
-      p.user_id ??
-      p.userId ??
-      p.auth_user_id ??
-      p.profile_id ??
-      p.profileId ??
-      p.owner_id ??
-      p.ownerId ??
-      p.id;
-    return k ? String(k) : "";
+  function wsSend(obj) {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(obj));
   }
 
   const code = sessionCode || localStorage.getItem("session_code") || "local";
@@ -62,49 +86,36 @@ export default function SumoGame({
 
   const myId = myUserId ? String(myUserId) : "";
 
-  // Which seat does THIS client control? 0,1 or -1 spectator
+  // Which slot do *we* control? 0, 1, or -1 (spectator)
   const myControlIndex = useMemo(() => {
     if (!active.hasTwo) return -1;
 
-    // strongest: match auth/profile id
     if (myId && myId === active.p1Key) return 0;
     if (myId && myId === active.p2Key) return 1;
 
-    // fallback: seat index passed from Arena
     if (mySeatIndex === 0) return 0;
     if (mySeatIndex === 1) return 1;
 
     return -1;
   }, [active.hasTwo, active.p1Key, active.p2Key, myId, mySeatIndex]);
 
-  function wsSend(obj) {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify(obj));
-  }
-
-  // ---- Main effect -------------------------------------------------
   useEffect(() => {
     if (!active.hasTwo) return;
-
-    // Prevent double-mount loop (React strict mode dev)
     if (runningRef.current) return;
     runningRef.current = true;
 
-    let raf = 0;
+    // when we mount a new Sumo, reset the “already announced” flag
+    announcedRef.current = false;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext("2d");
 
-    // Fixed internal sim size
     const W = 680;
     const H = 420;
     canvas.width = W;
     canvas.height = H;
 
-    // focus helper
     function onCanvasPointerDown() {
       canvas.focus?.();
       window.focus();
@@ -114,9 +125,12 @@ export default function SumoGame({
     const arena = { x: W / 2, y: H / 2, radius: Math.min(W, H) * 0.4 };
     const P_RADIUS = 18;
 
-    // World (host authoritative)
+    // World shared between host & client drawing
     const worldRef = {
       tick: 0,
+      timeLeft: ROUND_TIME,
+      roundOver: false,
+      winnerKey: null,
       players: [
         {
           key: active.p1Key,
@@ -125,6 +139,7 @@ export default function SumoGame({
           r: P_RADIUS,
           vx: 0,
           vy: 0,
+          alive: true,
         },
         {
           key: active.p2Key,
@@ -133,21 +148,28 @@ export default function SumoGame({
           r: P_RADIUS,
           vx: 0,
           vy: 0,
+          alive: true,
         },
       ],
     };
 
-    // Local input
+    // ---- keyboard input (local to this tab) --------------------------
     const keys = new Set();
-    const localAxes = { ax: 0, ay: 0 };
+
+    function onKeyDown(e) {
+      keys.add(e.key);
+    }
+    function onKeyUp(e) {
+      keys.delete(e.key);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
 
     function computeAxes() {
       let ax = 0;
       let ay = 0;
 
-      // IMPORTANT:
-      // Each client can use either scheme; host only applies its own local input
-      // to the seat it controls, and applies remote input to the other seat.
       if (keys.has("w") || keys.has("W") || keys.has("ArrowUp")) ay -= 1;
       if (keys.has("s") || keys.has("S") || keys.has("ArrowDown")) ay += 1;
       if (keys.has("a") || keys.has("A") || keys.has("ArrowLeft")) ax -= 1;
@@ -161,17 +183,7 @@ export default function SumoGame({
       return { ax, ay };
     }
 
-    function onKeyDown(e) {
-      keys.add(e.key);
-    }
-    function onKeyUp(e) {
-      keys.delete(e.key);
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-
-    // Physics tuning
+    // ---- physics tuning -----------------------------------------------
     const ACCEL = 0.55;
     const MAX_SPEED = 6.2;
     const FRICTION = 0.88;
@@ -184,6 +196,7 @@ export default function SumoGame({
     }
 
     function applyInput(p, ax, ay) {
+      if (!p.alive) return;
       p.vx += ax * ACCEL;
       p.vy += ay * ACCEL;
 
@@ -196,37 +209,31 @@ export default function SumoGame({
     }
 
     function integrate(p) {
+      if (!p.alive) return;
       p.x += p.vx;
       p.y += p.vy;
-
       p.vx *= FRICTION;
       p.vy *= FRICTION;
-
       if (Math.abs(p.vx) < 0.01) p.vx = 0;
       if (Math.abs(p.vy) < 0.01) p.vy = 0;
     }
 
-    function keepInsideArena(p) {
+    // ring-out detection instead of clamping
+    function checkRingOut(p) {
+      if (!p.alive) return;
       const dx = p.x - arena.x;
       const dy = p.y - arena.y;
       const dist = Math.hypot(dx, dy);
-      const maxDist = arena.radius - p.r;
+      const limit = arena.radius - p.r * 0.1;
 
-      if (dist > maxDist) {
-        const [nx, ny] = normalize(dx, dy);
-
-        p.x = arena.x + nx * maxDist;
-        p.y = arena.y + ny * maxDist;
-
-        const vDotN = p.vx * nx + p.vy * ny;
-        if (vDotN > 0) {
-          p.vx = p.vx - (1 + BOUNCE) * vDotN * nx;
-          p.vy = p.vy - (1 + BOUNCE) * vDotN * ny;
-        }
+      if (dist > limit) {
+        p.alive = false;
       }
     }
 
     function resolveCollision(a, b) {
+      if (!a.alive || !b.alive) return;
+
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 1;
@@ -249,7 +256,7 @@ export default function SumoGame({
         const velAlongNormal = rvx * nx + rvy * ny;
 
         if (velAlongNormal < 0) {
-          const j = (-velAlongNormal) * PUSH;
+          const j = -velAlongNormal * PUSH;
           const ix = j * nx;
           const iy = j * ny;
           a.vx -= ix;
@@ -260,7 +267,7 @@ export default function SumoGame({
       }
     }
 
-    // Draw
+    // ---- drawing helpers ----------------------------------------------
     function drawArena() {
       ctx.clearRect(0, 0, W, H);
 
@@ -288,7 +295,8 @@ export default function SumoGame({
     }
 
     function drawPlayer(p, color) {
-      // shadow
+      if (!p.alive) return;
+
       ctx.beginPath();
       ctx.ellipse(
         p.x,
@@ -325,241 +333,295 @@ export default function SumoGame({
       ctx.stroke();
     }
 
-    function drawHUD(lines) {
+    function drawHUD(state) {
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       ctx.font = "13px system-ui, -apple-system, Segoe UI, sans-serif";
-      let y = 18;
-      for (const line of lines) {
-        ctx.fillText(line, 14, y);
-        y += 18;
+
+      let y = 24;
+      const roleText = isHost ? "HOST (authoritative)" : "CLIENT";
+      ctx.fillText(roleText, 24, y);
+      y += 18;
+
+      const controlsText =
+        myControlIndex === -1
+          ? "Controls: spectator (no input)"
+          : "Controls: WASD or Arrow keys";
+      ctx.fillText(controlsText, 24, y);
+      y += 18;
+
+      const youText =
+        myControlIndex === -1
+          ? "You are: spectator"
+          : `You are: P${myControlIndex + 1}`;
+      ctx.fillText(youText, 24, y);
+
+      // timer / winner in top-centre
+      ctx.textAlign = "center";
+      const cx = W / 2;
+      const topY = 24;
+
+      if (state.roundOver) {
+        ctx.fillText("Round Over!", cx, topY);
+        let label = "No winner";
+        if (state.winnerKey === active.p1Key) label = "Winner: P1";
+        if (state.winnerKey === active.p2Key) label = "Winner: P2";
+        ctx.fillText(label, cx, topY + 18);
+      } else {
+        ctx.fillText(`Time: ${Math.ceil(state.timeLeft)}`, cx, topY);
       }
+
+      ctx.textAlign = "left";
     }
 
     function drawFrame() {
+      const state = lastHostStateRef.current || worldRef;
+
       drawArena();
 
-      const w = worldRef.players;
-
-      // "you are blue on YOUR screen"
       const blueIndex = myControlIndex === 1 ? 1 : 0;
       const redIndex = blueIndex === 0 ? 1 : 0;
 
-      drawPlayer(w[blueIndex], "#4DD0FF");
-      drawPlayer(w[redIndex], "#FF5C86");
+      const pBlue = state.players[blueIndex];
+      const pRed = state.players[redIndex];
 
-      const stalled =
-        !isHost && performance.now() - lastHostStateAtRef.current > 1200;
+      if (pBlue) drawPlayer(pBlue, "#4DD0FF");
+      if (pRed) drawPlayer(pRed, "#FF5C86");
 
-      drawHUD([
-        "Click the game then move (WASD or Arrow Keys).",
-        myControlIndex === -1
-          ? "Spectating (not P1/P2)."
-          : `You control P${myControlIndex + 1} (BLUE).`,
-        stalled ? "⚠ Host state stalled (no updates)." : "No win condition yet — just push!",
-      ]);
-    }
+      drawHUD(state);
 
-    // ---- WebSocket wiring ----------------------------------------
+      if (state.roundOver) {
+        if (state.winnerKey === active.p1Key)
+          setSummaryLine("Round over – winner: P1.");
+        else if (state.winnerKey === active.p2Key)
+          setSummaryLine("Round over – winner: P2.");
+        else setSummaryLine("Round over – no winner.");
 
-    const WS_URL = "ws://localhost:3000";
-
-    function connectWs() {
-      setConnLine("connecting…");
-
-      const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setConnLine("connected ✅");
-
-        wsSend({
-          type: "join",
-          sessionCode: code,
-          userId: myId || null,
-        });
-
-        setStatusLine(
-          `Sumo WS: ${isHost ? "HOST" : "CLIENT"} — room=${code} — ` +
-            `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"} control=${myControlIndex}`
-        );
-      };
-
-      ws.onclose = () => {
-        setConnLine("disconnected");
-      };
-
-      ws.onerror = () => {
-        setConnLine("error");
-      };
-
-      ws.onmessage = (ev) => {
-        let msg;
-        try {
-          msg = JSON.parse(ev.data);
-        } catch {
-          return;
-        }
-
-        if (!msg || msg.sessionCode !== code) return;
-
-        if (msg.type === "state") {
-          // clients apply host state
-          if (isHost) return;
-
-          lastHostStateAtRef.current = performance.now();
-
-          const payload = msg.payload;
-          if (!payload?.players || payload.players.length < 2) return;
-
-          worldRef.tick = payload.tick ?? worldRef.tick;
-
-          for (let i = 0; i < 2; i++) {
-            const s = payload.players[i];
-            const p = worldRef.players[i];
-            if (!s || !p) continue;
-            p.key = s.key ?? p.key;
-            p.x = s.x ?? p.x;
-            p.y = s.y ?? p.y;
-            p.vx = s.vx ?? p.vx;
-            p.vy = s.vy ?? p.vy;
-            p.r = s.r ?? p.r;
-          }
-        }
-
-        if (msg.type === "input") {
-          // host receives client input
-          if (!isHost) return;
-
-          const payload = msg.payload;
-          const k = payload?.key ? String(payload.key) : "";
-          if (!k) return;
-
-          inputByKeyRef.current.set(k, {
-            ax: Number(payload.ax) || 0,
-            ay: Number(payload.ay) || 0,
-            t: Number(payload.t) || 0,
+        // 👇 NEW: notify parent exactly once (host *and* clients)
+        if (!announcedRef.current && typeof onRoundComplete === "function") {
+          announcedRef.current = true;
+          onRoundComplete({
+            winnerKey: state.winnerKey,
+            timeLeft: state.timeLeft,
           });
         }
-      };
+      } else {
+        setSummaryLine("");
+      }
     }
 
-    connectWs();
+    // --- WebSocket setup ------------------------------------------------
+    setConnLine("connecting…");
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
 
-    // ---- Rate limiting ------------------------------------------
+    ws.onopen = () => {
+      setConnLine("connected ✅");
+      wsSend({
+        type: "join",
+        sessionCode: code,
+        userId: myId || null,
+      });
 
-    const INPUT_HZ = 20; // client -> host
-    const STATE_HZ = 25; // host -> clients
-    const INPUT_MS = 1000 / INPUT_HZ;
-    const STATE_MS = 1000 / STATE_HZ;
+      setStatusLine(
+        `Sumo WS: ${isHost ? "HOST" : "CLIENT"} — room=${code} — ` +
+          `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"} control=${myControlIndex}`
+      );
+    };
+
+    ws.onclose = () => {
+      setConnLine("disconnected");
+    };
+
+    ws.onerror = (e) => {
+      console.error("[SUMO] WS error", e);
+      setConnLine("error");
+    };
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (!msg || msg.sessionCode !== code) return;
+
+      if (msg.type === "input" && isHost) {
+        const payload = msg.payload || {};
+        const k = payload.key ? String(payload.key) : "";
+        if (!k) return;
+        inputByKeyRef.current.set(k, {
+          ax: Number(payload.ax) || 0,
+          ay: Number(payload.ay) || 0,
+          t: Number(payload.t) || 0,
+        });
+      }
+
+      if (msg.type === "state" && !isHost) {
+        const payload = msg.payload;
+        if (!payload || !payload.players) return;
+        lastHostStateRef.current = payload;
+        lastHostStateAtRef.current = performance.now();
+      }
+    };
+
+    // --- simulation loop ------------------------------------------------
+    const INPUT_MS = 1000 / 20;
+    const STATE_MS = 1000 / 25;
 
     let lastInputSend = 0;
     let lastStateSend = 0;
 
-    // Host control seat: if host isn't recognized, default P1
-    const hostControlIndex = isHost && myControlIndex !== -1 ? myControlIndex : 0;
-
-    // ---- Game loop ----------------------------------------------
-
     let lastNow = performance.now();
     const STEP = 1000 / 60;
     let acc = 0;
+
+    // which player does the HOST control locally?
+    const hostControlIndex =
+      isHost && myControlIndex !== -1 ? myControlIndex : 0;
 
     function tick(now) {
       const dt = now - lastNow;
       lastNow = now;
       acc += dt;
 
-      const axes = computeAxes();
-      localAxes.ax = axes.ax;
-      localAxes.ay = axes.ay;
+      // current local axes (for this tab)
+      const { ax: localAx, ay: localAy } = computeAxes();
 
-      // CLIENT: send input at 20hz
+      // non-host: send input to host at 20Hz
       if (!isHost && myControlIndex !== -1 && now - lastInputSend >= INPUT_MS) {
         lastInputSend = now;
-        const myKey = myControlIndex === 0 ? active.p1Key : active.p2Key;
+        const myKey =
+          myControlIndex === 0 ? active.p1Key : active.p2Key;
         if (myKey) {
           wsSend({
             type: "input",
             sessionCode: code,
-            payload: { key: String(myKey), ax: localAxes.ax, ay: localAxes.ay, t: now },
+            payload: {
+              key: String(myKey),
+              ax: localAx,
+              ay: localAy,
+              t: now,
+            },
           });
         }
       }
 
+      // HOST: physics, timer, win conditions
       while (acc >= STEP) {
         if (isHost) {
-          const w = worldRef.players;
+          const w = worldRef;
+          if (!w.roundOver) {
+            // timer
+            w.timeLeft -= STEP / 1000;
+            if (w.timeLeft < 0) w.timeLeft = 0;
 
-          for (let idx = 0; idx < 2; idx++) {
-            let ax = 0;
-            let ay = 0;
+            // apply inputs
+            for (let i = 0; i < w.players.length; i++) {
+              const p = w.players[i];
 
-            if (idx === hostControlIndex) {
-              ax = localAxes.ax;
-              ay = localAxes.ay;
-            } else {
-              const otherKey = idx === 0 ? active.p1Key : active.p2Key;
-              const inp = otherKey ? inputByKeyRef.current.get(String(otherKey)) : null;
-              ax = inp?.ax || 0;
-              ay = inp?.ay || 0;
+              let ax = 0;
+              let ay = 0;
+
+              if (i === hostControlIndex) {
+                // host-controlled player uses local keyboard axes
+                ax = localAx;
+                ay = localAy;
+              } else {
+                // other player uses last input message
+                const k = p.key ? String(p.key) : "";
+                const inp = inputByKeyRef.current.get(k) || {
+                  ax: 0,
+                  ay: 0,
+                };
+                ax = inp.ax;
+                ay = inp.ay;
+              }
+
+              applyInput(p, ax, ay);
             }
 
-            if (ax !== 0 || ay !== 0) applyInput(w[idx], ax, ay);
+            w.players.forEach(integrate);
+            if (w.players.length >= 2) {
+              resolveCollision(w.players[0], w.players[1]);
+            }
+            w.players.forEach(checkRingOut);
+
+            // win by ring-out
+            const alive = w.players.filter((p) => p.alive);
+            if (alive.length === 1) {
+              w.roundOver = true;
+              w.winnerKey = alive[0].key;
+            } else if (alive.length === 0 && !w.roundOver) {
+              w.roundOver = true;
+              w.winnerKey = null;
+            }
+
+            // win by timer
+            if (!w.roundOver && w.timeLeft <= 0) {
+              w.roundOver = true;
+
+              let best = null;
+              let bestDist = Infinity;
+              for (const p of w.players) {
+                if (!p.alive) continue;
+                const d = Math.hypot(p.x - arena.x, p.y - arena.y);
+                if (d < bestDist) {
+                  bestDist = d;
+                  best = p;
+                }
+              }
+              w.winnerKey = best ? best.key : null;
+            }
+
+            w.tick += 1;
           }
-
-          integrate(w[0]);
-          integrate(w[1]);
-
-          resolveCollision(w[0], w[1]);
-          keepInsideArena(w[0]);
-          keepInsideArena(w[1]);
-
-          worldRef.tick += 1;
         }
 
         acc -= STEP;
       }
 
-      drawFrame();
-
-      // HOST: broadcast state at 25hz
+      // HOST: broadcast state at 25Hz
       if (isHost && now - lastStateSend >= STATE_MS) {
         lastStateSend = now;
+        const w = worldRef;
+        const payload = {
+          tick: w.tick,
+          timeLeft: w.timeLeft,
+          roundOver: w.roundOver,
+          winnerKey: w.winnerKey,
+          players: w.players.map((p) => ({
+            key: p.key,
+            x: p.x,
+            y: p.y,
+            r: p.r,
+            alive: p.alive,
+          })),
+        };
         wsSend({
           type: "state",
           sessionCode: code,
-          payload: {
-            tick: worldRef.tick,
-            players: worldRef.players.map((p) => ({
-              key: p.key,
-              x: p.x,
-              y: p.y,
-              vx: p.vx,
-              vy: p.vy,
-              r: p.r,
-            })),
-          },
+          payload,
         });
+        // host also uses this for its own drawing
+        lastHostStateRef.current = JSON.parse(JSON.stringify(payload));
       }
 
-      raf = requestAnimationFrame(tick);
+      drawFrame();
+      requestAnimationFrame(tick);
     }
 
-    raf = requestAnimationFrame(tick);
+    requestAnimationFrame(tick);
 
     return () => {
-      cancelAnimationFrame(raf);
-
+      runningRef.current = false;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("pointerdown", onCanvasPointerDown);
-
       try {
         wsRef.current?.close();
-      } catch {}
+      } catch (_) {}
       wsRef.current = null;
-
-      runningRef.current = false;
     };
   }, [
     active.hasTwo,
@@ -569,6 +631,7 @@ export default function SumoGame({
     isHost,
     myControlIndex,
     myId,
+    onRoundComplete, // 👈 important so React re-binds if callback changes
   ]);
 
   if (!active.hasTwo) {
@@ -593,13 +656,39 @@ export default function SumoGame({
   }
 
   return (
-    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      {/* Rules text */}
+      <p
+        style={{
+          fontSize: 14,
+          textAlign: "center",
+          maxWidth: 600,
+          margin: "0 auto 6px",
+        }}
+      >
+        Push your opponents out of the ring. Last player standing wins. If the
+        timer runs out, whoever is closest to the centre wins.
+      </p>
+
       <div style={{ fontSize: 12, opacity: 0.75, textAlign: "center" }}>
         {statusLine}
         <div style={{ opacity: 0.7, marginTop: 4 }}>{connLine}</div>
       </div>
 
-      <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+      <div
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
         <canvas
           ref={canvasRef}
           tabIndex={0}
@@ -613,6 +702,17 @@ export default function SumoGame({
             outline: "none",
           }}
         />
+      </div>
+
+      <div
+        style={{
+          fontSize: 14,
+          textAlign: "center",
+          minHeight: 20,
+          opacity: 0.9,
+        }}
+      >
+        {summaryLine}
       </div>
     </div>
   );

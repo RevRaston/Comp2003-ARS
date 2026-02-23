@@ -4,6 +4,10 @@ import { useNavigate } from "react-router-dom";
 import { GAME_LIST } from "../GameList";
 import { useGame } from "../GameContext";
 
+const API_BASE = (
+  import.meta.env.VITE_API_URL || "http://localhost:3000"
+).replace(/\/$/, "");
+
 export default function LevelSelect() {
   const navigate = useNavigate();
 
@@ -20,86 +24,74 @@ export default function LevelSelect() {
   const [localSelections, setLocalSelections] = useState(selectedLevels || []);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
-  const [serverLevels, setServerLevels] = useState([]);
 
   const MAX_ROUNDS = maxRounds ?? 3;
   const chosenIds = localSelections.map((s) => s.level.id);
-
   const allRoundsChosen = localSelections.length >= MAX_ROUNDS;
 
-  /* ----------------------------------------------------
-     FETCH LEVELS FROM SERVER (for joined players)
-  ---------------------------------------------------- */
-  async function fetchServerLevels() {
-    if (!sessionCode) return;
-
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/sessions/${sessionCode}/levels`
-      );
-
-      const data = await res.json();
-      if (!data?.levels) return;
-
-      setServerLevels(data.levels);
-
-      // Convert server rows -> frontend selection format
-      const converted = data.levels.map((row) => {
-        const levelObj = GAME_LIST.find((g) => g.id === row.level_key);
-        return {
-          round: row.round_number,
-          level: levelObj,
-        };
-      });
-
-      setLocalSelections(converted);
-      setSelectedLevels(converted);
-
-      // If host started game → joined player must navigate
-      const round1 = converted.find((r) => r.round === 1);
-      if (round1) {
-        navigate(`/game/${round1.level.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to load levels:", err);
-    }
-  }
-
-  /* ----------------------------------------------------
-     JOINED PLAYER: Poll every 1s for updates
-  ---------------------------------------------------- */
+  // --------------------------------------------------------
+  // JOINED PLAYERS: Poll backend session to know when
+  // host has started Round 1, then go to /arena.
+  // --------------------------------------------------------
   useEffect(() => {
-    if (!isHost) {
-      fetchServerLevels();
-      const poll = setInterval(fetchServerLevels, 1000);
-      return () => clearInterval(poll);
+    if (isHost) return; // host navigates directly on click
+
+    const code = sessionCode || localStorage.getItem("session_code");
+    if (!code) {
+      console.warn("[JOIN POLL] No sessionCode found, not polling.");
+      return;
     }
-  }, [isHost, sessionCode]);
 
-  /* ----------------------------------------------------
-     HOST: Save levels to backend
-  ---------------------------------------------------- */
-  async function saveLevelsToServer(updated) {
-    if (!isHost || !sessionCode) return;
+    let cancelled = false;
 
-    for (const entry of updated) {
-      await fetch(
-        `${import.meta.env.VITE_API_URL}/sessions/${sessionCode}/levels`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            round_number: entry.round,
-            level_key: entry.level.id,
-          }),
+    async function poll() {
+      const token = localStorage.getItem("access_token");
+      const headers = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.warn(
+            "LevelSelect session poll error:",
+            res.status,
+            data.error
+          );
+        } else if (data.session) {
+          console.log("[JOIN POLL] session:", data.session);
+          const currentRound = data.session.current_round ?? null;
+          console.log("[JOIN POLL] current_round:", currentRound);
+
+          if (currentRound === 1) {
+            console.log(
+              "[JOIN POLL] Round 1 started → navigate('/arena')"
+            );
+            navigate("/arena");
+            return;
+          }
         }
-      );
-    }
-  }
+      } catch (err) {
+        console.error("LevelSelect session poll failed:", err);
+      }
 
-  /* ----------------------------------------------------
-     HOST ONLY — Pick Level
-  ---------------------------------------------------- */
+      if (!cancelled) {
+        setTimeout(poll, 2000);
+      }
+    }
+
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [isHost, sessionCode, navigate]);
+
+  // --------------------------------------------------------
+  // HOST ONLY — Pick Level
+  // --------------------------------------------------------
   function chooseLevel(level) {
     if (!isHost) return;
     if (isSpinning) return;
@@ -108,7 +100,6 @@ export default function LevelSelect() {
 
     const existing = newSet.find((e) => e.round === round);
     if (existing) {
-      // replace
       existing.level = level;
     } else {
       newSet.push({ round, level });
@@ -119,14 +110,12 @@ export default function LevelSelect() {
     setLocalSelections(sorted);
     setSelectedLevels(sorted);
 
-    saveLevelsToServer(sorted);
-
     if (round < MAX_ROUNDS) setRound(round + 1);
   }
 
-  /* ----------------------------------------------------
-     HOST ONLY — Random spin
-  ---------------------------------------------------- */
+  // --------------------------------------------------------
+  // HOST ONLY — Random spin
+  // --------------------------------------------------------
   function handleRandomSpin() {
     if (!isHost) return;
     if (isSpinning || allRoundsChosen) return;
@@ -158,10 +147,10 @@ export default function LevelSelect() {
     }, 2000);
   }
 
-  /* ----------------------------------------------------
-     HOST ONLY — Start Round 1
-  ---------------------------------------------------- */
-  function handleStartRoundOne() {
+  // --------------------------------------------------------
+  // HOST ONLY — Start Round 1
+  // --------------------------------------------------------
+  async function handleStartRoundOne() {
     if (!isHost) return;
 
     const round1 = localSelections.find((s) => s.round === 1);
@@ -171,14 +160,51 @@ export default function LevelSelect() {
     }
 
     setSelectedLevels(localSelections);
-    saveLevelsToServer(localSelections);
+    setRound(1);
 
-    navigate(`/game/${round1.level.id}`);
+    const code = sessionCode || localStorage.getItem("session_code");
+
+    if (code) {
+      try {
+        const token = localStorage.getItem("access_token");
+        const headers = {
+          "Content-Type": "application/json",
+        };
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const res = await fetch(
+          `${API_BASE}/sessions/${code}/start-round`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ round_number: 1 }),
+          }
+        );
+
+        const data = await res.json();
+        if (!res.ok) {
+          console.error(
+            "[HOST] Failed to mark round start:",
+            res.status,
+            data.error
+          );
+        } else {
+          console.log("[HOST] Round 1 started on backend:", data);
+        }
+      } catch (err) {
+        console.error("Error calling /start-round:", err);
+      }
+    }
+
+    // Host jumps to Arena immediately
+    navigate("/arena");
   }
 
-  /* ----------------------------------------------------
-     RENDER
-  ---------------------------------------------------- */
+  // --------------------------------------------------------
+  // RENDER
+  // --------------------------------------------------------
   return (
     <div className="page level-select-page">
       <h1 className="page-title">Choose Levels</h1>
@@ -196,7 +222,7 @@ export default function LevelSelect() {
             );
 
             const disabled =
-              !isHost ||
+              !isHost || // joined players are spectators
               isSpinning ||
               isChosen ||
               allRoundsChosen;
@@ -234,7 +260,9 @@ export default function LevelSelect() {
           <h2>Round Plan</h2>
           <ol>
             {Array.from({ length: MAX_ROUNDS }).map((_, i) => {
-              const entry = localSelections.find((r) => r.round === i + 1);
+              const entry = localSelections.find(
+                (r) => r.round === i + 1
+              );
 
               return (
                 <li key={i}>
@@ -269,7 +297,8 @@ export default function LevelSelect() {
 
           {!isHost && (
             <p className="info-text">
-              Waiting for host to select levels…
+              Host is choosing levels… you&apos;ll play them in this order.
+              When Round 1 starts, you&apos;ll be taken into the Arena.
             </p>
           )}
         </div>

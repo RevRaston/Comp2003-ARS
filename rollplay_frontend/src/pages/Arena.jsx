@@ -3,11 +3,34 @@ import { useEffect, useMemo, useState } from "react";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
 import AvatarPreview from "../components/AvatarPreview";
+
 import SumoGame from "../games/Sumo/SumoGame";
+import DartsGame from "../games/Darts/DartsGame";
+import GuessingCardGame from "../games/GuessingCard/GuessingCardGame";
+import MazeGame from "../games/Maze/MazeGame"; // 👈 NEW
+
+// Map from level.id (from GAME_LIST) -> React component used in Arena
+const GAME_COMPONENTS = {
+  sumo: SumoGame,
+  darts: DartsGame,
+  guessing_card: GuessingCardGame,
+  maze: MazeGame, 
+};
 
 export default function Arena() {
-  const { players, profile, sessionCode, isHost } = useGame();
+  const {
+    players,
+    profile,
+    sessionCode,
+    isHost,
+    selectedLevels = [],
+    round = 1,
+  } = useGame();
+
   const [enrichedPlayers, setEnrichedPlayers] = useState([]);
+
+  // Local override so we can force "darts" after sumo ends
+  const [overrideGameId, setOverrideGameId] = useState(null);
 
   // Enrich players with profile info (display_name + avatar_json)
   useEffect(() => {
@@ -17,7 +40,9 @@ export default function Arena() {
         return;
       }
 
-      const everyoneHasAvatar = players.every((p) => p.avatar_json || p.avatarJson);
+      const everyoneHasAvatar = players.every(
+        (p) => p.avatar_json || p.avatarJson
+      );
       if (everyoneHasAvatar) {
         setEnrichedPlayers(players);
         return;
@@ -90,6 +115,30 @@ export default function Arena() {
     return -1;
   }, [myUserId, slotPlayers]);
 
+  // ----------------- Current round + game -----------------
+  const currentRound = round || 1;
+
+  const currentLevelEntry =
+    selectedLevels.find((entry) => entry.round === currentRound) ||
+    selectedLevels[0] ||
+    null;
+
+  const currentLevel = currentLevelEntry?.level || null;
+  const plannedLevelId = currentLevel?.id || "sumo";
+  const currentLevelName = currentLevel?.name || "Sumo (MVP)";
+
+  // If we’ve set an override (e.g. when sumo ends), use it.
+  const effectiveGameId = overrideGameId || plannedLevelId;
+  const CurrentGameComponent =
+    GAME_COMPONENTS[effectiveGameId] || SumoGame;
+
+  // Handler passed into Sumo. Runs on BOTH host & clients.
+  function handleSumoRoundComplete(info) {
+    // For now: always jump to Darts after Sumo ends.
+    // (Later we’ll look at the level plan instead of hardcoding.)
+    setOverrideGameId("darts");
+  }
+
   return (
     <div style={page}>
       <div style={titleWrap}>
@@ -97,6 +146,15 @@ export default function Arena() {
         <p style={subtitle}>
           Everyone sees the same game. Your avatars sit around the arena.
         </p>
+        <p style={{ margin: 4, opacity: 0.8, fontSize: 13 }}>
+          Round {currentRound}
+          {currentLevelName ? ` — ${currentLevelName}` : ""}
+        </p>
+        {overrideGameId && (
+          <p style={{ margin: 0, fontSize: 12, opacity: 0.7 }}>
+            Switched to: Darts
+          </p>
+        )}
       </div>
 
       <div style={arenaShell}>
@@ -109,26 +167,46 @@ export default function Arena() {
         {/* CENTER GAME PANEL */}
         <div style={centerCol}>
           <div style={centerHeader}>
-            <h2 style={{ margin: 0 }}>Sumo (MVP)</h2>
+            <h2 style={{ margin: 0 }}>
+              {effectiveGameId === plannedLevelId
+                ? currentLevelName
+                : "Darts"}
+            </h2>
             <p style={centerHint}>
-              Realtime: host sim + state broadcast, clients send input.
+              This round&apos;s game plays here. Host runs the simulation;
+              other players send input.
             </p>
             <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
               Your dot is <strong>BLUE</strong> on your screen. Opponent is{" "}
               <strong>RED</strong>.
             </p>
-            <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12, opacity: 0.7 }}>
+            <p
+              style={{
+                marginTop: 8,
+                marginBottom: 0,
+                fontSize: 12,
+                opacity: 0.7,
+              }}
+            >
               Tip: click the game canvas before moving (focus).
             </p>
           </div>
 
           <div style={gameBox}>
-            <SumoGame
-              sessionCode={sessionCode || localStorage.getItem("session_code")}
-              isHost={Boolean(isHost)}
+            <CurrentGameComponent
+              sessionCode={
+                sessionCode || localStorage.getItem("session_code")
+              }
               players={enrichedPlayers}
+              isHost={Boolean(isHost)}
               myUserId={myUserId}
               mySeatIndex={mySeatIndex}
+              // Only SumoGame cares about this; Darts will ignore it.
+              onRoundComplete={
+                effectiveGameId === "sumo"
+                  ? handleSumoRoundComplete
+                  : undefined
+              }
             />
           </div>
         </div>
@@ -259,7 +337,8 @@ const slotCard = {
   aspectRatio: "3 / 4",
   borderRadius: 26,
   padding: 6,
-  background: "linear-gradient(145deg, rgba(3,3,15,0.9), rgba(40,30,80,0.95))",
+  background:
+    "linear-gradient(145deg, rgba(3,3,15,0.9), rgba(40,30,80,0.95))",
   boxShadow: "0 18px 40px rgba(0,0,0,0.55)",
 };
 
@@ -267,7 +346,8 @@ const emptyInner = {
   width: "100%",
   height: "100%",
   borderRadius: 20,
-  background: "radial-gradient(circle at 20% 0%, #1A1035, #04040C 60%, #020208)",
+  background:
+    "radial-gradient(circle at 20% 0%, #1A1035, #04040C 60%, #020208)",
 };
 
 const slotFooter = {

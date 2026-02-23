@@ -109,10 +109,14 @@ export default function App() {
           if (session.user?.id) {
             localStorage.setItem("user_id", session.user.id);
           }
+
+          // ⭐ store access token for backend fetches (e.g. /start-round)
+          localStorage.setItem("access_token", session.access_token);
         } else {
           setToken(null);
           setUser(null);
           localStorage.removeItem("user_id");
+          localStorage.removeItem("access_token");
         }
       }
     );
@@ -126,6 +130,9 @@ export default function App() {
         if (data.session.user?.id) {
           localStorage.setItem("user_id", data.session.user.id);
         }
+
+        // ⭐ also restore token on reload
+        localStorage.setItem("access_token", data.session.access_token);
       }
     });
 
