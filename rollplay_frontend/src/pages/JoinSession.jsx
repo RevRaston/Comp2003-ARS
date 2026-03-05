@@ -1,93 +1,106 @@
+// src/pages/JoinSession.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useGame } from "../GameContext";
 
-const API_BASE = "http://localhost:3000";
+// ✅ Use env var in production (Netlify), fallback to localhost for local dev
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(
+  /\/$/,
+  ""
+);
 
 export default function JoinSession({ token }) {
-  const [name, setName] = useState("");
+  const navigate = useNavigate();
+  const { setSessionInfo, profile } = useGame();
+
   const [code, setCode] = useState("");
+  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const navigate = useNavigate();
 
   async function handleJoin() {
     setError("");
 
-    if (!token) {
-      setError("You must be signed in to join a session.");
+    if (!code.trim()) {
+      setError("Please enter a code.");
       return;
     }
 
-    if (!name.trim() || !code.trim()) {
-      setError("Please enter your name and the session code.");
+    if (!name.trim()) {
+      setError("Please enter your name.");
       return;
     }
-
-    const trimmedCode = code.trim().toUpperCase();
 
     setLoading(true);
+
     try {
-      const res = await fetch(`${API_BASE}/sessions/${trimmedCode}/join`, {
+      const res = await fetch(`${API_BASE}/sessions/${code.trim()}/join`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+        }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to join session");
+      let data = null;
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
       }
 
-      localStorage.setItem("session_code", trimmedCode);
-      localStorage.setItem("session_is_host", "false");
-      localStorage.setItem("player_name", name.trim());
+      if (!res.ok) {
+        const msg =
+          data?.error ||
+          data?.message ||
+          `Failed to join session (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+
+      // store session + player info in context
+      setSessionInfo({
+        sessionId: data.session_id,
+        sessionCode: code.trim(),
+        isHost: false,
+        playerId: data.player_id,
+        playerName: data.name,
+      });
 
       navigate("/lobby");
     } catch (err) {
-      console.error("Join error:", err);
-      setError(err.message);
+      console.error(err);
+      setError(err?.message || "Failed to join session");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ paddingTop: 80, maxWidth: 420, margin: "0 auto" }}>
-      <h1>Join Game Session</h1>
+    <div className="JoinSessionBox">
+      <h1>Join a Game</h1>
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Your Name
-        <input
-          style={{ width: "100%", marginTop: 4 }}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </label>
+      <label>Code</label>
+      <input
+        value={code}
+        onChange={(e) => setCode(e.target.value.toUpperCase())}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Session Code
-        <input
-          style={{ width: "100%", marginTop: 4 }}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="ABC123"
-        />
-      </label>
+      <label>Your Name</label>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
 
-      {error && (
-        <p style={{ color: "red", marginTop: 12 }}>{error}</p>
-      )}
+      {error && <p style={{ color: "red" }}>{error}</p>}
 
-      <button
-        style={{ marginTop: 20, padding: "10px 18px" }}
-        onClick={handleJoin}
-        disabled={loading}
-      >
-        {loading ? "Joining..." : "Join"}
+      <button onClick={handleJoin} disabled={loading}>
+        {loading ? "Joining..." : "Join Session"}
       </button>
     </div>
   );

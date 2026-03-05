@@ -1,0 +1,68 @@
+.guessing-card-page {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  color: white;
+  text-align: center;
+}
+
+.guessing-card-page .title {
+  margin-bottom: 4px;
+}
+
+.guessing-card-page .subtitle {
+  margin-top: 0;
+  font-size: 16px;
+  opacity: 0.8;
+}
+
+.card-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.card {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 16px;
+  padding: 12px 16px;
+  min-width: 100px;
+}
+
+.card-face {
+  margin-top: 8px;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.distance {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.controls {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.player-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.player-controls select {
+  padding: 4px 6px;
+}
+
+.player-controls button {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+}

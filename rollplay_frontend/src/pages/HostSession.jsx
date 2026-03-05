@@ -1,125 +1,136 @@
+// src/pages/HostSession.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useGame } from "../GameContext";
 
-const API_BASE = "http://localhost:3000";
+// Decide a sensible default depending on where we are running
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
+// ✅ Use env var if present, otherwise fall back to the default above
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL || // extra safety if you set this instead
+  defaultBase
+).replace(/\/$/, "");
 
 export default function HostSession({ token }) {
   const navigate = useNavigate();
+  const { setSessionInfo, profile } = useGame();
 
-  const [hostName, setHostName] = useState("");
-  const [totalCost, setTotalCost] = useState("50");
+  const [totalCost, setTotalCost] = useState(50);
   const [rule, setRule] = useState("winner_free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [sessionCode, setSessionCode] = useState(null);
 
-  async function handleCreate() {
+  async function createSession() {
     setError("");
 
     if (!token) {
-      setError("You must be signed in to host a session.");
+      setError("You must be signed in.");
       return;
     }
 
-    const totalNum = Number(totalCost);
-    if (!hostName.trim() || Number.isNaN(totalNum) || totalNum <= 0) {
-      setError("Please enter a name and a valid total bill.");
+    if (!profile) {
+      setError("You need to complete your profile first.");
       return;
     }
 
     setLoading(true);
+
     try {
       const res = await fetch(`${API_BASE}/sessions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "X-Player-Id": localStorage.getItem("player_id") || "",
         },
         body: JSON.stringify({
-          host_name: hostName.trim(),
-          total_cost: totalNum,
+          host_name: profile.displayName,
+          total_cost: Number(totalCost),
           rule,
         }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create session");
+      // Try to parse JSON, but don't crash if backend returns non-JSON
+      let data = null;
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
       }
 
-      // store code so Lobby & Join page can use it
-      localStorage.setItem("session_code", data.code);
-      localStorage.setItem("session_is_host", "true");
-      localStorage.setItem("host_name", hostName.trim());
+      if (!res.ok) {
+        const msg =
+          data?.error ||
+          data?.message ||
+          `Failed to create session (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
 
-      setSessionCode(data.code);
+      setSessionInfo({
+        sessionId: data.session_id,
+        sessionCode: data.code,
+        isHost: true,
+      });
 
-      // small delay so they can see the code, then go to lobby
-      setTimeout(() => navigate("/lobby"), 1200);
+      navigate("/lobby");
     } catch (err) {
-      console.error("Error creating session:", err);
-      setError(err.message);
+      setError(err?.message || "Failed to create session");
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ paddingTop: 80, maxWidth: 420, margin: "0 auto" }}>
-      <h1>Host a Session</h1>
-      <p>Create a lobby that others can join with a code.</p>
+    <div className="HostSessionBox">
+      <h1>Host a Game</h1>
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Your name
-        <input
-          style={{ width: "100%", marginTop: 4 }}
-          value={hostName}
-          onChange={(e) => setHostName(e.target.value)}
-          placeholder="Ryan"
-        />
-      </label>
+      <p style={{ marginBottom: 12 }}>
+        Signed in as:{" "}
+        <strong>{profile ? profile.displayName : "Unknown"}</strong>
+      </p>
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Total bill (£)
-        <input
-          style={{ width: "100%", marginTop: 4 }}
-          type="number"
-          min="0"
-          value={totalCost}
-          onChange={(e) => setTotalCost(e.target.value)}
-        />
-      </label>
+      <label>Total Cost (£)</label>
+      <input
+        type="number"
+        min="1"
+        value={totalCost}
+        onChange={(e) => setTotalCost(e.target.value)}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
 
-      <label style={{ display: "block", marginTop: 16 }}>
-        Rule
-        <select
-          style={{ width: "100%", marginTop: 4 }}
-          value={rule}
-          onChange={(e) => setRule(e.target.value)}
-        >
-          <option value="winner_free">Winner drinks free 🧊</option>
-          <option value="even_split">Even split 💷</option>
-        </select>
-      </label>
-
-      {error && (
-        <p style={{ color: "red", marginTop: 12 }}>{error}</p>
-      )}
-
-      <button
-        style={{ marginTop: 20, padding: "10px 18px" }}
-        onClick={handleCreate}
-        disabled={loading}
+      <label>Rule</label>
+      <select
+        value={rule}
+        onChange={(e) => setRule(e.target.value)}
+        style={{ width: "100%", marginBottom: 12 }}
       >
-        {loading ? "Creating Session..." : "Create Session"}
+        <option value="winner_free">Winner Drinks Free</option>
+        <option value="leaderboard_weighted">Leaderboard Weighted Split</option>
+        <option value="loser_pays_most">Loser Pays Most</option>
+        <option value="roulette_payer">Random Roulette Payer</option>
+        <option value="even_split">Even Split</option>
+      </select>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      <button onClick={createSession} disabled={loading}>
+        {loading ? "Creating..." : "Create Session"}
       </button>
 
-      {sessionCode && (
-        <p style={{ marginTop: 16 }}>
-          Session code: <strong>{sessionCode}</strong>
-        </p>
-      )}
+      <button
+        style={{ marginTop: 12 }}
+        onClick={() => navigate("/profile")}
+        type="button"
+      >
+        Edit Profile
+      </button>
     </div>
   );
 }
