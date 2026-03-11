@@ -46,12 +46,6 @@ const app = express();
 
 /**
  * ✅ SIMPLE GLOBAL CORS
- *
- * For now we just allow all origins. This will add
- *   Access-Control-Allow-Origin: *
- * and make the Netlify → Render requests pass CORS.
- *
- * Once everything works we can tighten it if we want.
  */
 app.use(cors());
 app.use(express.json());
@@ -291,7 +285,7 @@ app.post("/sessions", async (req, res) => {
         total_cost: total,
         rule,
         status: "waiting",
-        current_round: null, // new column defaults
+        current_round: null,
       },
     ])
     .select()
@@ -353,7 +347,7 @@ app.post("/sessions/:code/start", async (req, res) => {
   });
 });
 
-// ⭐ NEW: Host starts a specific round (sets current_round)
+// Host starts a specific round
 app.post("/sessions/:code/start-round", async (req, res) => {
   const { code } = req.params;
   const { round_number } = req.body || {};
@@ -489,7 +483,99 @@ app.post("/sessions/:code/join", async (req, res) => {
 });
 
 /* ---------------------------------------
-   ⭐ SESSION LEVEL ROUTES (MOUNTED LAST)
+   CONFIRMED SPLIT ROUTES
+----------------------------------------- */
+
+// Save confirmed split
+app.post("/sessions/:code/confirmed-split", async (req, res) => {
+  const { code } = req.params;
+  const { confirmedSplit } = req.body || {};
+
+  const supa = supaForRequest(req);
+
+  try {
+    const { data: session, error: sessionErr } = await supa
+      .from("sessions")
+      .select("id, code")
+      .eq("code", code)
+      .single();
+
+    if (sessionErr || !session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    if (!confirmedSplit || typeof confirmedSplit !== "object") {
+      return res.status(400).json({ error: "Missing confirmedSplit payload" });
+    }
+
+    const payload = {
+      ...confirmedSplit,
+      saved_at: new Date().toISOString(),
+    };
+
+    const { data: updated, error: updateErr } = await supa
+      .from("sessions")
+      .update({
+        confirmed_split: payload,
+        split_confirmed_at: new Date().toISOString(),
+      })
+      .eq("id", session.id)
+      .select("id, code, confirmed_split, split_confirmed_at")
+      .single();
+
+    if (updateErr) {
+      console.error("[confirmed-split] update error:", updateErr);
+      return res.status(500).json({
+        error: "Failed to save confirmed split",
+        detail: updateErr.message,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      session: updated,
+    });
+  } catch (err) {
+    console.error("[confirmed-split] unexpected error:", err);
+    return res.status(500).json({
+      error: "Failed to save confirmed split",
+      detail: String(err),
+    });
+  }
+});
+
+// Get confirmed split
+app.get("/sessions/:code/confirmed-split", async (req, res) => {
+  const { code } = req.params;
+  const supa = supaForRequest(req);
+
+  try {
+    const { data: session, error } = await supa
+      .from("sessions")
+      .select("id, code, confirmed_split, split_confirmed_at")
+      .eq("code", code)
+      .single();
+
+    if (error || !session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    return res.json({
+      ok: true,
+      confirmedSplit: session.confirmed_split || null,
+      splitConfirmedAt: session.split_confirmed_at || null,
+    });
+  } catch (err) {
+    console.error("[get confirmed-split] unexpected error:", err);
+    return res.status(500).json({
+      error: "Failed to fetch confirmed split",
+      detail: String(err),
+    });
+  }
+});
+
+/* ---------------------------------------
+   SESSION LEVEL ROUTES (MOUNTED LAST)
 ----------------------------------------- */
 app.use("/sessions", sessionLevelsRoutes);
 
@@ -499,7 +585,7 @@ app.use("/sessions", sessionLevelsRoutes);
 const PORT = Number(process.env.PORT) || 3000;
 const server = http.createServer(app);
 
-// ✅ Attach WebSocket server at /ws (IMPORTANT)
+// Attach WebSocket server at /ws
 attachWs(server, { path: "/ws" });
 
 server.listen(PORT, () => {

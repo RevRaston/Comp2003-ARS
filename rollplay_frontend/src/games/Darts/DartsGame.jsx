@@ -1,178 +1,177 @@
-import { useEffect, useRef, useState } from "react";
-import { useGame } from "../../GameContext";
-import { supabase } from "../../supabase";
+// src/games/Darts/DartsGame.jsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./darts.css";
 
 /**
- * Host-only Darts mini-game.
- * - Only host can press FIRE.
- * - Everyone can open /game/darts to watch the canvas.
- * - When darts/time run out, we show "Turn finished".
+ * Darts — WebSocket host-authoritative
+ * - Host runs simulation + broadcasts state
+ * - Clients just render state
+ * - Host-only FIRE (for now)
+ *
+ * Transport: WebSocket (ws://localhost:3000/ws) or VITE_WS_URL
  */
-export default function DartsGame() {
+
+const WS_URL =
+  (import.meta.env.VITE_WS_URL && import.meta.env.VITE_WS_URL.replace(/\/$/, "")) ||
+  "ws://localhost:3000/ws";
+
+export default function DartsGame({ sessionCode, isHost }) {
   const canvasRef = useRef(null);
-  const animationRef = useRef(null);
+  const rafRef = useRef(0);
 
-  const { isHost, sessionId } = useGame();
+  const [connLine, setConnLine] = useState("disconnected");
+  const [statusMessage, setStatusMessage] = useState("");
 
+  // Rendered UI values (synced from authoritative refs)
   const [dartsLeft, setDartsLeft] = useState(5);
   const [timer, setTimer] = useState(60);
-  const [statusMessage, setStatusMessage] = useState("");
   const [turnFinished, setTurnFinished] = useState(false);
+  const [score, setScore] = useState(0);
 
-  // Authoritative game values
-  const scoreRef = useRef(0);
-  const dartsLeftRef = useRef(5);
-  const timerRef = useRef(60);
-  const finishedRef = useRef(false);
+  const wsRef = useRef(null);
+  const runningRef = useRef(false);
 
-  const game = useRef({
+  const code = sessionCode || localStorage.getItem("session_code") || "local";
+
+  // Authoritative state lives in refs (host mutates, clients overwrite from network)
+  const stateRef = useRef({
+    score: 0,
+    dartsLeft: 5,
+    timer: 60,
+    finished: false,
+    msg: "",
     dart: { x: 200, y: 450, fired: false, speed: 6 },
     target: { x: 200, y: 120, radius: 60, dir: 1, speed: 1.3 },
     particles: [],
     hitFlashTimer: 0,
   });
 
-  // Small flavour-only message
-  async function gameMessage() {
-    return "🔥 The dart rockets forward!";
+  function wsSend(obj) {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(obj));
   }
 
+  // Only host can fire (for now)
   function fireDart() {
-    const g = game.current;
     if (!isHost) return;
-    if (finishedRef.current) return;
-    if (g.dart.fired || dartsLeftRef.current <= 0) return;
+    const s = stateRef.current;
+    if (s.finished) return;
+    if (s.dart.fired) return;
+    if (s.dartsLeft <= 0) return;
 
-    g.dart.fired = true;
-    dartsLeftRef.current -= 1;
-    setDartsLeft(dartsLeftRef.current);
+    s.dart.fired = true;
+    s.dartsLeft -= 1;
 
-    gameMessage().then((msg) => setStatusMessage(msg));
+    s.msg = "🔥 The dart rockets forward!";
+    setStatusMessage(s.msg);
+
+    // push UI updates immediately (host)
+    setDartsLeft(s.dartsLeft);
   }
 
-  // If we somehow land here without a session, show a safe fallback.
-  if (!sessionId) {
-    return (
-      <div className="darts-container">
-        <h1 className="title">Aim &amp; Fire!</h1>
-        <p style={{ color: "white", marginTop: 40 }}>
-          No session active. Go back to the lobby and start a game.
-        </p>
-      </div>
-    );
-  }
-
-  // 1-second timer (host drives the timer)
+  // ---- WS connect + message handling ----
   useEffect(() => {
-    if (!isHost) return;
+    if (runningRef.current) return;
+    runningRef.current = true;
 
-    const interval = setInterval(() => {
-      if (finishedRef.current) return;
-      if (timerRef.current <= 0) return;
+    setConnLine("connecting…");
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
 
-      timerRef.current -= 1;
-      setTimer(timerRef.current);
-    }, 1000);
+    ws.onopen = () => {
+      setConnLine("connected ✅");
+      wsSend({ type: "join", sessionCode: code });
+    };
 
-    return () => clearInterval(interval);
-  }, [isHost]);
+    ws.onclose = () => setConnLine("disconnected");
+    ws.onerror = () => setConnLine("error");
 
-  // HOST: sync state to Supabase whenever key values change
-  useEffect(() => {
-    if (!sessionId || !isHost) return;
-
-    const g = game.current;
-
-    const syncState = async () => {
+    ws.onmessage = (ev) => {
+      let msg;
       try {
-        await supabase
-          .from("session_game_state")
-          .update({
-            game_state: {
-              dart: g.dart,
-              target: g.target,
-              score: scoreRef.current,
-              dartsLeft: dartsLeftRef.current,
-              timer: timerRef.current,
-            },
-            updated_at: new Date(),
-          })
-          .eq("session_id", sessionId);
-      } catch (err) {
-        console.error("Error syncing darts state:", err);
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (!msg || msg.sessionCode !== code) return;
+
+      // Host can ignore its own state packets; clients apply them
+      if (msg.type === "darts_state") {
+        if (isHost) return;
+
+        const payload = msg.payload;
+        if (!payload) return;
+
+        // overwrite local refs from host snapshot
+        stateRef.current = {
+          ...stateRef.current,
+          ...payload,
+          // ensure nested objects exist
+          dart: payload.dart || stateRef.current.dart,
+          target: payload.target || stateRef.current.target,
+          particles: payload.particles || stateRef.current.particles,
+          hitFlashTimer:
+            typeof payload.hitFlashTimer === "number"
+              ? payload.hitFlashTimer
+              : stateRef.current.hitFlashTimer,
+        };
+
+        const s = stateRef.current;
+
+        setScore(s.score || 0);
+        setDartsLeft(s.dartsLeft ?? 5);
+        setTimer(s.timer ?? 60);
+        setTurnFinished(Boolean(s.finished));
+        setStatusMessage(s.msg || "");
       }
     };
 
-    syncState();
-  }, [dartsLeft, timer, sessionId, isHost]);
-
-  // NON-HOSTS: poll state and mirror host every 200ms
-  useEffect(() => {
-    if (!sessionId || isHost) return;
-
-    const interval = setInterval(async () => {
+    return () => {
       try {
-        const { data, error } = await supabase
-          .from("session_game_state")
-          .select("game_state")
-          .eq("session_id", sessionId)
-          .single();
+        wsRef.current?.close();
+      } catch {}
+      wsRef.current = null;
+      runningRef.current = false;
+    };
+  }, [code, isHost]);
 
-        if (error) return;
-        if (!data?.game_state) return;
-
-        const s = data.game_state;
-        game.current.dart = s.dart;
-        game.current.target = s.target;
-
-        scoreRef.current = s.score ?? 0;
-        dartsLeftRef.current = s.dartsLeft ?? 5;
-        timerRef.current = s.timer ?? 60;
-
-        setDartsLeft(dartsLeftRef.current);
-        setTimer(timerRef.current);
-      } catch (err) {
-        console.error("Error polling darts state:", err);
-      }
-    }, 200);
-
-    return () => clearInterval(interval);
-  }, [sessionId, isHost]);
-
-  // Canvas + game loop
+  // ---- Host sim loop ----
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
-    const g = game.current;
+    canvas.width = 400;
+    canvas.height = 500;
+
+    const s = stateRef.current;
 
     function resetDart() {
-      g.dart.x = 200;
-      g.dart.y = 450;
-      g.dart.fired = false;
+      s.dart.x = 200;
+      s.dart.y = 450;
+      s.dart.fired = false;
     }
 
     function updateTarget() {
-      g.target.x += g.target.dir * g.target.speed;
+      s.target.x += s.target.dir * s.target.speed;
       if (
-        g.target.x + g.target.radius >= canvas.width ||
-        g.target.x - g.target.radius <= 0
+        s.target.x + s.target.radius >= canvas.width ||
+        s.target.x - s.target.radius <= 0
       ) {
-        g.target.dir *= -1;
+        s.target.dir *= -1;
       }
     }
 
     function updateDart() {
-      if (!g.dart.fired) return;
-      g.dart.y -= g.dart.speed;
-      if (g.dart.y < 0) resetDart();
+      if (!s.dart.fired) return;
+      s.dart.y -= s.dart.speed;
+      if (s.dart.y < 0) resetDart();
     }
 
     function createHitEffect(x, y) {
       for (let i = 0; i < 25; i++) {
-        g.particles.push({
+        s.particles.push({
           x,
           y,
           dx: (Math.random() - 0.5) * 4,
@@ -183,26 +182,29 @@ export default function DartsGame() {
     }
 
     function checkHit() {
-      if (!g.dart.fired) return;
+      if (!s.dart.fired) return;
 
-      const dx = g.dart.x - g.target.x;
-      const dy = g.dart.y - g.target.y;
+      const dx = s.dart.x - s.target.x;
+      const dy = s.dart.y - s.target.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       let points = 0;
-      if (dist < g.target.radius * 0.3) points = 50;
-      else if (dist < g.target.radius * 0.6) points = 25;
-      else if (dist < g.target.radius) points = 10;
+      if (dist < s.target.radius * 0.3) points = 50;
+      else if (dist < s.target.radius * 0.6) points = 25;
+      else if (dist < s.target.radius) points = 10;
       else return;
 
-      scoreRef.current += points;
-      g.hitFlashTimer = 14;
-      createHitEffect(g.target.x, g.target.y);
+      s.score += points;
+      s.hitFlashTimer = 14;
+      createHitEffect(s.target.x, s.target.y);
       resetDart();
+
+      // UI update for host
+      setScore(s.score);
     }
 
     function drawTarget() {
-      const t = g.target;
+      const t = s.target;
 
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius + 8, 0, Math.PI * 2);
@@ -249,7 +251,7 @@ export default function DartsGame() {
     }
 
     function drawDart() {
-      const d = g.dart;
+      const d = s.dart;
 
       ctx.fillStyle = "#f2d16b";
       ctx.fillRect(d.x - 3, d.y - 25, 6, 25);
@@ -273,27 +275,27 @@ export default function DartsGame() {
     function drawUI() {
       ctx.fillStyle = "white";
       ctx.font = "20px Arial";
-      ctx.fillText("Score: " + scoreRef.current, 20, 30);
-      ctx.fillText("Darts: " + dartsLeftRef.current, 300, 30);
-      ctx.fillText("Time: " + timerRef.current, 170, 30);
+      ctx.fillText("Score: " + s.score, 20, 30);
+      ctx.fillText("Darts: " + s.dartsLeft, 270, 30);
+      ctx.fillText("Time: " + s.timer, 160, 55);
     }
 
     function drawParticles() {
-      if (g.hitFlashTimer > 0) {
+      if (s.hitFlashTimer > 0) {
         ctx.beginPath();
         ctx.arc(
-          g.target.x,
-          g.target.y,
-          g.target.radius + 12,
+          s.target.x,
+          s.target.y,
+          s.target.radius + 12,
           0,
           Math.PI * 2
         );
-        ctx.fillStyle = `rgba(255,255,255,${g.hitFlashTimer / 14})`;
+        ctx.fillStyle = `rgba(255,255,255,${s.hitFlashTimer / 14})`;
         ctx.fill();
-        g.hitFlashTimer--;
+        s.hitFlashTimer--;
       }
 
-      const parts = g.particles;
+      const parts = s.particles;
       for (let p of parts) {
         ctx.fillStyle = `rgba(255,255,255,${p.life / 18})`;
         ctx.fillRect(p.x, p.y, 4, 4);
@@ -301,8 +303,7 @@ export default function DartsGame() {
         p.y += p.dy;
         p.life--;
       }
-
-      g.particles = parts.filter((p) => p.life > 0);
+      s.particles = parts.filter((p) => p.life > 0);
     }
 
     function drawBackground() {
@@ -313,17 +314,52 @@ export default function DartsGame() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
+    // host timer (1s)
+    let timerInterval = null;
+    if (isHost) {
+      timerInterval = setInterval(() => {
+        if (s.finished) return;
+        if (s.timer <= 0) return;
+        s.timer -= 1;
+        setTimer(s.timer);
+      }, 1000);
+    }
+
+    // host broadcaster (~10hz)
+    let broadcastInterval = null;
+    if (isHost) {
+      broadcastInterval = setInterval(() => {
+        wsSend({
+          type: "darts_state",
+          sessionCode: code,
+          payload: {
+            score: s.score,
+            dartsLeft: s.dartsLeft,
+            timer: s.timer,
+            finished: s.finished,
+            msg: s.msg || "",
+            dart: s.dart,
+            target: s.target,
+            particles: s.particles,
+            hitFlashTimer: s.hitFlashTimer,
+          },
+        });
+      }, 100);
+    }
+
     function loop() {
       drawBackground();
 
+      // finish logic (host decides)
       if (
-        !finishedRef.current &&
-        (timerRef.current <= 0 ||
-          (dartsLeftRef.current === 0 && !g.dart.fired))
+        isHost &&
+        !s.finished &&
+        (s.timer <= 0 || (s.dartsLeft === 0 && !s.dart.fired))
       ) {
-        finishedRef.current = true;
+        s.finished = true;
+        s.msg = `Turn finished! Score: ${s.score}`;
         setTurnFinished(true);
-        setStatusMessage("Turn finished! Hand over to the next player.");
+        setStatusMessage(s.msg);
       }
 
       drawTarget();
@@ -331,70 +367,79 @@ export default function DartsGame() {
       drawUI();
       drawParticles();
 
-      if (!finishedRef.current) {
+      if (isHost && !s.finished) {
         updateTarget();
         updateDart();
         checkHit();
       }
 
-      animationRef.current = requestAnimationFrame(loop);
+      rafRef.current = requestAnimationFrame(loop);
     }
 
-    animationRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animationRef.current);
-  }, []);
+    rafRef.current = requestAnimationFrame(loop);
 
-  function handleNextPlayer() {
-    // For now just reset the same player's turn.
-    scoreRef.current = 0;
-    dartsLeftRef.current = 5;
-    timerRef.current = 60;
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      if (timerInterval) clearInterval(timerInterval);
+      if (broadcastInterval) clearInterval(broadcastInterval);
+    };
+  }, [code, isHost]);
 
+  // Host-only reset (for now)
+  function handleReplay() {
+    if (!isHost) return;
+    const s = stateRef.current;
+
+    s.score = 0;
+    s.dartsLeft = 5;
+    s.timer = 60;
+    s.finished = false;
+    s.msg = "";
+
+    s.dart = { x: 200, y: 450, fired: false, speed: 6 };
+    s.target = { x: 200, y: 120, radius: 60, dir: 1, speed: 1.3 };
+    s.particles = [];
+    s.hitFlashTimer = 0;
+
+    setScore(0);
     setDartsLeft(5);
     setTimer(60);
     setTurnFinished(false);
-    finishedRef.current = false;
     setStatusMessage("");
-
-    game.current.dart = { x: 200, y: 450, fired: false, speed: 6 };
-    game.current.target = {
-      x: 200,
-      y: 120,
-      radius: 60,
-      dir: 1,
-      speed: 1.3,
-    };
-    game.current.particles = [];
-    game.current.hitFlashTimer = 0;
   }
 
   return (
     <div className="darts-container">
       <h1 className="title">Aim &amp; Fire!</h1>
 
-      <canvas
-        ref={canvasRef}
-        id="dartsCanvas"
-        width={400}
-        height={500}
-      />
+      <div style={{ color: "white", opacity: 0.7, fontSize: 12, marginBottom: 8 }}>
+        {connLine} {isHost ? "— HOST" : "— CLIENT"} (room: {code})
+      </div>
 
-      <button
-        onClick={fireDart}
-        className="fire-btn"
-        disabled={!isHost || turnFinished}
-      >
+      <canvas ref={canvasRef} id="dartsCanvas" width={400} height={500} />
+
+      <button onClick={fireDart} className="fire-btn" disabled={!isHost || turnFinished}>
         {isHost ? "FIRE" : "Host is playing…"}
       </button>
 
       <div className="game-message">{statusMessage}</div>
 
+      <div style={{ marginTop: 10, color: "white", opacity: 0.85 }}>
+        <div>Score: {score}</div>
+        <div>Darts left: {dartsLeft}</div>
+        <div>Time: {timer}</div>
+      </div>
+
       {turnFinished && (
         <div className="turn-finished-panel">
-          <p>Turn finished – score: {scoreRef.current}</p>
-          <button className="next-btn" onClick={handleNextPlayer}>
-            Next player / replay
-          </button>
+          <p>Turn finished – score: {score}</p>
+          {isHost ? (
+            <button className="next-btn" onClick={handleReplay}>
+              Replay (host)
+            </button>
+          ) : (
+            <p style={{ opacity: 0.8 }}>Waiting for host…</p>
+          )}
         </div>
       )}
     </div>

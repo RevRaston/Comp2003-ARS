@@ -1,12 +1,10 @@
 // src/pages/LevelSelect.jsx
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GAME_LIST } from "../GameList";
+import { GAME_CATALOGUE, GAME_PACKS } from "../GameList";
 import { useGame } from "../GameContext";
 
-const API_BASE = (
-  import.meta.env.VITE_API_URL || "http://localhost:3000"
-).replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
 
 export default function LevelSelect() {
   const navigate = useNavigate();
@@ -21,55 +19,36 @@ export default function LevelSelect() {
     setSelectedLevels,
   } = useGame();
 
+  const MAX_ROUNDS = maxRounds ?? 3;
+
+  const [activePack, setActivePack] = useState(GAME_PACKS[0]?.id || "bar");
   const [localSelections, setLocalSelections] = useState(selectedLevels || []);
-  const [highlightIndex, setHighlightIndex] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
 
-  const MAX_ROUNDS = maxRounds ?? 3;
-  const chosenIds = localSelections.map((s) => s.level.id);
+  const chosenIds = useMemo(
+    () => localSelections.map((s) => s.level.id),
+    [localSelections]
+  );
+
   const allRoundsChosen = localSelections.length >= MAX_ROUNDS;
 
-  // --------------------------------------------------------
-  // JOINED PLAYERS: Poll backend session to know when
-  // host has started Round 1, then go to /arena.
-  // --------------------------------------------------------
+  // Joined players: follow host into arena when round 1 starts
   useEffect(() => {
-    if (isHost) return; // host navigates directly on click
+    if (isHost) return;
 
     const code = sessionCode || localStorage.getItem("session_code");
-    if (!code) {
-      console.warn("[JOIN POLL] No sessionCode found, not polling.");
-      return;
-    }
+    if (!code) return;
 
     let cancelled = false;
 
     async function poll() {
-      const token = localStorage.getItem("access_token");
-      const headers = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
       try {
-        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
+        const res = await fetch(`${API_BASE}/sessions/${code}`);
         const data = await res.json();
 
-        if (!res.ok) {
-          console.warn(
-            "LevelSelect session poll error:",
-            res.status,
-            data.error
-          );
-        } else if (data.session) {
-          console.log("[JOIN POLL] session:", data.session);
+        if (res.ok && data?.session) {
           const currentRound = data.session.current_round ?? null;
-          console.log("[JOIN POLL] current_round:", currentRound);
-
           if (currentRound === 1) {
-            console.log(
-              "[JOIN POLL] Round 1 started → navigate('/arena')"
-            );
             navigate("/arena");
             return;
           }
@@ -78,27 +57,23 @@ export default function LevelSelect() {
         console.error("LevelSelect session poll failed:", err);
       }
 
-      if (!cancelled) {
-        setTimeout(poll, 2000);
-      }
+      if (!cancelled) setTimeout(poll, 2000);
     }
 
     poll();
+
     return () => {
       cancelled = true;
     };
   }, [isHost, sessionCode, navigate]);
 
-  // --------------------------------------------------------
-  // HOST ONLY — Pick Level
-  // --------------------------------------------------------
   function chooseLevel(level) {
     if (!isHost) return;
     if (isSpinning) return;
 
     const newSet = [...localSelections];
-
     const existing = newSet.find((e) => e.round === round);
+
     if (existing) {
       existing.level = level;
     } else {
@@ -113,49 +88,30 @@ export default function LevelSelect() {
     if (round < MAX_ROUNDS) setRound(round + 1);
   }
 
-  // --------------------------------------------------------
-  // HOST ONLY — Random spin
-  // --------------------------------------------------------
   function handleRandomSpin() {
     if (!isHost) return;
     if (isSpinning || allRoundsChosen) return;
 
-    const available = GAME_LIST.filter((g) => !chosenIds.includes(g.id));
+    const packGames = GAME_CATALOGUE.filter((g) => g.pack === activePack);
+    const available = packGames.filter((g) => !chosenIds.includes(g.id));
     if (!available.length) return;
 
     setIsSpinning(true);
 
-    let i = 0;
-    const spinInterval = setInterval(() => {
-      setHighlightIndex(i % GAME_LIST.length);
-      i++;
-    }, 80);
-
     setTimeout(() => {
-      clearInterval(spinInterval);
-
       const randomLevel =
         available[Math.floor(Math.random() * available.length)];
-
-      const finalIndex = GAME_LIST.findIndex(
-        (g) => g.id === randomLevel.id
-      );
-      setHighlightIndex(finalIndex);
-
       chooseLevel(randomLevel);
       setIsSpinning(false);
-    }, 2000);
+    }, 900);
   }
 
-  // --------------------------------------------------------
-  // HOST ONLY — Start Round 1
-  // --------------------------------------------------------
   async function handleStartRoundOne() {
     if (!isHost) return;
 
     const round1 = localSelections.find((s) => s.round === 1);
     if (!round1) {
-      alert("Pick a level for Round 1");
+      alert("Pick a game for Round 1");
       return;
     }
 
@@ -163,142 +119,143 @@ export default function LevelSelect() {
     setRound(1);
 
     const code = sessionCode || localStorage.getItem("session_code");
-
     if (code) {
       try {
-        const token = localStorage.getItem("access_token");
-        const headers = {
-          "Content-Type": "application/json",
-        };
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
-        const res = await fetch(
-          `${API_BASE}/sessions/${code}/start-round`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ round_number: 1 }),
-          }
-        );
+        const res = await fetch(`${API_BASE}/sessions/${code}/start-round`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ round_number: 1 }),
+        });
 
         const data = await res.json();
         if (!res.ok) {
-          console.error(
-            "[HOST] Failed to mark round start:",
-            res.status,
-            data.error
-          );
-        } else {
-          console.log("[HOST] Round 1 started on backend:", data);
+          console.error("[HOST] Failed to mark round start:", res.status, data?.error || data);
         }
       } catch (err) {
         console.error("Error calling /start-round:", err);
       }
     }
 
-    // Host jumps to Arena immediately
     navigate("/arena");
   }
 
-  // --------------------------------------------------------
-  // RENDER
-  // --------------------------------------------------------
+  const visibleGames = useMemo(() => {
+    return GAME_CATALOGUE.filter((g) => g.pack === activePack);
+  }, [activePack]);
+
   return (
-    <div className="page level-select-page">
-      <h1 className="page-title">Choose Levels</h1>
+    <div style={page}>
+      <div style={hero}>
+        <h1 style={title}>Choose Game Order</h1>
+        <p style={subtitle}>
+          Host picks the order of games. Players will follow into the Arena.
+        </p>
+        <p style={roundText}>
+          Round {round}/{MAX_ROUNDS}
+        </p>
+      </div>
 
-      <p className="page-subtitle">
-        Round {round}/{MAX_ROUNDS}
-      </p>
+      {/* Pack tabs */}
+      <div style={packsRow}>
+        {GAME_PACKS.map((pack) => (
+          <button
+            key={pack.id}
+            onClick={() => setActivePack(pack.id)}
+            style={{
+              ...packButton,
+              ...(activePack === pack.id ? packButtonActive : null),
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>{pack.name}</div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>{pack.description}</div>
+          </button>
+        ))}
+      </div>
 
-      <div className="level-select-layout">
-        {/* ---------------- GRID ---------------- */}
-        <div className="level-grid">
-          {GAME_LIST.map((game, idx) => {
-            const isChosen = localSelections.find(
-              (s) => s.level.id === game.id
-            );
-
+      <div style={layout}>
+        {/* Catalogue */}
+        <div style={catalogueGrid}>
+          {visibleGames.map((game) => {
+            const chosenEntry = localSelections.find((s) => s.level.id === game.id);
             const disabled =
-              !isHost || // joined players are spectators
-              isSpinning ||
-              isChosen ||
-              allRoundsChosen;
+              !isHost || isSpinning || Boolean(chosenEntry) || allRoundsChosen;
 
             return (
               <button
                 key={game.id}
-                className={[
-                  "level-card",
-                  disabled ? "disabled" : "",
-                  idx === highlightIndex && isSpinning
-                    ? "level-card--highlight"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
                 onClick={() => chooseLevel(game)}
                 disabled={disabled}
+                style={{
+                  ...gameCard,
+                  opacity: disabled ? 0.72 : 1,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
               >
-                <div className="level-card-title">{game.name}</div>
-                <div className="level-card-id">{game.id}</div>
+                <div
+                  style={{
+                    ...thumb,
+                    backgroundImage: `url(${game.thumb})`,
+                  }}
+                />
 
-                {isChosen && (
-                  <div className="level-card-round-tag">
-                    Round {isChosen.round}
+                <div style={cardBody}>
+                  <div style={cardTopRow}>
+                    <strong>{game.name}</strong>
+                    <span style={gameId}>{game.id}</span>
                   </div>
-                )}
+
+                  <p style={cardDesc}>{game.description}</p>
+
+                  {chosenEntry && (
+                    <div style={roundBadge}>Round {chosenEntry.round}</div>
+                  )}
+                </div>
               </button>
             );
           })}
         </div>
 
-        {/* ---------------- SIDEBAR ---------------- */}
-        <div className="level-sidebar">
-          <h2>Round Plan</h2>
-          <ol>
+        {/* Sidebar */}
+        <div style={sidebar}>
+          <h2 style={{ marginTop: 0 }}>Round Plan</h2>
+
+          <ol style={{ paddingLeft: 18 }}>
             {Array.from({ length: MAX_ROUNDS }).map((_, i) => {
-              const entry = localSelections.find(
-                (r) => r.round === i + 1
-              );
+              const entry = localSelections.find((r) => r.round === i + 1);
 
               return (
-                <li key={i}>
+                <li key={i} style={{ marginBottom: 10 }}>
                   <strong>Round {i + 1}:</strong>{" "}
-                  {entry ? entry.level.name : "Not chosen"}
+                  <span style={{ opacity: entry ? 1 : 0.7 }}>
+                    {entry ? entry.level.name : "Not chosen"}
+                  </span>
                 </li>
               );
             })}
           </ol>
 
-          {/* HOST ONLY BUTTONS */}
-          {isHost && (
+          {isHost ? (
             <>
               <button
-                className="primary-btn full-width"
                 onClick={handleRandomSpin}
                 disabled={isSpinning || allRoundsChosen}
+                style={sidebarButton}
               >
-                {isSpinning ? "Spinning..." : "Spin Random"}
+                {isSpinning ? "Choosing..." : "Random from this pack"}
               </button>
 
               {allRoundsChosen && (
                 <button
-                  className="primary-btn full-width start-btn"
                   onClick={handleStartRoundOne}
+                  style={{ ...sidebarButton, marginTop: 10 }}
                 >
                   Start Round 1
                 </button>
               )}
             </>
-          )}
-
-          {!isHost && (
-            <p className="info-text">
-              Host is choosing levels… you&apos;ll play them in this order.
-              When Round 1 starts, you&apos;ll be taken into the Arena.
+          ) : (
+            <p style={{ opacity: 0.8 }}>
+              Waiting for host to choose the game order…
             </p>
           )}
         </div>
@@ -306,3 +263,140 @@ export default function LevelSelect() {
     </div>
   );
 }
+
+/* styles */
+
+const page = {
+  paddingTop: 80,
+  minHeight: "100vh",
+  color: "white",
+};
+
+const hero = {
+  textAlign: "center",
+  marginBottom: 18,
+};
+
+const title = {
+  margin: 0,
+  fontSize: 38,
+};
+
+const subtitle = {
+  marginTop: 8,
+  marginBottom: 6,
+  opacity: 0.75,
+};
+
+const roundText = {
+  margin: 0,
+  fontSize: 14,
+  opacity: 0.85,
+};
+
+const packsRow = {
+  maxWidth: 1100,
+  margin: "0 auto 18px auto",
+  paddingInline: 16,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
+};
+
+const packButton = {
+  textAlign: "left",
+  padding: 14,
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(0,0,0,0.18)",
+  color: "white",
+  cursor: "pointer",
+};
+
+const packButtonActive = {
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.28)",
+};
+
+const layout = {
+  maxWidth: 1100,
+  margin: "0 auto",
+  paddingInline: 16,
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) 320px",
+  gap: 18,
+  alignItems: "start",
+};
+
+const catalogueGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))",
+  gap: 14,
+};
+
+const gameCard = {
+  padding: 0,
+  overflow: "hidden",
+  textAlign: "left",
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(0,0,0,0.28)",
+  color: "white",
+};
+
+const thumb = {
+  height: 130,
+  backgroundSize: "cover",
+  backgroundPosition: "center",
+  backgroundRepeat: "no-repeat",
+  borderBottom: "1px solid rgba(255,255,255,0.12)",
+  backgroundColor: "rgba(255,255,255,0.06)",
+};
+
+const cardBody = {
+  padding: 12,
+};
+
+const cardTopRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 8,
+};
+
+const gameId = {
+  fontSize: 11,
+  opacity: 0.6,
+};
+
+const cardDesc = {
+  fontSize: 13,
+  opacity: 0.78,
+  marginBottom: 0,
+};
+
+const roundBadge = {
+  display: "inline-block",
+  marginTop: 10,
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.1)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  fontSize: 12,
+};
+
+const sidebar = {
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(0,0,0,0.28)",
+  padding: 16,
+};
+
+const sidebarButton = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.12)",
+  color: "white",
+  cursor: "pointer",
+};

@@ -12,7 +12,7 @@ const defaultBase =
 // ✅ Use env var if present, otherwise fall back to the default above
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_BACKEND_URL || // extra safety if you set this instead
+  import.meta.env.VITE_BACKEND_URL ||
   defaultBase
 ).replace(/\/$/, "");
 
@@ -24,6 +24,9 @@ export default function HostSession({ token }) {
   const [rule, setRule] = useState("winner_free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const displayName =
+    profile?.displayName || profile?.display_name || "Unknown";
 
   async function createSession() {
     setError("");
@@ -49,13 +52,13 @@ export default function HostSession({ token }) {
           "X-Player-Id": localStorage.getItem("player_id") || "",
         },
         body: JSON.stringify({
-          host_name: profile.displayName,
+          host_name: displayName,
           total_cost: Number(totalCost),
           rule,
         }),
       });
 
-      // Try to parse JSON, but don't crash if backend returns non-JSON
+      // Try to parse JSON safely
       let data = null;
       const text = await res.text();
       try {
@@ -78,7 +81,8 @@ export default function HostSession({ token }) {
         isHost: true,
       });
 
-      navigate("/lobby");
+      // ✅ NEW FLOW: go to split setup first
+      navigate("/split-setup");
     } catch (err) {
       setError(err?.message || "Failed to create session");
       console.error(err);
@@ -92,8 +96,7 @@ export default function HostSession({ token }) {
       <h1>Host a Game</h1>
 
       <p style={{ marginBottom: 12 }}>
-        Signed in as:{" "}
-        <strong>{profile ? profile.displayName : "Unknown"}</strong>
+        Signed in as: <strong>{displayName}</strong>
       </p>
 
       <label>Total Cost (£)</label>

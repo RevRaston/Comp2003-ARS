@@ -22,7 +22,7 @@ const WS_URL =
     import.meta.env.VITE_WS_URL.replace(/\/$/, "")) ||
   "ws://localhost:3000/ws";
 
-const ROUND_TIME = 20; // seconds
+const ROUND_TIME = 20;
 
 function getUserKey(p) {
   if (!p) return "";
@@ -44,7 +44,6 @@ export default function SumoGame({
   players,
   myUserId,
   mySeatIndex,
-  // 👇 NEW: optional callback fired once when round finishes
   onRoundComplete,
 }) {
   const canvasRef = useRef(null);
@@ -56,13 +55,9 @@ export default function SumoGame({
   const wsRef = useRef(null);
   const runningRef = useRef(false);
 
-  // host: latest input per user key
   const inputByKeyRef = useRef(new Map());
-  // host + clients: last state we render
   const lastHostStateRef = useRef(null);
   const lastHostStateAtRef = useRef(0);
-
-  // make sure we only call onRoundComplete *once*
   const announcedRef = useRef(false);
 
   function wsSend(obj) {
@@ -86,7 +81,6 @@ export default function SumoGame({
 
   const myId = myUserId ? String(myUserId) : "";
 
-  // Which slot do *we* control? 0, 1, or -1 (spectator)
   const myControlIndex = useMemo(() => {
     if (!active.hasTwo) return -1;
 
@@ -103,8 +97,6 @@ export default function SumoGame({
     if (!active.hasTwo) return;
     if (runningRef.current) return;
     runningRef.current = true;
-
-    // when we mount a new Sumo, reset the “already announced” flag
     announcedRef.current = false;
 
     const canvas = canvasRef.current;
@@ -125,7 +117,6 @@ export default function SumoGame({
     const arena = { x: W / 2, y: H / 2, radius: Math.min(W, H) * 0.4 };
     const P_RADIUS = 18;
 
-    // World shared between host & client drawing
     const worldRef = {
       tick: 0,
       timeLeft: ROUND_TIME,
@@ -153,7 +144,6 @@ export default function SumoGame({
       ],
     };
 
-    // ---- keyboard input (local to this tab) --------------------------
     const keys = new Set();
 
     function onKeyDown(e) {
@@ -183,7 +173,6 @@ export default function SumoGame({
       return { ax, ay };
     }
 
-    // ---- physics tuning -----------------------------------------------
     const ACCEL = 0.55;
     const MAX_SPEED = 6.2;
     const FRICTION = 0.88;
@@ -218,7 +207,6 @@ export default function SumoGame({
       if (Math.abs(p.vy) < 0.01) p.vy = 0;
     }
 
-    // ring-out detection instead of clamping
     function checkRingOut(p) {
       if (!p.alive) return;
       const dx = p.x - arena.x;
@@ -244,13 +232,11 @@ export default function SumoGame({
         const nx = dx / dist;
         const ny = dy / dist;
 
-        // separate
         a.x -= nx * (overlap / 2);
         a.y -= ny * (overlap / 2);
         b.x += nx * (overlap / 2);
         b.y += ny * (overlap / 2);
 
-        // impulse
         const rvx = b.vx - a.vx;
         const rvy = b.vy - a.vy;
         const velAlongNormal = rvx * nx + rvy * ny;
@@ -267,7 +253,6 @@ export default function SumoGame({
       }
     }
 
-    // ---- drawing helpers ----------------------------------------------
     function drawArena() {
       ctx.clearRect(0, 0, W, H);
 
@@ -333,43 +318,95 @@ export default function SumoGame({
       ctx.stroke();
     }
 
-    function drawHUD(state) {
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
+    function drawTopBar(state) {
+      const barX = 18;
+      const barY = 16;
+      const barW = 160;
+      const barH = 42;
+
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(barX, barY, barW, barH);
+
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.font = "13px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText(isHost ? "HOST" : "CLIENT", barX + 12, barY + 16);
 
-      let y = 24;
-      const roleText = isHost ? "HOST (authoritative)" : "CLIENT";
-      ctx.fillText(roleText, 24, y);
-      y += 18;
-
-      const controlsText =
+      const roleLine =
         myControlIndex === -1
-          ? "Controls: spectator (no input)"
-          : "Controls: WASD or Arrow keys";
-      ctx.fillText(controlsText, 24, y);
-      y += 18;
+          ? "Spectating"
+          : `You are P${myControlIndex + 1}`;
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.fillText(roleLine, barX + 12, barY + 33);
 
-      const youText =
-        myControlIndex === -1
-          ? "You are: spectator"
-          : `You are: P${myControlIndex + 1}`;
-      ctx.fillText(youText, 24, y);
+      // Timer panel
+      const timerW = 140;
+      const timerX = W / 2 - timerW / 2;
+      const timerY = 14;
 
-      // timer / winner in top-centre
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(timerX, timerY, timerW, 46);
+
       ctx.textAlign = "center";
-      const cx = W / 2;
-      const topY = 24;
+      ctx.fillStyle = state.roundOver
+        ? "rgba(255,220,120,0.95)"
+        : "rgba(255,255,255,0.95)";
+      ctx.font = "bold 22px system-ui, -apple-system, Segoe UI, sans-serif";
 
-      if (state.roundOver) {
-        ctx.fillText("Round Over!", cx, topY);
-        let label = "No winner";
-        if (state.winnerKey === active.p1Key) label = "Winner: P1";
-        if (state.winnerKey === active.p2Key) label = "Winner: P2";
-        ctx.fillText(label, cx, topY + 18);
+      const timerText = state.roundOver
+        ? "ROUND OVER"
+        : `${Math.ceil(state.timeLeft)}`;
+      ctx.fillText(timerText, W / 2, timerY + 30);
+      ctx.textAlign = "left";
+    }
+
+    function drawBottomHint(state) {
+      const hintW = 420;
+      const hintH = 40;
+      const hintX = W / 2 - hintW / 2;
+      const hintY = H - 54;
+
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(hintX, hintY, hintW, hintH);
+
+      ctx.textAlign = "center";
+      ctx.font = "13px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+
+      let line = "Push your opponent out of the ring.";
+      if (!state.roundOver) {
+        line += " If time runs out, closest to centre wins.";
       } else {
-        ctx.fillText(`Time: ${Math.ceil(state.timeLeft)}`, cx, topY);
+        line = "Waiting for the next game...";
       }
 
+      ctx.fillText(line, W / 2, hintY + 24);
+      ctx.textAlign = "left";
+    }
+
+    function drawWinnerPanel(state) {
+      if (!state.roundOver) return;
+
+      const panelW = 280;
+      const panelH = 84;
+      const panelX = W / 2 - panelW / 2;
+      const panelY = H / 2 - panelH / 2;
+
+      ctx.fillStyle = "rgba(0,0,0,0.62)";
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.font = "bold 20px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText("Round Complete", W / 2, panelY + 28);
+
+      let label = "No winner";
+      if (state.winnerKey === active.p1Key) label = "Winner: P1";
+      if (state.winnerKey === active.p2Key) label = "Winner: P2";
+
+      ctx.font = "14px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.82)";
+      ctx.fillText(label, W / 2, panelY + 54);
+      ctx.fillText("Loading next game soon...", W / 2, panelY + 72);
       ctx.textAlign = "left";
     }
 
@@ -387,16 +424,19 @@ export default function SumoGame({
       if (pBlue) drawPlayer(pBlue, "#4DD0FF");
       if (pRed) drawPlayer(pRed, "#FF5C86");
 
-      drawHUD(state);
+      drawTopBar(state);
+      drawBottomHint(state);
+      drawWinnerPanel(state);
 
       if (state.roundOver) {
-        if (state.winnerKey === active.p1Key)
-          setSummaryLine("Round over – winner: P1.");
-        else if (state.winnerKey === active.p2Key)
-          setSummaryLine("Round over – winner: P2.");
-        else setSummaryLine("Round over – no winner.");
+        if (state.winnerKey === active.p1Key) {
+          setSummaryLine("Round over — winner: P1.");
+        } else if (state.winnerKey === active.p2Key) {
+          setSummaryLine("Round over — winner: P2.");
+        } else {
+          setSummaryLine("Round over — no winner.");
+        }
 
-        // 👇 NEW: notify parent exactly once (host *and* clients)
         if (!announcedRef.current && typeof onRoundComplete === "function") {
           announcedRef.current = true;
           onRoundComplete({
@@ -409,7 +449,6 @@ export default function SumoGame({
       }
     }
 
-    // --- WebSocket setup ------------------------------------------------
     setConnLine("connecting…");
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -424,7 +463,7 @@ export default function SumoGame({
 
       setStatusLine(
         `Sumo WS: ${isHost ? "HOST" : "CLIENT"} — room=${code} — ` +
-          `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"} control=${myControlIndex}`
+          `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"}`
       );
     };
 
@@ -465,7 +504,6 @@ export default function SumoGame({
       }
     };
 
-    // --- simulation loop ------------------------------------------------
     const INPUT_MS = 1000 / 20;
     const STATE_MS = 1000 / 25;
 
@@ -476,7 +514,6 @@ export default function SumoGame({
     const STEP = 1000 / 60;
     let acc = 0;
 
-    // which player does the HOST control locally?
     const hostControlIndex =
       isHost && myControlIndex !== -1 ? myControlIndex : 0;
 
@@ -485,14 +522,11 @@ export default function SumoGame({
       lastNow = now;
       acc += dt;
 
-      // current local axes (for this tab)
       const { ax: localAx, ay: localAy } = computeAxes();
 
-      // non-host: send input to host at 20Hz
       if (!isHost && myControlIndex !== -1 && now - lastInputSend >= INPUT_MS) {
         lastInputSend = now;
-        const myKey =
-          myControlIndex === 0 ? active.p1Key : active.p2Key;
+        const myKey = myControlIndex === 0 ? active.p1Key : active.p2Key;
         if (myKey) {
           wsSend({
             type: "input",
@@ -507,16 +541,13 @@ export default function SumoGame({
         }
       }
 
-      // HOST: physics, timer, win conditions
       while (acc >= STEP) {
         if (isHost) {
           const w = worldRef;
           if (!w.roundOver) {
-            // timer
             w.timeLeft -= STEP / 1000;
             if (w.timeLeft < 0) w.timeLeft = 0;
 
-            // apply inputs
             for (let i = 0; i < w.players.length; i++) {
               const p = w.players[i];
 
@@ -524,11 +555,9 @@ export default function SumoGame({
               let ay = 0;
 
               if (i === hostControlIndex) {
-                // host-controlled player uses local keyboard axes
                 ax = localAx;
                 ay = localAy;
               } else {
-                // other player uses last input message
                 const k = p.key ? String(p.key) : "";
                 const inp = inputByKeyRef.current.get(k) || {
                   ax: 0,
@@ -547,7 +576,6 @@ export default function SumoGame({
             }
             w.players.forEach(checkRingOut);
 
-            // win by ring-out
             const alive = w.players.filter((p) => p.alive);
             if (alive.length === 1) {
               w.roundOver = true;
@@ -557,7 +585,6 @@ export default function SumoGame({
               w.winnerKey = null;
             }
 
-            // win by timer
             if (!w.roundOver && w.timeLeft <= 0) {
               w.roundOver = true;
 
@@ -581,7 +608,16 @@ export default function SumoGame({
         acc -= STEP;
       }
 
-      // HOST: broadcast state at 25Hz
+      if (!isHost) {
+        const stalled =
+          performance.now() - lastHostStateAtRef.current > 1500;
+        if (stalled) {
+          setConnLine("waiting for host state…");
+        } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+          setConnLine("connected ✅");
+        }
+      }
+
       if (isHost && now - lastStateSend >= STATE_MS) {
         lastStateSend = now;
         const w = worldRef;
@@ -603,7 +639,6 @@ export default function SumoGame({
           sessionCode: code,
           payload,
         });
-        // host also uses this for its own drawing
         lastHostStateRef.current = JSON.parse(JSON.stringify(payload));
       }
 
@@ -631,7 +666,7 @@ export default function SumoGame({
     isHost,
     myControlIndex,
     myId,
-    onRoundComplete, // 👈 important so React re-binds if callback changes
+    onRoundComplete,
   ]);
 
   if (!active.hasTwo) {
@@ -664,17 +699,17 @@ export default function SumoGame({
         gap: 10,
       }}
     >
-      {/* Rules text */}
       <p
         style={{
           fontSize: 14,
           textAlign: "center",
-          maxWidth: 600,
+          maxWidth: 640,
           margin: "0 auto 6px",
+          opacity: 0.88,
         }}
       >
-        Push your opponents out of the ring. Last player standing wins. If the
-        timer runs out, whoever is closest to the centre wins.
+        Push your opponent out of the ring. If the timer reaches zero, the
+        wrestler closest to the centre wins.
       </p>
 
       <div style={{ fontSize: 12, opacity: 0.75, textAlign: "center" }}>
@@ -709,7 +744,7 @@ export default function SumoGame({
           fontSize: 14,
           textAlign: "center",
           minHeight: 20,
-          opacity: 0.9,
+          opacity: 0.92,
         }}
       >
         {summaryLine}

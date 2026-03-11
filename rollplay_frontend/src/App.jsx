@@ -12,6 +12,7 @@ import { GameProvider, useGame } from "./GameContext";
 import "./App.css";
 
 /* Pages */
+import SplitSetup from "./pages/SplitSetup";
 import Splash from "./pages/Splash";
 import LevelSelect from "./pages/LevelSelect";
 import Countdown from "./pages/Countdown";
@@ -22,6 +23,7 @@ import RandomWheel from "./pages/RandomWheel";
 import Login from "./pages/Login";
 import GameRunner from "./pages/GameRunner";
 import Profile from "./pages/Profile";
+import PaymentSummary from "./pages/PaymentSummary";
 
 /* Session pages */
 import HostSession from "./pages/HostSession";
@@ -89,6 +91,11 @@ function AppInner({ token }) {
           element={<JoinSession token={token} />}
         />
         <Route path="/lobby" element={<Lobby token={token} />} />
+      
+        <Route path="/split-setup" element={<SplitSetup />} />
+
+        <Route path="/payment-summary" element={<PaymentSummary />} />
+
       </Routes>
     </>
   );
