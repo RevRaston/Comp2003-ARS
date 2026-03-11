@@ -1,12 +1,18 @@
-// src/pages/Lobby.jsx 
+// src/pages/Lobby.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
 
-// ✅ Use env var in production, fallback to localhost for local dev
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
 const API_BASE = (
-  import.meta.env.VITE_API_URL || "http://localhost:3000"
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  defaultBase
 ).replace(/\/$/, "");
 
 export default function Lobby({ token }) {
@@ -24,19 +30,13 @@ export default function Lobby({ token }) {
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
 
-  // ------------------------------------------------------------------
-  // Helper: fetch Supabase profiles for all players in this lobby
-  // and merge display_name + avatar_json into the player objects.
-  // IMPORTANT: backend likely exposes `user_id`, not `id`.
-  // ------------------------------------------------------------------
   async function attachProfilesToPlayers(rawPlayers) {
     if (!rawPlayers || rawPlayers.length === 0) return [];
 
-    // Use user_id if available, otherwise fall back to id.
     const ids = rawPlayers
       .map((p) => p.user_id || p.id)
       .filter(Boolean)
-      .filter((v, i, arr) => arr.indexOf(v) === i); // unique
+      .filter((v, i, arr) => arr.indexOf(v) === i);
 
     if (ids.length === 0) return rawPlayers;
 
@@ -59,19 +59,14 @@ export default function Lobby({ token }) {
 
       return {
         ...p,
-        // normalise names
         name: p.name || prof.display_name,
         display_name: prof.display_name,
-        // expose avatar for both snake + camel just in case
         avatar_json: prof.avatar_json,
         avatarJson: prof.avatar_json,
       };
     });
   }
 
-  // ------------------------------------------------------------------
-  // Restore session info from localStorage if missing
-  // ------------------------------------------------------------------
   useEffect(() => {
     if (!sessionCode) {
       const storedCode = localStorage.getItem("session_code");
@@ -89,15 +84,13 @@ export default function Lobby({ token }) {
     }
   }, [sessionCode, sessionId, navigate, setSessionInfo]);
 
-  // ------------------------------------------------------------------
-  // Poll backend for lobby state (every 2s)
-  // and enrich players with profile data (avatars)
-  // ------------------------------------------------------------------
   useEffect(() => {
     if (!token) return;
 
     const code = sessionCode || localStorage.getItem("session_code");
     if (!code) return;
+
+    let cancelled = false;
 
     async function loadLobby() {
       try {
@@ -107,22 +100,23 @@ export default function Lobby({ token }) {
           },
         });
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load lobby");
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "Failed to load lobby");
+
+        if (cancelled) return;
 
         setSession(data.session);
 
-        // Enrich players with avatar_json + display_name from Supabase
         const rawPlayers = data.players || [];
         const playersWithProfiles = await attachProfilesToPlayers(rawPlayers);
+        if (cancelled) return;
         setPlayers(playersWithProfiles);
 
-        const computedIsHost =
-          Boolean(
-            data.current_user_id &&
-              data.session.host_id &&
-              data.current_user_id === data.session.host_id
-          );
+        const computedIsHost = Boolean(
+          data.current_user_id &&
+            data.session.host_id &&
+            data.current_user_id === data.session.host_id
+        );
 
         setSessionInfo({
           sessionId: data.session.id,
@@ -130,24 +124,35 @@ export default function Lobby({ token }) {
           isHost: computedIsHost,
         });
 
-        // If host already started the game → move everyone to Choose Game
-        if (data.session.status === "in_progress") {
-          navigate("/choose-game"); // 👈 match your real URL
+        const currentRound = Number(data.session.current_round || 0);
+        const status = data.session.status || "waiting";
+
+        // strongest route: if a round is already active, go straight to arena
+        if (currentRound >= 1) {
+          navigate("/arena");
+          return;
+        }
+
+        // otherwise, if game has started, go to choose-game
+        if (status === "in_progress") {
+          navigate("/choose-game");
+          return;
         }
       } catch (err) {
         console.error("Lobby error:", err);
-        setError(err.message);
+        if (!cancelled) setError(err.message);
       }
     }
 
     loadLobby();
-    const interval = setInterval(loadLobby, 2000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadLobby, 1500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [sessionCode, token, navigate, setSessionInfo, setPlayers]);
 
-  // ------------------------------------------------------------------
-  // HOST — Start game
-  // ------------------------------------------------------------------
   async function startGame() {
     setError("");
 
@@ -166,11 +171,10 @@ export default function Lobby({ token }) {
         },
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to start game");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Failed to start game");
 
-      // ✅ Go to Choose Game screen (which is LevelSelect under the hood)
-      navigate("/choose-game"); // 👈 match your router
+      navigate("/choose-game");
     } catch (err) {
       console.error("Start game error:", err);
       setError(err.message);

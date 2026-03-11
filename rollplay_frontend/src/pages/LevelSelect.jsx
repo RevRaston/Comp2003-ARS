@@ -4,7 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { GAME_CATALOGUE, GAME_PACKS } from "../GameList";
 import { useGame } from "../GameContext";
 
-const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  defaultBase
+).replace(/\/$/, "");
 
 export default function LevelSelect() {
   const navigate = useNavigate();
@@ -32,7 +41,7 @@ export default function LevelSelect() {
 
   const allRoundsChosen = localSelections.length >= MAX_ROUNDS;
 
-  // Joined players: follow host into arena when round 1 starts
+  // Joined players: follow host into arena when round starts
   useEffect(() => {
     if (isHost) return;
 
@@ -40,30 +49,42 @@ export default function LevelSelect() {
     if (!code) return;
 
     let cancelled = false;
+    let timeoutId = null;
 
     async function poll() {
       try {
         const res = await fetch(`${API_BASE}/sessions/${code}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
 
         if (res.ok && data?.session) {
-          const currentRound = data.session.current_round ?? null;
-          if (currentRound === 1) {
+          const currentRound = Number(data.session.current_round || 0);
+          const status = data.session.status || "waiting";
+
+          // strongest condition: round has started
+          if (currentRound >= 1) {
             navigate("/arena");
             return;
+          }
+
+          // if not started yet, keep waiting here
+          if (status === "in_progress") {
+            // host is choosing / has chosen games but round not set yet
           }
         }
       } catch (err) {
         console.error("LevelSelect session poll failed:", err);
       }
 
-      if (!cancelled) setTimeout(poll, 2000);
+      if (!cancelled) {
+        timeoutId = setTimeout(poll, 1500);
+      }
     }
 
     poll();
 
     return () => {
       cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [isHost, sessionCode, navigate]);
 
@@ -127,9 +148,13 @@ export default function LevelSelect() {
           body: JSON.stringify({ round_number: 1 }),
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (!res.ok) {
-          console.error("[HOST] Failed to mark round start:", res.status, data?.error || data);
+          console.error(
+            "[HOST] Failed to mark round start:",
+            res.status,
+            data?.error || data
+          );
         }
       } catch (err) {
         console.error("Error calling /start-round:", err);
@@ -155,7 +180,6 @@ export default function LevelSelect() {
         </p>
       </div>
 
-      {/* Pack tabs */}
       <div style={packsRow}>
         {GAME_PACKS.map((pack) => (
           <button
@@ -167,16 +191,19 @@ export default function LevelSelect() {
             }}
           >
             <div style={{ fontWeight: 700 }}>{pack.name}</div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>{pack.description}</div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              {pack.description}
+            </div>
           </button>
         ))}
       </div>
 
       <div style={layout}>
-        {/* Catalogue */}
         <div style={catalogueGrid}>
           {visibleGames.map((game) => {
-            const chosenEntry = localSelections.find((s) => s.level.id === game.id);
+            const chosenEntry = localSelections.find(
+              (s) => s.level.id === game.id
+            );
             const disabled =
               !isHost || isSpinning || Boolean(chosenEntry) || allRoundsChosen;
 
@@ -215,7 +242,6 @@ export default function LevelSelect() {
           })}
         </div>
 
-        {/* Sidebar */}
         <div style={sidebar}>
           <h2 style={{ marginTop: 0 }}>Round Plan</h2>
 
