@@ -44,9 +44,6 @@ let currentGame = {
 ----------------------------------------- */
 const app = express();
 
-/**
- * ✅ SIMPLE GLOBAL CORS
- */
 app.use(cors());
 app.use(express.json());
 
@@ -54,9 +51,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
 
+// Regular backend client
 export const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
+);
+
+// ✅ Admin/service-role backend client (bypasses RLS)
+// IMPORTANT: set SUPABASE_SERVICE_ROLE_KEY in Render
+export const adminSupabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
 // helper for authed Supabase instance (respects JWT / RLS)
@@ -352,8 +357,8 @@ app.post("/sessions/:code/start-round", async (req, res) => {
   const { code } = req.params;
   const { round_number } = req.body || {};
 
-  // ✅ use server-side client directly
-  const supa = supabase;
+  // ✅ use service-role client
+  const supa = adminSupabase;
 
   const roundNum = Number(round_number) || 1;
 
@@ -493,8 +498,8 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
   const { confirmedSplit } = req.body || {};
 
-  // ✅ use server-side client directly
-  const supa = supabase;
+  // ✅ use service-role client
+  const supa = adminSupabase;
 
   try {
     const { data: session, error: sessionErr } = await supa
@@ -551,8 +556,8 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
 app.get("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
 
-  // ✅ use server-side client directly
-  const supa = supabase;
+  // ✅ use service-role client
+  const supa = adminSupabase;
 
   try {
     const { data: session, error } = await supa
