@@ -351,7 +351,9 @@ app.post("/sessions/:code/start", async (req, res) => {
 app.post("/sessions/:code/start-round", async (req, res) => {
   const { code } = req.params;
   const { round_number } = req.body || {};
-  const supa = supaForRequest(req);
+
+  // ✅ use server-side client directly
+  const supa = supabase;
 
   const roundNum = Number(round_number) || 1;
 
@@ -491,7 +493,8 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
   const { confirmedSplit } = req.body || {};
 
-  const supa = supaForRequest(req);
+  // ✅ use server-side client directly
+  const supa = supabase;
 
   try {
     const { data: session, error: sessionErr } = await supa
@@ -547,7 +550,9 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
 // Get confirmed split
 app.get("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
-  const supa = supaForRequest(req);
+
+  // ✅ use server-side client directly
+  const supa = supabase;
 
   try {
     const { data: session, error } = await supa
