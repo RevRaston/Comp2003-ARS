@@ -42,18 +42,17 @@ export default function Arena() {
   } = useGame();
 
   const [enrichedPlayers, setEnrichedPlayers] = useState([]);
-  const [overrideGameId, setOverrideGameId] = useState(null);
 
   const code = sessionCode || localStorage.getItem("session_code");
 
-  // Fallback: load players if context is empty
+  // Always poll session + players so both clients stay in sync
   useEffect(() => {
     if (!code) return;
-    if (players && players.length > 0) return;
 
     let cancelled = false;
+    let intervalId = null;
 
-    async function loadArenaPlayers() {
+    async function loadArenaSession() {
       try {
         const token = localStorage.getItem("token");
         const headers = {};
@@ -62,25 +61,24 @@ export default function Arena() {
         const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
         const data = await res.json().catch(() => null);
 
-        if (!res.ok || !data?.players) return;
+        if (!res.ok || !data?.session) return;
         if (cancelled) return;
 
-        setPlayers(data.players);
-
-        if (data?.session?.current_round) {
-          setRound(Number(data.session.current_round));
-        }
+        setPlayers(data.players || []);
+        setRound(Number(data.session.current_round || 1));
       } catch (err) {
-        console.error("Arena fallback player load failed:", err);
+        console.error("Arena session/player poll failed:", err);
       }
     }
 
-    loadArenaPlayers();
+    loadArenaSession();
+    intervalId = setInterval(loadArenaSession, 1500);
 
     return () => {
       cancelled = true;
+      if (intervalId) clearInterval(intervalId);
     };
-  }, [code, players, setPlayers, setRound]);
+  }, [code, setPlayers, setRound]);
 
   // Load shared level plan from backend
   useEffect(() => {
@@ -119,41 +117,6 @@ export default function Arena() {
 
     loadLevelPlan();
   }, [code, setSelectedLevels]);
-
-  // Load current round from backend
-  useEffect(() => {
-    if (!code) return;
-
-    let cancelled = false;
-    let intervalId = null;
-
-    async function pollSession() {
-      try {
-        const token = localStorage.getItem("token");
-        const headers = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-
-        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok || !data?.session) return;
-        if (cancelled) return;
-
-        const currentRound = Number(data.session.current_round || 1);
-        setRound(currentRound);
-      } catch (err) {
-        console.error("Arena session poll failed:", err);
-      }
-    }
-
-    pollSession();
-    intervalId = setInterval(pollSession, 1500);
-
-    return () => {
-      cancelled = true;
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [code, setRound]);
 
   // Enrich players with profile info
   useEffect(() => {
@@ -245,15 +208,10 @@ export default function Arena() {
     null;
 
   const currentLevel = currentLevelEntry?.level || null;
-  const plannedLevelId = currentLevel?.id || "sumo";
+  const currentLevelId = currentLevel?.id || "sumo";
   const currentLevelName = currentLevel?.name || "Sumo (MVP)";
 
-  const effectiveGameId = overrideGameId || plannedLevelId;
-  const CurrentGameComponent = GAME_COMPONENTS[effectiveGameId] || SumoGame;
-
-  function handleSumoRoundComplete() {
-    setOverrideGameId("darts");
-  }
+  const CurrentGameComponent = GAME_COMPONENTS[currentLevelId] || SumoGame;
 
   return (
     <div style={page}>
@@ -266,11 +224,6 @@ export default function Arena() {
           Round {currentRound}
           {currentLevelName ? ` — ${currentLevelName}` : ""}
         </p>
-        {overrideGameId && (
-          <p style={{ margin: 0, fontSize: 12, opacity: 0.7 }}>
-            Switched to: Darts
-          </p>
-        )}
       </div>
 
       <div style={arenaShell}>
@@ -281,9 +234,7 @@ export default function Arena() {
 
         <div style={centerCol}>
           <div style={centerHeader}>
-            <h2 style={{ margin: 0 }}>
-              {effectiveGameId === plannedLevelId ? currentLevelName : "Darts"}
-            </h2>
+            <h2 style={{ margin: 0 }}>{currentLevelName}</h2>
             <p style={centerHint}>
               This round&apos;s game plays here. Host runs the simulation; other
               players send input.
@@ -311,9 +262,6 @@ export default function Arena() {
               isHost={Boolean(isHost)}
               myUserId={myUserId}
               mySeatIndex={mySeatIndex}
-              onRoundComplete={
-                effectiveGameId === "sumo" ? handleSumoRoundComplete : undefined
-              }
             />
           </div>
         </div>
