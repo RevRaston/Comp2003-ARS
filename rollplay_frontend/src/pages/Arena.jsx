@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
 import AvatarPreview from "../components/AvatarPreview";
+import { GAME_CATALOGUE } from "../GameList";
 
 import SumoGame from "../games/Sumo/SumoGame";
 import DartsGame from "../games/Darts/DartsGame";
@@ -35,15 +36,18 @@ export default function Arena() {
     sessionCode,
     isHost,
     selectedLevels = [],
+    setSelectedLevels,
     round = 1,
+    setRound,
   } = useGame();
 
   const [enrichedPlayers, setEnrichedPlayers] = useState([]);
   const [overrideGameId, setOverrideGameId] = useState(null);
 
+  const code = sessionCode || localStorage.getItem("session_code");
+
   // Fallback: load players if context is empty
   useEffect(() => {
-    const code = sessionCode || localStorage.getItem("session_code");
     if (!code) return;
     if (players && players.length > 0) return;
 
@@ -53,9 +57,7 @@ export default function Arena() {
       try {
         const token = localStorage.getItem("token");
         const headers = {};
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
+        if (token) headers.Authorization = `Bearer ${token}`;
 
         const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
         const data = await res.json().catch(() => null);
@@ -64,6 +66,10 @@ export default function Arena() {
         if (cancelled) return;
 
         setPlayers(data.players);
+
+        if (data?.session?.current_round) {
+          setRound(Number(data.session.current_round));
+        }
       } catch (err) {
         console.error("Arena fallback player load failed:", err);
       }
@@ -74,7 +80,80 @@ export default function Arena() {
     return () => {
       cancelled = true;
     };
-  }, [sessionCode, players, setPlayers]);
+  }, [code, players, setPlayers, setRound]);
+
+  // Load shared level plan from backend
+  useEffect(() => {
+    if (!code) return;
+
+    let cancelled = false;
+
+    async function loadLevelPlan() {
+      try {
+        const res = await fetch(`${API_BASE}/sessions/${code}/levels`);
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok || !data?.levels) return;
+        if (cancelled) return;
+
+        const mapped = data.levels
+          .map((entry) => {
+            const level = GAME_CATALOGUE.find((g) => g.id === entry.level_key);
+            if (!level) return null;
+
+            return {
+              round: entry.round_number,
+              level,
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.round - b.round);
+
+        if (mapped.length > 0) {
+          setSelectedLevels(mapped);
+        }
+      } catch (err) {
+        console.error("Arena level plan load failed:", err);
+      }
+    }
+
+    loadLevelPlan();
+  }, [code, setSelectedLevels]);
+
+  // Load current round from backend
+  useEffect(() => {
+    if (!code) return;
+
+    let cancelled = false;
+    let intervalId = null;
+
+    async function pollSession() {
+      try {
+        const token = localStorage.getItem("token");
+        const headers = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok || !data?.session) return;
+        if (cancelled) return;
+
+        const currentRound = Number(data.session.current_round || 1);
+        setRound(currentRound);
+      } catch (err) {
+        console.error("Arena session poll failed:", err);
+      }
+    }
+
+    pollSession();
+    intervalId = setInterval(pollSession, 1500);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [code, setRound]);
 
   // Enrich players with profile info
   useEffect(() => {
@@ -227,7 +306,7 @@ export default function Arena() {
 
           <div style={gameBox}>
             <CurrentGameComponent
-              sessionCode={sessionCode || localStorage.getItem("session_code")}
+              sessionCode={code}
               players={enrichedPlayers}
               isHost={Boolean(isHost)}
               myUserId={myUserId}

@@ -34,6 +34,8 @@ export default function LevelSelect() {
   const [localSelections, setLocalSelections] = useState(selectedLevels || []);
   const [isSpinning, setIsSpinning] = useState(false);
 
+  const code = sessionCode || localStorage.getItem("session_code");
+
   const chosenIds = useMemo(
     () => localSelections.map((s) => s.level.id),
     [localSelections]
@@ -41,11 +43,52 @@ export default function LevelSelect() {
 
   const allRoundsChosen = localSelections.length >= MAX_ROUNDS;
 
+  // Load saved backend level plan
+  useEffect(() => {
+    if (!code) return;
+
+    let cancelled = false;
+
+    async function loadLevelPlan() {
+      try {
+        const res = await fetch(`${API_BASE}/sessions/${code}/levels`);
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok || !data?.levels) return;
+        if (cancelled) return;
+
+        const mapped = data.levels
+          .map((entry) => {
+            const level = GAME_CATALOGUE.find((g) => g.id === entry.level_key);
+            if (!level) return null;
+
+            return {
+              round: entry.round_number,
+              level,
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.round - b.round);
+
+        if (mapped.length > 0) {
+          setLocalSelections(mapped);
+          setSelectedLevels(mapped);
+        }
+      } catch (err) {
+        console.error("Failed to load level plan:", err);
+      }
+    }
+
+    loadLevelPlan();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, setSelectedLevels]);
+
   // Joined players: follow host into arena when round starts
   useEffect(() => {
     if (isHost) return;
-
-    const code = sessionCode || localStorage.getItem("session_code");
     if (!code) return;
 
     let cancelled = false;
@@ -58,17 +101,10 @@ export default function LevelSelect() {
 
         if (res.ok && data?.session) {
           const currentRound = Number(data.session.current_round || 0);
-          const status = data.session.status || "waiting";
 
-          // strongest condition: round has started
           if (currentRound >= 1) {
             navigate("/arena");
             return;
-          }
-
-          // if not started yet, keep waiting here
-          if (status === "in_progress") {
-            // host is choosing / has chosen games but round not set yet
           }
         }
       } catch (err) {
@@ -86,9 +122,34 @@ export default function LevelSelect() {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isHost, sessionCode, navigate]);
+  }, [isHost, code, navigate]);
 
-  function chooseLevel(level) {
+  async function saveLevelToBackend(roundNumber, levelId) {
+    if (!code) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/sessions/${code}/levels`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          round_number: roundNumber,
+          level_key: levelId,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        console.error("Failed to save level plan:", data?.error || data);
+      }
+    } catch (err) {
+      console.error("saveLevelToBackend failed:", err);
+    }
+  }
+
+  async function chooseLevel(level) {
     if (!isHost) return;
     if (isSpinning) return;
 
@@ -106,6 +167,8 @@ export default function LevelSelect() {
     setLocalSelections(sorted);
     setSelectedLevels(sorted);
 
+    await saveLevelToBackend(round, level.id);
+
     if (round < MAX_ROUNDS) setRound(round + 1);
   }
 
@@ -119,10 +182,10 @@ export default function LevelSelect() {
 
     setIsSpinning(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const randomLevel =
         available[Math.floor(Math.random() * available.length)];
-      chooseLevel(randomLevel);
+      await chooseLevel(randomLevel);
       setIsSpinning(false);
     }, 900);
   }
@@ -139,7 +202,6 @@ export default function LevelSelect() {
     setSelectedLevels(localSelections);
     setRound(1);
 
-    const code = sessionCode || localStorage.getItem("session_code");
     if (code) {
       try {
         const res = await fetch(`${API_BASE}/sessions/${code}/start-round`, {
