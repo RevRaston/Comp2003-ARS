@@ -85,8 +85,6 @@ export default function Lobby({ token }) {
   }, [sessionCode, sessionId, navigate, setSessionInfo]);
 
   useEffect(() => {
-    if (!token) return;
-
     const code = sessionCode || localStorage.getItem("session_code");
     if (!code) return;
 
@@ -94,11 +92,12 @@ export default function Lobby({ token }) {
 
     async function loadLobby() {
       try {
-        const res = await fetch(`${API_BASE}/sessions/${code}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const headers = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
 
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.error || "Failed to load lobby");
@@ -127,13 +126,11 @@ export default function Lobby({ token }) {
         const currentRound = Number(data.session.current_round || 0);
         const status = data.session.status || "waiting";
 
-        // strongest route: if a round is already active, go straight to arena
         if (currentRound >= 1) {
           navigate("/arena");
           return;
         }
 
-        // otherwise, if game has started, go to choose-game
         if (status === "in_progress") {
           navigate("/choose-game");
           return;
@@ -163,12 +160,17 @@ export default function Lobby({ token }) {
         return;
       }
 
+      const headers = {
+        "X-User-Id": localStorage.getItem("user_id") || "",
+      };
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${API_BASE}/sessions/${code}/start`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-User-Id": localStorage.getItem("user_id"),
-        },
+        headers,
       });
 
       const data = await res.json().catch(() => null);

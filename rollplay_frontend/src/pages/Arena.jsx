@@ -7,19 +7,30 @@ import AvatarPreview from "../components/AvatarPreview";
 import SumoGame from "../games/Sumo/SumoGame";
 import DartsGame from "../games/Darts/DartsGame";
 import GuessingCardGame from "../games/GuessingCard/GuessingCardGame";
-import MazeGame from "../games/Maze/MazeGame"; // 👈 NEW
+import MazeGame from "../games/Maze/MazeGame";
 
-// Map from level.id (from GAME_LIST) -> React component used in Arena
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  defaultBase
+).replace(/\/$/, "");
+
 const GAME_COMPONENTS = {
   sumo: SumoGame,
   darts: DartsGame,
   guessing_card: GuessingCardGame,
-  maze: MazeGame, 
+  maze: MazeGame,
 };
 
 export default function Arena() {
   const {
     players,
+    setPlayers,
     profile,
     sessionCode,
     isHost,
@@ -28,11 +39,44 @@ export default function Arena() {
   } = useGame();
 
   const [enrichedPlayers, setEnrichedPlayers] = useState([]);
-
-  // Local override so we can force "darts" after sumo ends
   const [overrideGameId, setOverrideGameId] = useState(null);
 
-  // Enrich players with profile info (display_name + avatar_json)
+  // Fallback: load players if context is empty
+  useEffect(() => {
+    const code = sessionCode || localStorage.getItem("session_code");
+    if (!code) return;
+    if (players && players.length > 0) return;
+
+    let cancelled = false;
+
+    async function loadArenaPlayers() {
+      try {
+        const token = localStorage.getItem("token");
+        const headers = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok || !data?.players) return;
+        if (cancelled) return;
+
+        setPlayers(data.players);
+      } catch (err) {
+        console.error("Arena fallback player load failed:", err);
+      }
+    }
+
+    loadArenaPlayers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionCode, players, setPlayers]);
+
+  // Enrich players with profile info
   useEffect(() => {
     async function enrich() {
       if (!players || players.length === 0) {
@@ -102,7 +146,6 @@ export default function Arena() {
     localStorage.getItem("user_id") ||
     null;
 
-  // Compute seat index for this user (0..3, or -1)
   const mySeatIndex = useMemo(() => {
     const uid = myUserId ? String(myUserId) : "";
     if (!uid) return -1;
@@ -115,7 +158,6 @@ export default function Arena() {
     return -1;
   }, [myUserId, slotPlayers]);
 
-  // ----------------- Current round + game -----------------
   const currentRound = round || 1;
 
   const currentLevelEntry =
@@ -127,15 +169,10 @@ export default function Arena() {
   const plannedLevelId = currentLevel?.id || "sumo";
   const currentLevelName = currentLevel?.name || "Sumo (MVP)";
 
-  // If we’ve set an override (e.g. when sumo ends), use it.
   const effectiveGameId = overrideGameId || plannedLevelId;
-  const CurrentGameComponent =
-    GAME_COMPONENTS[effectiveGameId] || SumoGame;
+  const CurrentGameComponent = GAME_COMPONENTS[effectiveGameId] || SumoGame;
 
-  // Handler passed into Sumo. Runs on BOTH host & clients.
-  function handleSumoRoundComplete(info) {
-    // For now: always jump to Darts after Sumo ends.
-    // (Later we’ll look at the level plan instead of hardcoding.)
+  function handleSumoRoundComplete() {
     setOverrideGameId("darts");
   }
 
@@ -158,23 +195,19 @@ export default function Arena() {
       </div>
 
       <div style={arenaShell}>
-        {/* LEFT COLUMN (P1 / P3) */}
         <div style={leftCol}>
           <ArenaSlot player={slotPlayers[0]} label="P1" />
           <ArenaSlot player={slotPlayers[2]} label="P3" />
         </div>
 
-        {/* CENTER GAME PANEL */}
         <div style={centerCol}>
           <div style={centerHeader}>
             <h2 style={{ margin: 0 }}>
-              {effectiveGameId === plannedLevelId
-                ? currentLevelName
-                : "Darts"}
+              {effectiveGameId === plannedLevelId ? currentLevelName : "Darts"}
             </h2>
             <p style={centerHint}>
-              This round&apos;s game plays here. Host runs the simulation;
-              other players send input.
+              This round&apos;s game plays here. Host runs the simulation; other
+              players send input.
             </p>
             <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
               Your dot is <strong>BLUE</strong> on your screen. Opponent is{" "}
@@ -194,24 +227,18 @@ export default function Arena() {
 
           <div style={gameBox}>
             <CurrentGameComponent
-              sessionCode={
-                sessionCode || localStorage.getItem("session_code")
-              }
+              sessionCode={sessionCode || localStorage.getItem("session_code")}
               players={enrichedPlayers}
               isHost={Boolean(isHost)}
               myUserId={myUserId}
               mySeatIndex={mySeatIndex}
-              // Only SumoGame cares about this; Darts will ignore it.
               onRoundComplete={
-                effectiveGameId === "sumo"
-                  ? handleSumoRoundComplete
-                  : undefined
+                effectiveGameId === "sumo" ? handleSumoRoundComplete : undefined
               }
             />
           </div>
         </div>
 
-        {/* RIGHT COLUMN (P2 / P4) */}
         <div style={rightCol}>
           <ArenaSlot player={slotPlayers[1]} label="P2" />
           <ArenaSlot player={slotPlayers[3]} label="P4" />
