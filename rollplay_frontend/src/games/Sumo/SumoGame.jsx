@@ -17,10 +17,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
  *  2) If 20s timer expires → whoever is closest to centre wins.
  */
 
-const WS_URL =
-  (import.meta.env.VITE_WS_URL &&
-    import.meta.env.VITE_WS_URL.replace(/\/$/, "")) ||
-  "ws://localhost:3000/ws";
+const defaultWsBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "ws://localhost:3000/ws"
+    : "wss://comp2003-ars.onrender.com/ws";
+
+const WS_URL = (
+  import.meta.env.VITE_WS_URL ||
+  import.meta.env.VITE_BACKEND_WS_URL ||
+  defaultWsBase
+).replace(/\/$/, "");
 
 const ROUND_TIME = 20;
 
