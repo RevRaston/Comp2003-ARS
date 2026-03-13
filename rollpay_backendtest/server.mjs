@@ -357,9 +357,7 @@ app.post("/sessions/:code/start-round", async (req, res) => {
   const { code } = req.params;
   const { round_number } = req.body || {};
 
-  // ✅ use service-role client
   const supa = adminSupabase;
-
   const roundNum = Number(round_number) || 1;
 
   try {
@@ -411,14 +409,24 @@ app.post("/sessions/:code/start-round", async (req, res) => {
   }
 });
 
-// Lobby state
+// Lobby / shared session state
 app.get("/sessions/:code", async (req, res) => {
-  const supa = supaForRequest(req);
   const { code } = req.params;
 
-  const {
-    data: { user },
-  } = await supa.auth.getUser();
+  // ✅ use admin/service-role client for shared session reads
+  const supa = adminSupabase;
+
+  // optional user lookup if auth header exists
+  let current_user_id = null;
+  try {
+    const authed = supaForRequest(req);
+    const {
+      data: { user },
+    } = await authed.auth.getUser();
+    current_user_id = user ? user.id : null;
+  } catch (_) {
+    current_user_id = null;
+  }
 
   const { data: session, error } = await supa
     .from("sessions")
@@ -430,15 +438,20 @@ app.get("/sessions/:code", async (req, res) => {
     return res.status(404).json({ error: "Session not found" });
   }
 
-  const { data: players } = await supa
+  const { data: players, error: playersErr } = await supa
     .from("session_players")
     .select("*")
-    .eq("session_id", session.id);
+    .eq("session_id", session.id)
+    .order("is_host", { ascending: false });
+
+  if (playersErr) {
+    return res.status(500).json({ error: playersErr.message });
+  }
 
   res.json({
     session,
-    players,
-    current_user_id: user ? user.id : null,
+    players: players || [],
+    current_user_id,
   });
 });
 
@@ -498,7 +511,6 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
   const { confirmedSplit } = req.body || {};
 
-  // ✅ use service-role client
   const supa = adminSupabase;
 
   try {
@@ -556,7 +568,6 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
 app.get("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
 
-  // ✅ use service-role client
   const supa = adminSupabase;
 
   try {
