@@ -1,5 +1,5 @@
 // src/pages/Arena.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
@@ -50,6 +50,8 @@ export default function Arena() {
   const [advancingRound, setAdvancingRound] = useState(false);
   const [roundActionError, setRoundActionError] = useState("");
 
+  const lastServerRoundRef = useRef(null);
+
   const code = sessionCode || localStorage.getItem("session_code");
 
   useEffect(() => {
@@ -75,11 +77,17 @@ export default function Arena() {
         setPlayers(data.players || []);
         setRound(serverRound);
 
-        if (serverRound !== currentRound) {
+        // Only clear round-complete UI when the backend round genuinely advances
+        if (
+          lastServerRoundRef.current !== null &&
+          serverRound > lastServerRoundRef.current
+        ) {
           setRoundComplete(false);
           setRoundActionError("");
           setAdvancingRound(false);
         }
+
+        lastServerRoundRef.current = serverRound;
       } catch (err) {
         console.error("Arena session/player poll failed:", err);
       }
@@ -92,7 +100,7 @@ export default function Arena() {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [code, setPlayers, setRound]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, setPlayers, setRound]);
 
   useEffect(() => {
     if (!code) return;
@@ -129,6 +137,10 @@ export default function Arena() {
     }
 
     loadLevelPlan();
+
+    return () => {
+      cancelled = true;
+    };
   }, [code, setSelectedLevels]);
 
   useEffect(() => {
