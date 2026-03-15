@@ -2,9 +2,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./GuessingCard.css";
 
-const WS_URL =
-  (import.meta.env.VITE_WS_URL && import.meta.env.VITE_WS_URL.replace(/\/$/, "")) ||
-  "ws://localhost:3000/ws";
+const defaultWsBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "ws://localhost:3000/ws"
+    : "wss://comp2003-ars.onrender.com/ws";
+
+const WS_URL = (
+  import.meta.env.VITE_WS_URL ||
+  import.meta.env.VITE_BACKEND_WS_URL ||
+  defaultWsBase
+).replace(/\/$/, "");
 
 function labelForValue(v) {
   const names = { 1: "A", 11: "J", 12: "Q", 13: "K" };
@@ -21,9 +28,16 @@ export default function GuessingCardGame({
   sessionCode,
   players = [],
   isHost = false,
+  onRoundComplete,
 }) {
   const wsRef = useRef(null);
   const runningRef = useRef(false);
+  const announcedRef = useRef(false);
+  const onRoundCompleteRef = useRef(onRoundComplete);
+
+  useEffect(() => {
+    onRoundCompleteRef.current = onRoundComplete;
+  }, [onRoundComplete]);
 
   const [connLine, setConnLine] = useState("disconnected");
 
@@ -75,7 +89,9 @@ export default function GuessingCardGame({
     if (!playerList.length) return;
 
     const s = stateRef.current;
-    if (s.players.length) return;
+
+    // only rebuild player list if empty or changed size
+    if (s.players.length === playerList.length && s.players.length > 0) return;
 
     s.players = playerList.map((p) => ({
       id: p.id,
@@ -92,6 +108,7 @@ export default function GuessingCardGame({
   useEffect(() => {
     if (runningRef.current) return;
     runningRef.current = true;
+    announcedRef.current = false;
 
     setConnLine("connecting…");
     const ws = new WebSocket(WS_URL);
@@ -128,6 +145,18 @@ export default function GuessingCardGame({
         };
 
         syncUiFromState();
+
+        if (
+          stateRef.current.phase === "reveal" &&
+          !announcedRef.current &&
+          typeof onRoundCompleteRef.current === "function"
+        ) {
+          announcedRef.current = true;
+          onRoundCompleteRef.current({
+            winnerKey: null,
+            outcome: stateRef.current.outcome,
+          });
+        }
       }
     };
 
@@ -159,7 +188,9 @@ export default function GuessingCardGame({
           s.aiCard = Math.floor(Math.random() * 13) + 1;
         }
       } else if (s.phase === "picking") {
-        const allLocked = s.players.length > 0 && s.players.every((p) => p.locked);
+        const allLocked =
+          s.players.length > 0 && s.players.every((p) => p.locked);
+
         s.timer -= 1;
 
         if (s.timer <= 0 || allLocked) {
@@ -214,6 +245,18 @@ export default function GuessingCardGame({
           tick: s.tick,
         },
       });
+
+      if (
+        s.phase === "reveal" &&
+        !announcedRef.current &&
+        typeof onRoundCompleteRef.current === "function"
+      ) {
+        announcedRef.current = true;
+        onRoundCompleteRef.current({
+          winnerKey: null,
+          outcome: s.outcome,
+        });
+      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -249,6 +292,8 @@ export default function GuessingCardGame({
   function handleReplay() {
     if (!isHost) return;
 
+    announcedRef.current = false;
+
     const s = stateRef.current;
     s.phase = "countdown";
     s.timer = 3;
@@ -278,7 +323,9 @@ export default function GuessingCardGame({
     <div className="guessing-card-page">
       <h1 className="title">Guessing Card</h1>
 
-      <div style={{ color: "white", opacity: 0.7, fontSize: 12, marginBottom: 8 }}>
+      <div
+        style={{ color: "white", opacity: 0.7, fontSize: 12, marginBottom: 8 }}
+      >
         {connLine} {isHost ? "— HOST" : "— CLIENT"} (room: {code})
       </div>
 
