@@ -5,6 +5,7 @@ import "./darts.css";
 /**
  * Darts — WebSocket host-authoritative turn-based round
  * - Host runs simulation + broadcasts state
+ * - Active player can fire on their own turn
  * - Clients render host state
  * - Host controls advancing to next player
  * - After all players have taken a turn, round completes
@@ -63,6 +64,7 @@ export default function DartsGame({
   const [roundFinished, setRoundFinished] = useState(false);
 
   const code = sessionCode || localStorage.getItem("session_code") || "local";
+  const myUserId = String(localStorage.getItem("user_id") || "");
 
   const orderedPlayers = useMemo(() => {
     return Array.isArray(players) ? players.slice(0, 4) : [];
@@ -74,9 +76,10 @@ export default function DartsGame({
     );
   }, [orderedPlayers]);
 
-  const playerKeys = useMemo(() => {
-    return orderedPlayers.map(getPlayerKey);
-  }, [orderedPlayers]);
+  const myPlayerIndex = useMemo(() => {
+    if (!myUserId) return -1;
+    return orderedPlayers.findIndex((p) => getPlayerKey(p) === myUserId);
+  }, [orderedPlayers, myUserId]);
 
   const activePlayerName =
     playerNames[currentPlayerIndex] || `Player ${currentPlayerIndex + 1}`;
@@ -126,12 +129,15 @@ export default function DartsGame({
   }
 
   function fireDart() {
-    if (!isHost) return;
     const s = stateRef.current;
+
     if (s.roundFinished) return;
     if (s.finished) return;
     if (s.dart.fired) return;
     if (s.dartsLeft <= 0) return;
+
+    // ✅ Only the active player can fire
+    if (myPlayerIndex !== s.currentPlayerIndex) return;
 
     s.dart.fired = true;
     s.dartsLeft -= 1;
@@ -167,7 +173,11 @@ export default function DartsGame({
       s.msg = "Round complete! All players have taken a turn.";
       syncUiFromState();
 
-      if (!announcedRef.current && typeof onRoundCompleteRef.current === "function") {
+      // ✅ Trigger Arena progression
+      if (
+        !announcedRef.current &&
+        typeof onRoundCompleteRef.current === "function"
+      ) {
         announcedRef.current = true;
         onRoundCompleteRef.current({
           winnerKey: null,
@@ -499,7 +509,9 @@ export default function DartsGame({
         (s.timer <= 0 || (s.dartsLeft === 0 && !s.dart.fired))
       ) {
         s.finished = true;
-        s.msg = `Turn finished! ${playerNames[s.currentPlayerIndex] || "Player"} scored ${s.score}`;
+        s.msg = `Turn finished! ${
+          playerNames[s.currentPlayerIndex] || "Player"
+        } scored ${s.score}`;
         syncUiFromState();
       }
 
@@ -553,9 +565,11 @@ export default function DartsGame({
       <button
         onClick={fireDart}
         className="fire-btn"
-        disabled={!isHost || turnFinished || roundFinished}
+        disabled={
+          turnFinished || roundFinished || myPlayerIndex !== currentPlayerIndex
+        }
       >
-        {isHost ? "FIRE" : "Host is playing…"}
+        {myPlayerIndex === currentPlayerIndex ? "FIRE" : "Not your turn"}
       </button>
 
       <div className="game-message">{statusMessage}</div>
