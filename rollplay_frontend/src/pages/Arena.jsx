@@ -1,5 +1,6 @@
 // src/pages/Arena.jsx
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
 import AvatarPreview from "../components/AvatarPreview";
@@ -29,6 +30,8 @@ const GAME_COMPONENTS = {
 };
 
 export default function Arena() {
+  const navigate = useNavigate();
+
   const {
     players,
     setPlayers,
@@ -39,9 +42,13 @@ export default function Arena() {
     setSelectedLevels,
     round = 1,
     setRound,
+    maxRounds = 3,
   } = useGame();
 
   const [enrichedPlayers, setEnrichedPlayers] = useState([]);
+  const [roundComplete, setRoundComplete] = useState(false);
+  const [advancingRound, setAdvancingRound] = useState(false);
+  const [roundActionError, setRoundActionError] = useState("");
 
   const code = sessionCode || localStorage.getItem("session_code");
 
@@ -64,8 +71,17 @@ export default function Arena() {
         if (!res.ok || !data?.session) return;
         if (cancelled) return;
 
+        const serverRound = Number(data.session.current_round || 1);
+
         setPlayers(data.players || []);
-        setRound(Number(data.session.current_round || 1));
+        setRound(serverRound);
+
+        // If server round moved on, clear round complete overlay
+        if (serverRound !== currentRound) {
+          setRoundComplete(false);
+          setRoundActionError("");
+          setAdvancingRound(false);
+        }
       } catch (err) {
         console.error("Arena session/player poll failed:", err);
       }
@@ -78,7 +94,7 @@ export default function Arena() {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [code, setPlayers, setRound]);
+  }, [code, setPlayers, setRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load shared level plan from backend
   useEffect(() => {
@@ -213,6 +229,49 @@ export default function Arena() {
 
   const CurrentGameComponent = GAME_COMPONENTS[currentLevelId] || SumoGame;
 
+  const hasNextRound =
+    currentRound < maxRounds &&
+    selectedLevels.some((entry) => entry.round === currentRound + 1);
+
+  function handleRoundComplete() {
+    setRoundComplete(true);
+    setRoundActionError("");
+  }
+
+  async function handleAdvanceRound() {
+    if (!isHost || !code || advancingRound) return;
+
+    setRoundActionError("");
+    setAdvancingRound(true);
+
+    try {
+      if (!hasNextRound) {
+        navigate("/results");
+        return;
+      }
+
+      const res = await fetch(`${API_BASE}/sessions/${code}/advance-round`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to advance round");
+      }
+
+      setRoundComplete(false);
+    } catch (err) {
+      console.error("Advance round failed:", err);
+      setRoundActionError(err.message || "Failed to advance round");
+    } finally {
+      setAdvancingRound(false);
+    }
+  }
+
   return (
     <div style={page}>
       <div style={titleWrap}>
@@ -262,8 +321,45 @@ export default function Arena() {
               isHost={Boolean(isHost)}
               myUserId={myUserId}
               mySeatIndex={mySeatIndex}
+              onRoundComplete={handleRoundComplete}
             />
           </div>
+
+          {roundComplete && (
+            <div style={roundCompletePanel}>
+              <h3 style={{ marginTop: 0 }}>Round complete</h3>
+
+              {isHost ? (
+                <>
+                  <p style={panelText}>
+                    {hasNextRound
+                      ? "Start the next round when you're ready."
+                      : "No more rounds left. Continue to results."}
+                  </p>
+
+                  {roundActionError && (
+                    <p style={errorText}>{roundActionError}</p>
+                  )}
+
+                  <button
+                    onClick={handleAdvanceRound}
+                    disabled={advancingRound}
+                    style={advanceButton}
+                  >
+                    {advancingRound
+                      ? "Advancing..."
+                      : hasNextRound
+                      ? "Start Next Round"
+                      : "Go To Results"}
+                  </button>
+                </>
+              ) : (
+                <p style={panelText}>
+                  Waiting for the host to continue…
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={rightCol}>
@@ -377,6 +473,34 @@ const gameBox = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+};
+
+const roundCompletePanel = {
+  padding: 18,
+  borderRadius: 22,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(0,0,0,0.35)",
+  textAlign: "center",
+};
+
+const panelText = {
+  opacity: 0.85,
+  marginBottom: 14,
+};
+
+const errorText = {
+  color: "#ff9a9a",
+  fontWeight: 600,
+};
+
+const advanceButton = {
+  padding: "12px 18px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.12)",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 15,
 };
 
 const slotWrap = {

@@ -17,7 +17,6 @@ router.post("/:sessionCode/levels", async (req, res) => {
       });
     }
 
-    // ✅ Get session_id from sessionCode using admin client
     const { data: sessionRow, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id")
@@ -25,12 +24,12 @@ router.post("/:sessionCode/levels", async (req, res) => {
       .single();
 
     if (sessionErr || !sessionRow) {
+      console.error("[session levels POST] session lookup error:", sessionErr);
       return res.status(404).json({ error: "Session not found" });
     }
 
     const session_id = sessionRow.id;
 
-    // ✅ UPSERT (replace if that round already exists)
     const { data, error } = await adminSupabase
       .from("session_levels")
       .upsert(
@@ -64,7 +63,6 @@ router.get("/:sessionCode/levels", async (req, res) => {
   try {
     const { sessionCode } = req.params;
 
-    // ✅ Get session_id from sessionCode using admin client
     const { data: sessionRow, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id")
@@ -72,6 +70,7 @@ router.get("/:sessionCode/levels", async (req, res) => {
       .single();
 
     if (sessionErr || !sessionRow) {
+      console.error("[session levels GET] session lookup error:", sessionErr);
       return res.status(404).json({ error: "Session not found" });
     }
 

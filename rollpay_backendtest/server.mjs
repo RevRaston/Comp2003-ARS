@@ -409,6 +409,55 @@ app.post("/sessions/:code/start-round", async (req, res) => {
   }
 });
 
+// Host advances to the next round
+app.post("/sessions/:code/advance-round", async (req, res) => {
+  const { code } = req.params;
+
+  const supa = adminSupabase;
+
+  try {
+    const { data: session, error: sessionErr } = await supa
+      .from("sessions")
+      .select("id, code, current_round")
+      .eq("code", code)
+      .single();
+
+    if (sessionErr || !session) {
+      console.error("[advance-round] session lookup error:", sessionErr);
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const currentRound = Number(session.current_round || 1);
+    const nextRound = currentRound + 1;
+
+    const { data: updated, error: updateErr } = await supa
+      .from("sessions")
+      .update({ current_round: nextRound })
+      .eq("id", session.id)
+      .select("id, code, current_round")
+      .single();
+
+    if (updateErr) {
+      console.error("[advance-round] update error:", updateErr);
+      return res.status(500).json({
+        error: "Failed to advance round",
+        detail: updateErr.message,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      session: updated,
+    });
+  } catch (err) {
+    console.error("[advance-round] unexpected error:", err);
+    return res.status(500).json({
+      error: "Failed to advance round",
+      detail: String(err),
+    });
+  }
+});
+
 // Lobby / shared session state
 app.get("/sessions/:code", async (req, res) => {
   const { code } = req.params;
