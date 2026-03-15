@@ -3,18 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Sumo — WebSocket multiplayer simulation with win conditions.
- *
- * Host:
- *  - Runs physics + timer + win logic
- *  - Broadcasts state regularly
- *
- * Clients:
- *  - Send input to host
- *  - Render host state
- *
- * Win:
- *  1) If a player is pushed out of the ring → other player wins.
- *  2) If 20s timer expires → whoever is closest to centre wins.
  */
 
 const defaultWsBase =
@@ -61,6 +49,7 @@ export default function SumoGame({
 
   const wsRef = useRef(null);
   const runningRef = useRef(false);
+  const isUnmountingRef = useRef(false);
 
   const inputByKeyRef = useRef(new Map());
   const lastHostStateRef = useRef(null);
@@ -109,6 +98,7 @@ export default function SumoGame({
     if (!active.hasTwo) return;
     if (runningRef.current) return;
 
+    isUnmountingRef.current = false;
     runningRef.current = true;
     announcedRef.current = false;
     inputByKeyRef.current = new Map();
@@ -351,9 +341,7 @@ export default function SumoGame({
       ctx.fillText(isHost ? "HOST" : "CLIENT", barX + 12, barY + 16);
 
       const roleLine =
-        myControlIndex === -1
-          ? "Spectating"
-          : `You are P${myControlIndex + 1}`;
+        myControlIndex === -1 ? "Spectating" : `You are P${myControlIndex + 1}`;
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.fillText(roleLine, barX + 12, barY + 33);
 
@@ -370,9 +358,7 @@ export default function SumoGame({
         : "rgba(255,255,255,0.95)";
       ctx.font = "bold 22px system-ui, -apple-system, Segoe UI, sans-serif";
 
-      const timerText = state.roundOver
-        ? "ROUND OVER"
-        : `${Math.ceil(state.timeLeft)}`;
+      const timerText = state.roundOver ? "ROUND OVER" : `${Math.ceil(state.timeLeft)}`;
       ctx.fillText(timerText, W / 2, timerY + 30);
       ctx.textAlign = "left";
     }
@@ -455,7 +441,10 @@ export default function SumoGame({
           setSummaryLine("Round over — no winner.");
         }
 
-        if (!announcedRef.current && typeof onRoundCompleteRef.current === "function") {
+        if (
+          !announcedRef.current &&
+          typeof onRoundCompleteRef.current === "function"
+        ) {
           announcedRef.current = true;
           onRoundCompleteRef.current({
             winnerKey: state.winnerKey,
@@ -472,6 +461,8 @@ export default function SumoGame({
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (isUnmountingRef.current) return;
+
       setConnLine("connected ✅");
       wsSend({
         type: "join",
@@ -486,12 +477,13 @@ export default function SumoGame({
     };
 
     ws.onclose = () => {
+      if (isUnmountingRef.current) return;
       setConnLine("disconnected");
     };
 
     ws.onerror = (e) => {
-      console.error("[SUMO] WS error", e);
-      setConnLine("error");
+      if (isUnmountingRef.current) return;
+      console.warn("[SUMO] WS warning", e);
     };
 
     ws.onmessage = (ev) => {
@@ -577,10 +569,7 @@ export default function SumoGame({
                 ay = localAy;
               } else {
                 const k = p.key ? String(p.key) : "";
-                const inp = inputByKeyRef.current.get(k) || {
-                  ax: 0,
-                  ay: 0,
-                };
+                const inp = inputByKeyRef.current.get(k) || { ax: 0, ay: 0 };
                 ax = inp.ax;
                 ay = inp.ay;
               }
@@ -627,8 +616,7 @@ export default function SumoGame({
       }
 
       if (!isHost) {
-        const stalled =
-          performance.now() - lastHostStateAtRef.current > 1500;
+        const stalled = performance.now() - lastHostStateAtRef.current > 1500;
         if (stalled) {
           setConnLine("waiting for host state…");
         } else if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -667,31 +655,31 @@ export default function SumoGame({
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
+      isUnmountingRef.current = true;
       runningRef.current = false;
+
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("pointerdown", onCanvasPointerDown);
 
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+      const wsNow = wsRef.current;
+      wsRef.current = null;
+
+      if (
+        wsNow &&
+        (wsNow.readyState === WebSocket.OPEN ||
+          wsNow.readyState === WebSocket.CONNECTING)
+      ) {
+        try {
+          wsNow.close(1000, "component cleanup");
+        } catch (_) {}
       }
 
-      try {
-        wsRef.current?.close();
-      } catch (_) {}
-
-      wsRef.current = null;
       rafRef.current = 0;
     };
-  }, [
-    active.hasTwo,
-    active.p1Key,
-    active.p2Key,
-    code,
-    isHost,
-    myControlIndex,
-    myId,
-  ]);
+  }, [active.hasTwo, active.p1Key, active.p2Key, code, isHost, myControlIndex, myId]);
 
   if (!active.hasTwo) {
     return (
