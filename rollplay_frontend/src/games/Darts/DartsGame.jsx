@@ -5,9 +5,10 @@ import "./darts.css";
 /**
  * Darts — WebSocket host-authoritative turn-based round
  * - Host runs simulation + broadcasts state
- * - Active player can fire on their own turn
+ * - Active player requests FIRE over websocket
+ * - Host applies the shot
  * - Clients render host state
- * - Host controls advancing to next player
+ * - Host advances to next player
  * - After all players have taken a turn, round completes
  */
 
@@ -99,17 +100,6 @@ export default function DartsGame({
     hitFlashTimer: 0,
   });
 
-  useEffect(() => {
-    const safeScores = playerNames.map((name, index) => ({
-      playerIndex: index,
-      playerName: name,
-      score: 0,
-    }));
-
-    setTurnScores(safeScores);
-    stateRef.current.turnScores = safeScores;
-  }, [playerNames]);
-
   function wsSend(obj) {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -128,7 +118,7 @@ export default function DartsGame({
     setRoundFinished(Boolean(s.roundFinished));
   }
 
-  function fireDart() {
+  function applyHostFire() {
     const s = stateRef.current;
 
     if (s.roundFinished) return;
@@ -136,14 +126,37 @@ export default function DartsGame({
     if (s.dart.fired) return;
     if (s.dartsLeft <= 0) return;
 
-    // ✅ Only the active player can fire
-    if (myPlayerIndex !== s.currentPlayerIndex) return;
-
     s.dart.fired = true;
     s.dartsLeft -= 1;
-    s.msg = `🔥 ${activePlayerName} fires!`;
+    s.msg = `🔥 ${playerNames[s.currentPlayerIndex] || "Player"} fires!`;
 
     syncUiFromState();
+  }
+
+  function fireDart() {
+    const s = stateRef.current;
+
+    if (s.roundFinished) return;
+    if (s.finished) return;
+    if (s.dart.fired) return;
+    if (s.dartsLeft <= 0) return;
+    if (myPlayerIndex !== s.currentPlayerIndex) return;
+
+    // Host applies immediately
+    if (isHost) {
+      applyHostFire();
+      return;
+    }
+
+    // Client requests host to fire
+    wsSend({
+      type: "darts_fire",
+      sessionCode: code,
+      payload: {
+        playerIndex: myPlayerIndex,
+        userId: myUserId,
+      },
+    });
   }
 
   function resetTurnStateForCurrentPlayer() {
@@ -173,7 +186,6 @@ export default function DartsGame({
       s.msg = "Round complete! All players have taken a turn.";
       syncUiFromState();
 
-      // ✅ Trigger Arena progression
       if (
         !announcedRef.current &&
         typeof onRoundCompleteRef.current === "function"
@@ -218,6 +230,22 @@ export default function DartsGame({
       }
       if (!msg || msg.sessionCode !== code) return;
 
+      if (msg.type === "darts_fire" && isHost) {
+        const requestedIndex = Number(msg.payload?.playerIndex);
+        const s = stateRef.current;
+
+        if (
+          requestedIndex === s.currentPlayerIndex &&
+          !s.finished &&
+          !s.roundFinished &&
+          !s.dart.fired &&
+          s.dartsLeft > 0
+        ) {
+          applyHostFire();
+        }
+        return;
+      }
+
       if (msg.type === "darts_state") {
         if (isHost) return;
 
@@ -259,7 +287,7 @@ export default function DartsGame({
       wsRef.current = null;
       runningRef.current = false;
     };
-  }, [code, isHost]);
+  }, [code, isHost, myPlayerIndex, myUserId, playerNames]);
 
   // ---- Reset round state when players become available ----
   useEffect(() => {
