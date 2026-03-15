@@ -14,7 +14,7 @@ const API_BASE = (
   defaultBase
 ).replace(/\/$/, "");
 
-export default function JoinSession() {
+export default function JoinSession({ token }) {
   const navigate = useNavigate();
   const { profile, setSessionInfo } = useGame();
 
@@ -33,7 +33,6 @@ export default function JoinSession() {
     function handleResize() {
       setScreenWidth(window.innerWidth);
     }
-
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -46,7 +45,6 @@ export default function JoinSession() {
 
     const cleanedCode = code.trim().toUpperCase();
     const cleanedName = name.trim();
-    const token = localStorage.getItem("token");
 
     if (!cleanedCode) {
       setError("Enter a session code.");
@@ -100,7 +98,6 @@ export default function JoinSession() {
 
   return (
     <div style={page}>
-      {/* TOP BAR */}
       <header
         style={{
           ...topBar,
@@ -125,10 +122,16 @@ export default function JoinSession() {
             justifyContent: isPhone ? "center" : "flex-end",
           }}
         >
-          <button style={navButtonActive} onClick={() => navigate("/join-session")}>
+          <button
+            style={navButtonActive}
+            onClick={() => navigate("/join-session")}
+          >
             Join
           </button>
-          <button style={navButton} onClick={() => navigate("/host-session")}>
+          <button
+            style={navButton}
+            onClick={() => navigate("/host-session")}
+          >
             Host
           </button>
           <button style={navButton} onClick={() => navigate("/profile")}>
@@ -137,7 +140,6 @@ export default function JoinSession() {
         </nav>
       </header>
 
-      {/* PAGE HERO / FORM */}
       <section
         style={{
           ...heroSection,
@@ -154,11 +156,12 @@ export default function JoinSession() {
           style={{
             ...joinLayout,
             gridTemplateColumns:
-              isPhone || isLaptop ? "1fr" : "minmax(320px, 0.9fr) minmax(0, 1.1fr)",
+              isPhone || isLaptop
+                ? "1fr"
+                : "minmax(320px, 0.9fr) minmax(0, 1.1fr)",
             gap: isPhone ? 18 : 24,
           }}
         >
-          {/* LEFT INFO CARD */}
           <div style={sideCard}>
             <p style={sectionEyebrow}>Player entry</p>
             <h1
@@ -193,7 +196,6 @@ export default function JoinSession() {
             </div>
           </div>
 
-          {/* RIGHT FORM CARD */}
           <div
             style={{
               ...formCard,
@@ -203,7 +205,8 @@ export default function JoinSession() {
             <p style={sectionEyebrow}>Session join</p>
             <h2 style={formTitle}>Enter your session details</h2>
             <p style={formIntro}>
-              Join an existing RollPlay session using the code provided by the host.
+              Join an existing RollPlay session using the code provided by the
+              host.
             </p>
 
             <div style={fieldBlock}>
@@ -211,7 +214,8 @@ export default function JoinSession() {
                 Session code
               </label>
               <p style={helperText}>
-                Codes are usually short and shown by the host in the session setup.
+                Codes are usually short and shown by the host in the session
+                setup.
               </p>
               <input
                 id="session-code"
@@ -229,7 +233,8 @@ export default function JoinSession() {
                 Your name
               </label>
               <p style={helperText}>
-                This is the name shown to the host and other players in the lobby.
+                This is the name shown to the host and other players in the
+                lobby.
               </p>
               <input
                 id="player-name"
@@ -244,12 +249,16 @@ export default function JoinSession() {
             <div style={summaryPanel}>
               <div style={summaryRow}>
                 <span style={summaryLabel}>Joining as</span>
-                <strong style={summaryValue}>{name.trim() || "Not set yet"}</strong>
+                <strong style={summaryValue}>
+                  {name.trim() || "Not set yet"}
+                </strong>
               </div>
 
               <div style={summaryRow}>
                 <span style={summaryLabel}>Session code</span>
-                <strong style={summaryValue}>{code.trim() || "Not entered yet"}</strong>
+                <strong style={summaryValue}>
+                  {code.trim() || "Not entered yet"}
+                </strong>
               </div>
             </div>
 
@@ -595,6 +604,4 @@ const secondaryButton = {
   fontWeight: 700,
   cursor: "pointer",
   minWidth: 170,
-};  
-
-//Hey
+};
