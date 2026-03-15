@@ -72,6 +72,12 @@ export default function Arena() {
         if (!res.ok || !data?.session) return;
         if (cancelled) return;
 
+        // ✅ Shared session finish → everyone goes to results
+        if (data.session.status === "finished") {
+          navigate("/results");
+          return;
+        }
+
         const serverRound = Number(data.session.current_round || 1);
 
         setPlayers(data.players || []);
@@ -100,7 +106,7 @@ export default function Arena() {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [code, setPlayers, setRound]);
+  }, [code, navigate, setPlayers, setRound]);
 
   useEffect(() => {
     if (!code) return;
@@ -253,8 +259,21 @@ export default function Arena() {
     setAdvancingRound(true);
 
     try {
+      // ✅ Final completion is now shared through backend
       if (!hasNextRound) {
-        navigate("/results");
+        const finishRes = await fetch(`${API_BASE}/sessions/${code}/finish`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        const finishData = await finishRes.json().catch(() => null);
+
+        if (!finishRes.ok) {
+          throw new Error(finishData?.error || "Failed to finish session");
+        }
+
         return;
       }
 

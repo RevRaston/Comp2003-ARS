@@ -458,6 +458,52 @@ app.post("/sessions/:code/advance-round", async (req, res) => {
   }
 });
 
+// Host finishes the session
+app.post("/sessions/:code/finish", async (req, res) => {
+  const { code } = req.params;
+
+  const supa = adminSupabase;
+
+  try {
+    const { data: session, error: sessionErr } = await supa
+      .from("sessions")
+      .select("id, code, status")
+      .eq("code", code)
+      .single();
+
+    if (sessionErr || !session) {
+      console.error("[finish-session] session lookup error:", sessionErr);
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const { data: updated, error: updateErr } = await supa
+      .from("sessions")
+      .update({ status: "finished" })
+      .eq("id", session.id)
+      .select("id, code, status")
+      .single();
+
+    if (updateErr) {
+      console.error("[finish-session] update error:", updateErr);
+      return res.status(500).json({
+        error: "Failed to finish session",
+        detail: updateErr.message,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      session: updated,
+    });
+  } catch (err) {
+    console.error("[finish-session] unexpected error:", err);
+    return res.status(500).json({
+      error: "Failed to finish session",
+      detail: String(err),
+    });
+  }
+});
+
 // Lobby / shared session state
 app.get("/sessions/:code", async (req, res) => {
   const { code } = req.params;

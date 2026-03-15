@@ -27,15 +27,51 @@ export default function Results() {
     saveConfirmedSplit,
     clearConfirmedSplit,
     sessionCode,
+    rule,
   } = useGame();
 
-  const hasResults = Array.isArray(results) && results.length > 0;
-  const winner = hasResults ? results[0] : null;
+  const code = sessionCode || localStorage.getItem("session_code");
+
+  const [sessionData, setSessionData] = useState(null);
+  const [loadingSession, setLoadingSession] = useState(true);
 
   const [itemAssignments, setItemAssignments] = useState([]);
   const [manualTotals, setManualTotals] = useState([]);
   const [isConfirmed, setIsConfirmed] = useState(Boolean(confirmedSplit));
   const [confirmError, setConfirmError] = useState("");
+
+  useEffect(() => {
+    async function loadSession() {
+      if (!code) {
+        setLoadingSession(false);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem("token");
+        const headers = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
+        const data = await res.json().catch(() => null);
+
+        if (res.ok && data?.session) {
+          setSessionData(data);
+        }
+      } catch (err) {
+        console.error("Failed to load session for results:", err);
+      } finally {
+        setLoadingSession(false);
+      }
+    }
+
+    loadSession();
+  }, [code]);
+
+  const backendSession = sessionData?.session || null;
+  const backendPlayers = sessionData?.players || [];
+
+  const hasRealResults = Array.isArray(results) && results.length > 0;
 
   const itemsTotal = useMemo(() => {
     return (sessionItems || []).reduce(
@@ -44,20 +80,60 @@ export default function Results() {
     );
   }, [sessionItems]);
 
+  const backendTotal = Number(backendSession?.total_cost || 0);
+
   const effectiveTotal =
-    splitMode === "items" ? itemsTotal : Number(sessionPot || 0);
+    splitMode === "items"
+      ? itemsTotal
+      : Number(sessionPot || backendTotal || 0);
+
+  const effectiveRule = backendSession?.rule || rule || "winner_free";
+
+  const fallbackResults = useMemo(() => {
+    if (!backendPlayers.length) return [];
+
+    const total = Number(backendSession?.total_cost || sessionPot || 0);
+    const playerCount = backendPlayers.length;
+
+    const safePlayers = backendPlayers.map((p, index) => ({
+      name: p.name || p.display_name || `Player ${index + 1}`,
+      rank: index + 1,
+    }));
+
+    if (effectiveRule === "even_split") {
+      const share = playerCount > 0 ? total / playerCount : 0;
+      return safePlayers.map((p) => ({
+        ...p,
+        recommended: Number(share.toFixed(2)),
+      }));
+    }
+
+    const loserCount = Math.max(playerCount - 1, 0);
+    const loserShare = loserCount > 0 ? total / loserCount : 0;
+
+    return safePlayers.map((p, index) => ({
+      ...p,
+      recommended: Number((index === 0 ? 0 : loserShare).toFixed(2)),
+    }));
+  }, [backendPlayers, backendSession, sessionPot, effectiveRule]);
+
+  const finalResults = hasRealResults ? results : fallbackResults;
+  const hasAnyResults = Array.isArray(finalResults) && finalResults.length > 0;
+  const winner = hasAnyResults ? finalResults[0] : null;
 
   const modeLabel =
     splitMode === "items"
       ? "Specific Items / Receipt"
       : splitMode === "pot"
       ? "Total Pot"
-      : "Pseudo Tab / No Payment";
+      : splitMode === "pseudo"
+      ? "Pseudo Tab / No Payment"
+      : "Session Summary";
 
   const recommendedAllocation = useMemo(() => {
-    if (!hasResults) return [];
+    if (!hasAnyResults) return [];
 
-    const base = results.map((p) => ({
+    const base = finalResults.map((p) => ({
       name: p.name,
       rank: p.rank,
       items: [],
@@ -87,7 +163,7 @@ export default function Results() {
       const loserCount = Math.max(base.length - 1, 0);
       if (loserCount === 0) return base;
 
-      const share = Number(sessionPot || 0) / loserCount;
+      const share = Number(sessionPot || backendTotal || 0) / loserCount;
 
       return base.map((p, index) => ({
         ...p,
@@ -102,16 +178,31 @@ export default function Results() {
       }));
     }
 
-    return base;
-  }, [hasResults, results, splitMode, sessionItems, sessionPot]);
+    const loserCount = Math.max(base.length - 1, 0);
+    if (loserCount === 0) return base;
+
+    const share = Number(backendTotal || 0) / loserCount;
+
+    return base.map((p, index) => ({
+      ...p,
+      total: index === 0 ? 0 : share,
+    }));
+  }, [
+    hasAnyResults,
+    finalResults,
+    splitMode,
+    sessionItems,
+    sessionPot,
+    backendTotal,
+  ]);
 
   useEffect(() => {
-    if (!hasResults) return;
+    if (!hasAnyResults && !confirmedSplit) return;
 
     if (confirmedSplit) {
       setIsConfirmed(true);
 
-      if (splitMode === "items") {
+      if (confirmedSplit.mode === "items") {
         setItemAssignments(confirmedSplit.itemAssignments || []);
         setManualTotals([]);
       } else {
@@ -126,7 +217,7 @@ export default function Results() {
         const recommendedOwner =
           recommendedAllocation.find((player) =>
             player.items.some((i) => i.id === item.id)
-          )?.name || results[0]?.name || "";
+          )?.name || finalResults[0]?.name || "";
 
         return {
           ...item,
@@ -154,19 +245,19 @@ export default function Results() {
       setConfirmError("");
     }
   }, [
-    hasResults,
+    hasAnyResults,
     splitMode,
     sessionItems,
     recommendedAllocation,
-    results,
+    finalResults,
     confirmedSplit,
   ]);
 
   const finalAllocation = useMemo(() => {
-    if (!hasResults) return [];
+    if (!hasAnyResults) return [];
 
     if (splitMode === "items") {
-      return results.map((player) => {
+      return finalResults.map((player) => {
         const ownedItems = itemAssignments
           .filter((item) => item.assignedTo.includes(player.name))
           .map((item) => {
@@ -201,8 +292,15 @@ export default function Results() {
       }));
     }
 
-    return [];
-  }, [hasResults, splitMode, results, itemAssignments, manualTotals]);
+    return recommendedAllocation;
+  }, [
+    hasAnyResults,
+    splitMode,
+    finalResults,
+    itemAssignments,
+    manualTotals,
+    recommendedAllocation,
+  ]);
 
   const finalTotal = useMemo(() => {
     return finalAllocation.reduce(
@@ -286,8 +384,6 @@ export default function Results() {
     try {
       saveConfirmedSplit(payload);
 
-      const code = sessionCode || localStorage.getItem("session_code");
-
       if (code) {
         const res = await fetch(`${API_BASE}/sessions/${code}/confirmed-split`, {
           method: "POST",
@@ -321,12 +417,19 @@ export default function Results() {
     clearConfirmedSplit();
   }
 
+  const showEmptyState =
+    !loadingSession && !hasAnyResults && !confirmedSplit && !backendSession;
+
   return (
     <div style={page}>
       <div style={container}>
         <h1 style={title}>Game Results & Split Summary</h1>
 
-        {!hasResults ? (
+        {loadingSession ? (
+          <div style={emptyBox}>
+            <h2 style={{ marginTop: 0 }}>Loading session results...</h2>
+          </div>
+        ) : showEmptyState ? (
           <div style={emptyBox}>
             <h2 style={{ marginTop: 0 }}>No results to show yet.</h2>
             <button onClick={() => navigate("/lobby")} style={primaryBtn}>
@@ -335,38 +438,52 @@ export default function Results() {
           </div>
         ) : (
           <>
-            <div style={winnerCard}>
-              <h2 style={{ margin: 0 }}>🏆 Winner</h2>
-              <h1 style={{ margin: "10px 0", fontSize: 40 }}>{winner.name}</h1>
-              <p style={{ margin: 0, fontSize: 20 }}>
-                Recommended: £{Number(winner.recommended || 0).toFixed(2)}
-              </p>
-            </div>
+            {!hasRealResults && hasAnyResults && (
+              <div style={sectionBox}>
+                <p style={mutedText}>
+                  Live multiplayer rankings were not persisted for this session,
+                  so this page is showing a fallback session summary using the
+                  shared session player order and bill rule.
+                </p>
+              </div>
+            )}
 
-            <div style={sectionBox}>
-              <h2 style={sectionTitle}>Rankings</h2>
+            {winner && (
+              <div style={winnerCard}>
+                <h2 style={{ margin: 0 }}>🏆 Winner</h2>
+                <h1 style={{ margin: "10px 0", fontSize: 40 }}>{winner.name}</h1>
+                <p style={{ margin: 0, fontSize: 20 }}>
+                  Recommended: £{Number(winner.recommended || 0).toFixed(2)}
+                </p>
+              </div>
+            )}
 
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>Rank</th>
-                    <th style={th}>Name</th>
-                    <th style={th}>Recommended Pay</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((p) => (
-                    <tr key={p.name}>
-                      <td style={td}>{p.rank}</td>
-                      <td style={td}>{p.name}</td>
-                      <td style={td}>
-                        £{Number(p.recommended || 0).toFixed(2)}
-                      </td>
+            {hasAnyResults && (
+              <div style={sectionBox}>
+                <h2 style={sectionTitle}>Rankings</h2>
+
+                <table style={table}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Rank</th>
+                      <th style={th}>Name</th>
+                      <th style={th}>Recommended Pay</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {finalResults.map((p) => (
+                      <tr key={p.name}>
+                        <td style={td}>{p.rank}</td>
+                        <td style={td}>{p.name}</td>
+                        <td style={td}>
+                          £{Number(p.recommended || 0).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div style={sectionBox}>
               <h2 style={sectionTitle}>Split Setup Summary</h2>
@@ -387,7 +504,7 @@ export default function Results() {
                 <div style={summaryCard}>
                   <div style={summaryLabel}>Session Total</div>
                   <div style={summaryValue}>
-                    £{Number(effectiveTotal || 0).toFixed(2)}
+                    £{Number(effectiveTotal || backendTotal || 0).toFixed(2)}
                   </div>
                 </div>
 
@@ -442,7 +559,7 @@ export default function Results() {
                   This session uses a single overall cost instead of individual
                   items.
                 </p>
-                <h3>Pot Total: £{Number(sessionPot || 0).toFixed(2)}</h3>
+                <h3>Pot Total: £{Number(sessionPot || backendTotal || 0).toFixed(2)}</h3>
               </div>
             )}
 
@@ -450,250 +567,269 @@ export default function Results() {
               <div style={sectionBox}>
                 <h2 style={sectionTitle}>Pseudo Tab</h2>
                 <p style={mutedText}>
-                  This session does not require real payment processing. The
-                  game results can still be used to suggest who would pay or how
-                  the bill might be split.
+                  This session does not require real payment processing.
                 </p>
 
-                {Number(sessionPot || 0) > 0 && (
+                {Number(sessionPot || backendTotal || 0) > 0 && (
                   <h3>
-                    Notional Total: £{Number(sessionPot || 0).toFixed(2)}
+                    Notional Total: £
+                    {Number(sessionPot || backendTotal || 0).toFixed(2)}
                   </h3>
                 )}
               </div>
             )}
 
-            <div style={sectionBox}>
-              <h2 style={sectionTitle}>Recommended Allocation</h2>
-              <p style={mutedText}>
-                This is the system’s suggested split based on game results and
-                the chosen session mode.
-              </p>
+            {hasAnyResults && (
+              <div style={sectionBox}>
+                <h2 style={sectionTitle}>Recommended Allocation</h2>
+                <p style={mutedText}>
+                  This is the system’s suggested split based on the available
+                  session result data and the chosen session mode.
+                </p>
 
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>Player</th>
-                    <th style={th}>Rank</th>
-                    <th style={th}>Assigned Items</th>
-                    <th style={th}>Suggested Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recommendedAllocation.map((player) => (
-                    <tr key={player.name}>
-                      <td style={td}>{player.name}</td>
-                      <td style={td}>{player.rank}</td>
-                      <td style={td}>
-                        {player.items.length === 0
-                          ? "-"
-                          : player.items.map((item) => item.name).join(", ")}
-                      </td>
-                      <td style={td}>
-                        £{Number(player.total || 0).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={sectionBox}>
-              <h2 style={sectionTitle}>Editable Final Split</h2>
-              <p style={mutedText}>
-                Adjust the suggested split before final confirmation.
-              </p>
-
-              {splitMode === "items" && (
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Item</th>
-                      <th style={th}>Cost</th>
-                      <th style={th}>Split Across</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itemAssignments.map((item) => (
-                      <tr key={item.id}>
-                        <td style={td}>{item.name}</td>
-                        <td style={td}>
-                          £{Number(item.cost || 0).toFixed(2)}
-                        </td>
-                        <td style={td}>
-                          <div style={checkboxWrap}>
-                            {results.map((player) => {
-                              const checked = item.assignedTo.includes(
-                                player.name
-                              );
-
-                              return (
-                                <label key={player.name} style={checkboxLabel}>
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={isConfirmed}
-                                    onChange={() =>
-                                      toggleItemAssignment(item.id, player.name)
-                                    }
-                                  />
-                                  <span>{player.name}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {(splitMode === "pot" || splitMode === "pseudo") && (
                 <table style={table}>
                   <thead>
                     <tr>
                       <th style={th}>Player</th>
                       <th style={th}>Rank</th>
-                      <th style={th}>Final Contribution</th>
+                      <th style={th}>Assigned Items</th>
+                      <th style={th}>Suggested Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {manualTotals.map((player) => (
+                    {recommendedAllocation.map((player) => (
                       <tr key={player.name}>
                         <td style={td}>{player.name}</td>
                         <td style={td}>{player.rank}</td>
                         <td style={td}>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={player.total}
-                            onChange={(e) =>
-                              updateManualTotal(player.name, e.target.value)
-                            }
-                            style={inputStyle}
-                            disabled={isConfirmed}
-                          />
+                          {player.items.length === 0
+                            ? "-"
+                            : player.items.map((item) => item.name).join(", ")}
+                        </td>
+                        <td style={td}>
+                          £{Number(player.total || 0).toFixed(2)}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              )}
-            </div>
+              </div>
+            )}
 
-            <div style={sectionBox}>
-              <h2 style={sectionTitle}>Final Allocation Preview</h2>
-              <p style={mutedText}>
-                This is the current split after your edits.
-              </p>
-
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>Player</th>
-                    <th style={th}>Rank</th>
-                    <th style={th}>Final Items</th>
-                    <th style={th}>Final Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {finalAllocation.map((player) => (
-                    <tr key={player.name}>
-                      <td style={td}>{player.name}</td>
-                      <td style={td}>{player.rank}</td>
-                      <td style={td}>
-                        {player.items.length === 0
-                          ? "-"
-                          : player.items
-                              .map((item) =>
-                                item.shared
-                                  ? `${item.name} (£${Number(
-                                      item.shareValue || 0
-                                    ).toFixed(2)} share)`
-                                  : item.name
-                              )
-                              .join(", ")}
-                      </td>
-                      <td style={td}>
-                        £{Number(player.total || 0).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <h3 style={{ marginTop: 18 }}>
-                Final Split Total: £{Number(finalTotal || 0).toFixed(2)}
-              </h3>
-
-              {splitMode === "items" && !allItemsAssigned && (
-                <p style={{ marginTop: 10, color: "#FF9A9A", fontWeight: 600 }}>
-                  Every item must be assigned to at least one player.
-                </p>
-              )}
-
-              {splitMode !== "pseudo" && (
-                <p
-                  style={{
-                    marginTop: 10,
-                    color: totalsMatch ? "#9BE39B" : "#FF9A9A",
-                    fontWeight: 600,
-                  }}
-                >
-                  {totalsMatch
-                    ? "Final total matches session total."
-                    : "Final total does NOT match session total."}
-                </p>
-              )}
-            </div>
-
-            <div style={sectionBox}>
-              <h2 style={sectionTitle}>Final Confirmation</h2>
-
-              {!isConfirmed ? (
-                <>
+            {hasAnyResults && (
+              <>
+                <div style={sectionBox}>
+                  <h2 style={sectionTitle}>Editable Final Split</h2>
                   <p style={mutedText}>
-                    Confirm the final split once you are happy with the
-                    allocation.
+                    Adjust the suggested split before final confirmation.
                   </p>
 
-                  {confirmError && (
-                    <p style={{ color: "#FF9A9A", fontWeight: 600 }}>
-                      {confirmError}
+                  {splitMode === "items" && (
+                    <table style={table}>
+                      <thead>
+                        <tr>
+                          <th style={th}>Item</th>
+                          <th style={th}>Cost</th>
+                          <th style={th}>Split Across</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itemAssignments.map((item) => (
+                          <tr key={item.id}>
+                            <td style={td}>{item.name}</td>
+                            <td style={td}>
+                              £{Number(item.cost || 0).toFixed(2)}
+                            </td>
+                            <td style={td}>
+                              <div style={checkboxWrap}>
+                                {finalResults.map((player) => {
+                                  const checked = item.assignedTo.includes(
+                                    player.name
+                                  );
+
+                                  return (
+                                    <label key={player.name} style={checkboxLabel}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={isConfirmed}
+                                        onChange={() =>
+                                          toggleItemAssignment(
+                                            item.id,
+                                            player.name
+                                          )
+                                        }
+                                      />
+                                      <span>{player.name}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {(splitMode === "pot" || splitMode === "pseudo") && (
+                    <table style={table}>
+                      <thead>
+                        <tr>
+                          <th style={th}>Player</th>
+                          <th style={th}>Rank</th>
+                          <th style={th}>Final Contribution</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {manualTotals.map((player) => (
+                          <tr key={player.name}>
+                            <td style={td}>{player.name}</td>
+                            <td style={td}>{player.rank}</td>
+                            <td style={td}>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={player.total}
+                                onChange={(e) =>
+                                  updateManualTotal(
+                                    player.name,
+                                    e.target.value
+                                  )
+                                }
+                                style={inputStyle}
+                                disabled={isConfirmed}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                <div style={sectionBox}>
+                  <h2 style={sectionTitle}>Final Allocation Preview</h2>
+                  <p style={mutedText}>
+                    This is the current split after your edits.
+                  </p>
+
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Player</th>
+                        <th style={th}>Rank</th>
+                        <th style={th}>Final Items</th>
+                        <th style={th}>Final Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finalAllocation.map((player) => (
+                        <tr key={player.name}>
+                          <td style={td}>{player.name}</td>
+                          <td style={td}>{player.rank}</td>
+                          <td style={td}>
+                            {player.items.length === 0
+                              ? "-"
+                              : player.items
+                                  .map((item) =>
+                                    item.shared
+                                      ? `${item.name} (£${Number(
+                                          item.shareValue || 0
+                                        ).toFixed(2)} share)`
+                                      : item.name
+                                  )
+                                  .join(", ")}
+                          </td>
+                          <td style={td}>
+                            £{Number(player.total || 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h3 style={{ marginTop: 18 }}>
+                    Final Split Total: £{Number(finalTotal || 0).toFixed(2)}
+                  </h3>
+
+                  {splitMode === "items" && !allItemsAssigned && (
+                    <p
+                      style={{
+                        marginTop: 10,
+                        color: "#FF9A9A",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Every item must be assigned to at least one player.
                     </p>
                   )}
 
-                  <button onClick={handleConfirmSplit} style={primaryBtn}>
-                    Confirm Final Split
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p style={{ color: "#9BE39B", fontWeight: 700 }}>
-                    Final split confirmed.
-                  </p>
-
-                  <p style={mutedText}>
-                    {paymentRequired
-                      ? "This session is now ready for payment processing."
-                      : "No real payment is required for this session."}
-                  </p>
-
-                  {confirmedSplit?.confirmedAt && (
-                    <p style={mutedText}>
-                      Confirmed at:{" "}
-                      {new Date(confirmedSplit.confirmedAt).toLocaleString()}
+                  {splitMode !== "pseudo" && (
+                    <p
+                      style={{
+                        marginTop: 10,
+                        color: totalsMatch ? "#9BE39B" : "#FF9A9A",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {totalsMatch
+                        ? "Final total matches session total."
+                        : "Final total does NOT match session total."}
                     </p>
                   )}
+                </div>
 
-                  <button onClick={handleUnlockSplit} style={secondaryBtn}>
-                    Unlock and Edit Again
-                  </button>
-                </>
-              )}
-            </div>
+                <div style={sectionBox}>
+                  <h2 style={sectionTitle}>Final Confirmation</h2>
+
+                  {!isConfirmed ? (
+                    <>
+                      <p style={mutedText}>
+                        Confirm the final split once you are happy with the
+                        allocation.
+                      </p>
+
+                      {confirmError && (
+                        <p style={{ color: "#FF9A9A", fontWeight: 600 }}>
+                          {confirmError}
+                        </p>
+                      )}
+
+                      <button onClick={handleConfirmSplit} style={primaryBtn}>
+                        Confirm Final Split
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ color: "#9BE39B", fontWeight: 700 }}>
+                        Final split confirmed.
+                      </p>
+
+                      <p style={mutedText}>
+                        {paymentRequired
+                          ? "This session is now ready for payment processing."
+                          : "No real payment is required for this session."}
+                      </p>
+
+                      {confirmedSplit?.confirmedAt && (
+                        <p style={mutedText}>
+                          Confirmed at:{" "}
+                          {new Date(
+                            confirmedSplit.confirmedAt
+                          ).toLocaleString()}
+                        </p>
+                      )}
+
+                      <button onClick={handleUnlockSplit} style={secondaryBtn}>
+                        Unlock and Edit Again
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
 
             {isConfirmed && confirmedSplit && (
               <div style={receiptBox}>
@@ -951,10 +1087,4 @@ const receiptItem = {
   gap: 10,
   padding: "3px 0",
   fontSize: 14,
-};
-
-const receiptNote = {
-  marginTop: 16,
-  opacity: 0.82,
-  textAlign: "center",
 };
