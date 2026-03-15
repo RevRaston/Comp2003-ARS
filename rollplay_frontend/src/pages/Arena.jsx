@@ -52,7 +52,6 @@ export default function Arena() {
 
   const code = sessionCode || localStorage.getItem("session_code");
 
-  // Always poll session + players so both clients stay in sync
   useEffect(() => {
     if (!code) return;
 
@@ -76,7 +75,6 @@ export default function Arena() {
         setPlayers(data.players || []);
         setRound(serverRound);
 
-        // If server round moved on, clear round complete overlay
         if (serverRound !== currentRound) {
           setRoundComplete(false);
           setRoundActionError("");
@@ -96,7 +94,6 @@ export default function Arena() {
     };
   }, [code, setPlayers, setRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load shared level plan from backend
   useEffect(() => {
     if (!code) return;
 
@@ -134,7 +131,6 @@ export default function Arena() {
     loadLevelPlan();
   }, [code, setSelectedLevels]);
 
-  // Enrich players with profile info
   useEffect(() => {
     async function enrich() {
       if (!players || players.length === 0) {
@@ -314,52 +310,56 @@ export default function Arena() {
             </p>
           </div>
 
-          <div style={gameBox}>
-            <CurrentGameComponent
-              sessionCode={code}
-              players={enrichedPlayers}
-              isHost={Boolean(isHost)}
-              myUserId={myUserId}
-              mySeatIndex={mySeatIndex}
-              onRoundComplete={handleRoundComplete}
-            />
-          </div>
-
-          {roundComplete && (
-            <div style={roundCompletePanel}>
-              <h3 style={{ marginTop: 0 }}>Round complete</h3>
-
-              {isHost ? (
-                <>
-                  <p style={panelText}>
-                    {hasNextRound
-                      ? "Start the next round when you're ready."
-                      : "No more rounds left. Continue to results."}
-                  </p>
-
-                  {roundActionError && (
-                    <p style={errorText}>{roundActionError}</p>
-                  )}
-
-                  <button
-                    onClick={handleAdvanceRound}
-                    disabled={advancingRound}
-                    style={advanceButton}
-                  >
-                    {advancingRound
-                      ? "Advancing..."
-                      : hasNextRound
-                      ? "Start Next Round"
-                      : "Go To Results"}
-                  </button>
-                </>
-              ) : (
-                <p style={panelText}>
-                  Waiting for the host to continue…
-                </p>
-              )}
+          <div style={gameShell}>
+            <div style={gameBox}>
+              <CurrentGameComponent
+                sessionCode={code}
+                players={enrichedPlayers}
+                isHost={Boolean(isHost)}
+                myUserId={myUserId}
+                mySeatIndex={mySeatIndex}
+                onRoundComplete={handleRoundComplete}
+              />
             </div>
-          )}
+
+            {roundComplete && (
+              <div style={overlayWrap}>
+                <div style={overlayCard}>
+                  <h3 style={{ marginTop: 0, marginBottom: 10 }}>
+                    Round complete
+                  </h3>
+
+                  {isHost ? (
+                    <>
+                      <p style={panelText}>
+                        {hasNextRound
+                          ? "Start the next round when you're ready."
+                          : "No more rounds left. Continue to results."}
+                      </p>
+
+                      {roundActionError && (
+                        <p style={errorText}>{roundActionError}</p>
+                      )}
+
+                      <button
+                        onClick={handleAdvanceRound}
+                        disabled={advancingRound}
+                        style={advanceButton}
+                      >
+                        {advancingRound
+                          ? "Advancing..."
+                          : hasNextRound
+                          ? "Start Next Round"
+                          : "Go To Results"}
+                      </button>
+                    </>
+                  ) : (
+                    <p style={panelText}>Waiting for the host to continue…</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={rightCol}>
@@ -463,8 +463,11 @@ const centerHint = {
   opacity: 0.8,
 };
 
+const gameShell = {
+  position: "relative",
+};
+
 const gameBox = {
-  flex: 1,
   minHeight: 360,
   borderRadius: 28,
   background: "rgba(0,0,0,0.28)",
@@ -475,17 +478,32 @@ const gameBox = {
   justifyContent: "center",
 };
 
-const roundCompletePanel = {
-  padding: 18,
-  borderRadius: 22,
+const overlayWrap = {
+  position: "absolute",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+  background: "rgba(0,0,0,0.38)",
+  borderRadius: 28,
+};
+
+const overlayCard = {
+  width: "100%",
+  maxWidth: 360,
+  padding: 20,
+  borderRadius: 20,
   border: "1px solid rgba(255,255,255,0.18)",
-  background: "rgba(0,0,0,0.35)",
+  background: "rgba(15,15,25,0.92)",
   textAlign: "center",
+  boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
 };
 
 const panelText = {
   opacity: 0.85,
   marginBottom: 14,
+  lineHeight: 1.5,
 };
 
 const errorText = {
