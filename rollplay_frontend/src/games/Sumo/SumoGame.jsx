@@ -53,6 +53,7 @@ export default function SumoGame({
   onRoundComplete,
 }) {
   const canvasRef = useRef(null);
+  const rafRef = useRef(0);
 
   const [statusLine, setStatusLine] = useState("");
   const [connLine, setConnLine] = useState("disconnected");
@@ -65,6 +66,11 @@ export default function SumoGame({
   const lastHostStateRef = useRef(null);
   const lastHostStateAtRef = useRef(0);
   const announcedRef = useRef(false);
+  const onRoundCompleteRef = useRef(onRoundComplete);
+
+  useEffect(() => {
+    onRoundCompleteRef.current = onRoundComplete;
+  }, [onRoundComplete]);
 
   function wsSend(obj) {
     const ws = wsRef.current;
@@ -102,11 +108,19 @@ export default function SumoGame({
   useEffect(() => {
     if (!active.hasTwo) return;
     if (runningRef.current) return;
+
     runningRef.current = true;
     announcedRef.current = false;
+    inputByKeyRef.current = new Map();
+    lastHostStateRef.current = null;
+    lastHostStateAtRef.current = 0;
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      runningRef.current = false;
+      return;
+    }
+
     const ctx = canvas.getContext("2d");
 
     const W = 680;
@@ -182,7 +196,6 @@ export default function SumoGame({
     const ACCEL = 0.55;
     const MAX_SPEED = 6.2;
     const FRICTION = 0.88;
-    const BOUNCE = 0.35;
     const PUSH = 0.9;
 
     function normalize(x, y) {
@@ -344,7 +357,6 @@ export default function SumoGame({
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.fillText(roleLine, barX + 12, barY + 33);
 
-      // Timer panel
       const timerW = 140;
       const timerX = W / 2 - timerW / 2;
       const timerY = 14;
@@ -443,9 +455,9 @@ export default function SumoGame({
           setSummaryLine("Round over — no winner.");
         }
 
-        if (!announcedRef.current && typeof onRoundComplete === "function") {
+        if (!announcedRef.current && typeof onRoundCompleteRef.current === "function") {
           announcedRef.current = true;
-          onRoundComplete({
+          onRoundCompleteRef.current({
             winnerKey: state.winnerKey,
             timeLeft: state.timeLeft,
           });
@@ -649,20 +661,27 @@ export default function SumoGame({
       }
 
       drawFrame();
-      requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(tick);
     }
 
-    requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(tick);
 
     return () => {
       runningRef.current = false;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("pointerdown", onCanvasPointerDown);
+
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+
       try {
         wsRef.current?.close();
       } catch (_) {}
+
       wsRef.current = null;
+      rafRef.current = 0;
     };
   }, [
     active.hasTwo,
@@ -672,7 +691,6 @@ export default function SumoGame({
     isHost,
     myControlIndex,
     myId,
-    onRoundComplete,
   ]);
 
   if (!active.hasTwo) {
