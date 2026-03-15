@@ -1,4 +1,4 @@
-// src/pages/Splash.jsx
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 
@@ -7,6 +7,22 @@ export default function Splash() {
   const { profile, canHost } = useGame();
 
   const loggedIn = !!profile;
+
+  const [screenWidth, setScreenWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    function handleResize() {
+      setScreenWidth(window.innerWidth);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isPhone = screenWidth <= 640;
+  const isLaptop = screenWidth <= 1100;
 
   function handleHostClick() {
     if (!loggedIn) {
@@ -47,15 +63,32 @@ export default function Splash() {
   return (
     <div style={page}>
       {/* TOP BAR */}
-      <header style={topBar}>
-        <div style={logoWrap}>
+      <header
+        style={{
+          ...topBar,
+          padding: isPhone ? "14px 16px" : "16px 24px",
+          flexDirection: isPhone ? "column" : "row",
+          alignItems: isPhone ? "stretch" : "center",
+        }}
+      >
+        <div
+          style={{
+            ...logoWrap,
+            justifyContent: isPhone ? "center" : "flex-start",
+          }}
+        >
           <div style={logoBox}>LOGO</div>
           <div>
             <div style={brandText}>RollPlay</div>
           </div>
         </div>
 
-        <nav style={navLinks}>
+        <nav
+          style={{
+            ...navLinks,
+            justifyContent: isPhone ? "center" : "flex-end",
+          }}
+        >
           <button
             style={navButton}
             onClick={() => scrollToSection("how-to-use")}
@@ -78,30 +111,74 @@ export default function Splash() {
       </header>
 
       {/* HERO */}
-      <section style={heroSection}>
+      <section
+        style={{
+          ...heroSection,
+          minHeight: isPhone ? "auto" : "92vh",
+          padding: isPhone ? "36px 14px 28px" : "56px 20px 40px",
+        }}
+      >
         <div style={heroGlowOne} />
         <div style={heroGlowTwo} />
-        <div style={heroBubbleOne} />
-        <div style={heroBubbleTwo} />
-        <div style={heroBubbleThree} />
+        {!isPhone && <div style={heroBubbleOne} />}
+        {!isPhone && <div style={heroBubbleTwo} />}
+        {!isPhone && <div style={heroBubbleThree} />}
 
-        <div style={heroCard}>
-          <p style={eyebrow}>Multiplayer pub-style bill splitting</p>
+        <div
+          style={{
+            ...heroCard,
+            padding: isPhone ? "32px 18px" : isLaptop ? "42px 24px" : "52px 28px",
+            borderRadius: isPhone ? 24 : 32,
+          }}
+        >
+          <p
+            style={{
+              ...eyebrow,
+              fontSize: isPhone ? 12 : 14,
+            }}
+          >
+            Multiplayer pub-style bill splitting
+          </p>
 
-          <h1 style={titleStyle}>RollPlay</h1>
+          <h1
+            style={{
+              ...titleStyle,
+              fontSize: isPhone
+                ? "52px"
+                : isLaptop
+                ? "72px"
+                : "96px",
+            }}
+          >
+            RollPlay
+          </h1>
 
-          <p style={subtitleStyle}>
+          <p
+            style={{
+              ...subtitleStyle,
+              fontSize: isPhone ? 17 : isLaptop ? 22 : 30,
+              lineHeight: isPhone ? 1.5 : 1.45,
+            }}
+          >
             Turn splitting the bill into a game.
             <br />
             Pick the rule, play the rounds, let the leaderboard decide who pays.
           </p>
 
-          <div style={buttonRowStyle}>
+          <div
+            style={{
+              ...buttonRowStyle,
+              flexDirection: isPhone ? "column" : "row",
+              alignItems: "center",
+            }}
+          >
             <button
               onClick={handleHostClick}
               style={{
                 ...btnStyle,
                 ...(hostUpgradeStyle ? upgradeBtn : primaryBtn),
+                width: isPhone ? "100%" : "auto",
+                maxWidth: isPhone ? 320 : "none",
               }}
             >
               {hostLabel}
@@ -109,21 +186,36 @@ export default function Splash() {
 
             <button
               onClick={handleJoinClick}
-              style={{ ...btnStyle, ...secondaryBtn }}
+              style={{
+                ...btnStyle,
+                ...secondaryBtn,
+                width: isPhone ? "100%" : "auto",
+                maxWidth: isPhone ? 320 : "none",
+              }}
             >
               Join Game
             </button>
           </div>
 
           {!canHost && loggedIn && (
-            <p style={smallTextStyle}>
+            <p
+              style={{
+                ...smallTextStyle,
+                fontSize: isPhone ? 13 : 14,
+              }}
+            >
               You currently have a <strong>Player</strong> account. Tap
               <strong> “Upgrade to Host”</strong> to unlock hosting.
             </p>
           )}
 
           {!loggedIn && (
-            <p style={smallTextStyle}>
+            <p
+              style={{
+                ...smallTextStyle,
+                fontSize: isPhone ? 13 : 14,
+              }}
+            >
               Hosting requires an account. Joining friends is always free.
             </p>
           )}
@@ -131,16 +223,37 @@ export default function Splash() {
       </section>
 
       {/* HOW TO USE */}
-      <section id="how-to-use" style={section}>
+      <section style={{ ...section, padding: isPhone ? "64px 14px" : "90px 20px" }} id="how-to-use">
         <div style={sectionInner}>
           <p style={sectionEyebrow}>How to use</p>
-          <h2 style={sectionTitle}>How a RollPlay session works</h2>
-          <p style={sectionIntro}>
+          <h2
+            style={{
+              ...sectionTitle,
+              fontSize: isPhone ? 34 : isLaptop ? 42 : 52,
+            }}
+          >
+            How a RollPlay session works
+          </h2>
+          <p
+            style={{
+              ...sectionIntro,
+              fontSize: isPhone ? 16 : 18,
+            }}
+          >
             One player hosts, others join with a code, the mini-games decide the
             rankings, and the final split is generated from the results.
           </p>
 
-          <div style={stepsGrid}>
+          <div
+            style={{
+              ...stepsGrid,
+              gridTemplateColumns: isPhone
+                ? "1fr"
+                : isLaptop
+                ? "repeat(2, minmax(0, 1fr))"
+                : "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
             <div style={infoCard}>
               <div style={stepBadge}>1</div>
               <h3 style={cardTitle}>Host a session</h3>
@@ -179,12 +292,30 @@ export default function Splash() {
       </section>
 
       {/* ABOUT */}
-      <section id="about-game" style={sectionAlt}>
+      <section
+        id="about-game"
+        style={{
+          ...sectionAlt,
+          padding: isPhone ? "64px 14px" : "90px 20px",
+        }}
+      >
         <div style={sectionInnerWide}>
-          <div style={aboutGrid}>
+          <div
+            style={{
+              ...aboutGrid,
+              gridTemplateColumns: isPhone || isLaptop ? "1fr" : "minmax(0, 1.2fr) minmax(280px, 0.8fr)",
+            }}
+          >
             <div>
               <p style={sectionEyebrow}>About this game</p>
-              <h2 style={sectionTitle}>Why RollPlay was created</h2>
+              <h2
+                style={{
+                  ...sectionTitle,
+                  fontSize: isPhone ? 34 : isLaptop ? 42 : 52,
+                }}
+              >
+                Why RollPlay was created
+              </h2>
 
               <p style={aboutText}>
                 RollPlay was built to turn one of the most awkward parts of a
@@ -227,39 +358,100 @@ export default function Splash() {
       </section>
 
       {/* GALLERY */}
-      <section id="gallery" style={section}>
+      <section
+        id="gallery"
+        style={{
+          ...section,
+          padding: isPhone ? "64px 14px" : "90px 20px",
+        }}
+      >
         <div style={sectionInnerWide}>
           <p style={sectionEyebrow}>Gallery</p>
-          <h2 style={sectionTitle}>Screenshots and gameplay previews</h2>
-          <p style={sectionIntro}>
+          <h2
+            style={{
+              ...sectionTitle,
+              fontSize: isPhone ? 34 : isLaptop ? 42 : 52,
+            }}
+          >
+            Screenshots and gameplay previews
+          </h2>
+          <p
+            style={{
+              ...sectionIntro,
+              fontSize: isPhone ? 16 : 18,
+            }}
+          >
             Use placeholders for now. Later this section can show real game
             screenshots, lobby images, arena visuals, and gameplay videos.
           </p>
 
-          <div style={galleryGrid}>
-            <div style={galleryVideo}>
+          <div
+            style={{
+              ...galleryGrid,
+              gridTemplateColumns: isPhone ? "1fr" : "repeat(12, 1fr)",
+            }}
+          >
+            <div
+              style={{
+                ...galleryVideo,
+                gridColumn: isPhone ? "span 1" : "span 12",
+                minHeight: isPhone ? 220 : 320,
+              }}
+            >
               <div style={galleryLabel}>VIDEO PLACEHOLDER</div>
               <div style={gallerySubLabel}>
                 Add a gameplay trailer or session montage here
               </div>
             </div>
 
-            <div style={galleryCard}>Image Placeholder 1</div>
-            <div style={galleryCard}>Image Placeholder 2</div>
-            <div style={galleryCard}>Image Placeholder 3</div>
-            <div style={galleryCard}>Image Placeholder 4</div>
+            <div
+              style={{
+                ...galleryCard,
+                gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
+              }}
+            >
+              Image Placeholder 1
+            </div>
+            <div
+              style={{
+                ...galleryCard,
+                gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
+              }}
+            >
+              Image Placeholder 2
+            </div>
+            <div
+              style={{
+                ...galleryCard,
+                gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
+              }}
+            >
+              Image Placeholder 3
+            </div>
+            <div
+              style={{
+                ...galleryCard,
+                gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
+              }}
+            >
+              Image Placeholder 4
+            </div>
           </div>
         </div>
       </section>
 
       {/* FOOTER */}
       <footer style={footer}>
-        <div style={footerInner}>
+        <div
+          style={{
+            ...footerInner,
+            flexDirection: isPhone ? "column" : "row",
+            alignItems: isPhone ? "flex-start" : "center",
+          }}
+        >
           <div>
             <h3 style={footerTitle}>RollPlay</h3>
-            <p style={footerText}>
-              Multiplayer bill splitting made social.
-            </p>
+            <p style={footerText}>Multiplayer bill splitting made social.</p>
           </div>
 
           <div style={footerLinks}>
@@ -305,11 +497,9 @@ const topBar = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 20,
-  padding: "16px 24px",
   background: "rgba(8, 10, 16, 0.82)",
   backdropFilter: "blur(10px)",
   borderBottom: "1px solid rgba(255,255,255,0.08)",
-  flexWrap: "wrap",
 };
 
 const logoWrap = {
@@ -354,11 +544,9 @@ const navButton = {
 
 const heroSection = {
   position: "relative",
-  minHeight: "92vh",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "56px 20px 40px",
   overflow: "hidden",
 };
 
@@ -418,8 +606,6 @@ const heroCard = {
   position: "relative",
   zIndex: 2,
   background: "rgba(0, 0, 0, 0.42)",
-  borderRadius: 32,
-  padding: "52px 28px",
   maxWidth: 860,
   width: "100%",
   textAlign: "center",
@@ -430,7 +616,6 @@ const heroCard = {
 
 const eyebrow = {
   margin: "0 0 12px",
-  fontSize: 14,
   fontWeight: 700,
   textTransform: "uppercase",
   letterSpacing: 1.6,
@@ -438,16 +623,13 @@ const eyebrow = {
 };
 
 const titleStyle = {
-  fontSize: "clamp(54px, 9vw, 96px)",
   margin: "0 0 12px",
   fontWeight: 900,
   lineHeight: 0.95,
 };
 
 const subtitleStyle = {
-  fontSize: "clamp(18px, 2vw, 30px)",
   margin: "0 auto 30px",
-  lineHeight: 1.45,
   maxWidth: 720,
 };
 
@@ -488,9 +670,9 @@ const secondaryBtn = {
 };
 
 const smallTextStyle = {
-  fontSize: "14px",
   opacity: 0.9,
   marginTop: "10px",
+  lineHeight: 1.5,
 };
 
 const section = {
@@ -498,7 +680,6 @@ const section = {
 };
 
 const sectionAlt = {
-  padding: "90px 20px",
   background: "rgba(255,255,255,0.03)",
   borderTop: "1px solid rgba(255,255,255,0.06)",
   borderBottom: "1px solid rgba(255,255,255,0.06)",
@@ -528,21 +709,18 @@ const sectionEyebrow = {
 
 const sectionTitle = {
   margin: 0,
-  fontSize: "clamp(32px, 5vw, 52px)",
   lineHeight: 1.05,
 };
 
 const sectionIntro = {
   marginTop: 14,
   maxWidth: 760,
-  fontSize: 18,
   lineHeight: 1.6,
   opacity: 0.88,
 };
 
 const stepsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: 18,
   marginTop: 26,
 };
@@ -581,7 +759,6 @@ const cardText = {
 
 const aboutGrid = {
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1.2fr) minmax(280px, 0.8fr)",
   gap: 24,
   alignItems: "start",
 };
@@ -617,14 +794,11 @@ const featureList = {
 
 const galleryGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(12, 1fr)",
   gap: 18,
   marginTop: 26,
 };
 
 const galleryVideo = {
-  gridColumn: "span 12",
-  minHeight: 320,
   borderRadius: 26,
   display: "flex",
   flexDirection: "column",
@@ -649,7 +823,6 @@ const gallerySubLabel = {
 };
 
 const galleryCard = {
-  gridColumn: "span 3",
   minHeight: 180,
   borderRadius: 22,
   display: "flex",
