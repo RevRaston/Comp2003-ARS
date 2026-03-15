@@ -1,5 +1,5 @@
 // src/pages/Profile.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useGame } from "../GameContext";
@@ -8,6 +8,10 @@ import AvatarBuilder from "../components/AvatarBuilder";
 export default function Profile() {
   const navigate = useNavigate();
   const { profile, setProfile } = useGame();
+
+  const [screenWidth, setScreenWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
 
   const [displayName, setDisplayName] = useState(
     profile?.displayName || profile?.display_name || ""
@@ -33,6 +37,15 @@ export default function Profile() {
   const isAdmin = !!profile?.isAdmin;
 
   useEffect(() => {
+    function handleResize() {
+      setScreenWidth(window.innerWidth);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
     if (!profile) return;
     setDisplayName(profile.displayName || profile.display_name || "");
     if (profile.avatarJson) {
@@ -44,14 +57,83 @@ export default function Profile() {
     setCardLast4(profile.cardLast4 || "");
   }, [profile]);
 
+  const isPhone = screenWidth <= 640;
+  const isLaptop = screenWidth <= 1100;
+
+  const shownName =
+    displayName?.trim() ||
+    profile?.displayName ||
+    profile?.display_name ||
+    profile?.email ||
+    "Player";
+
+  const initials = useMemo(() => {
+    const parts = String(shownName).trim().split(" ").filter(Boolean);
+    if (parts.length === 0) return "RP";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }, [shownName]);
+
   if (!profile) {
     return (
-      <div style={wrapper}>
-        <h1>Profile</h1>
-        <p>You need to sign in first.</p>
-        <button style={btnPrimary} onClick={() => navigate("/login")}>
-          Go to Login
-        </button>
+      <div style={page}>
+        <header
+          style={{
+            ...topBar,
+            padding: isPhone ? "14px 16px" : "16px 24px",
+            flexDirection: isPhone ? "column" : "row",
+            alignItems: isPhone ? "stretch" : "center",
+          }}
+        >
+          <div
+            style={{
+              ...logoWrap,
+              justifyContent: isPhone ? "center" : "flex-start",
+            }}
+          >
+            <div style={logoBox}>LOGO</div>
+            <div style={brandText}>RollPlay</div>
+          </div>
+
+          <nav
+            style={{
+              ...navLinks,
+              justifyContent: isPhone ? "center" : "flex-end",
+            }}
+          >
+            <button style={navButton} onClick={() => navigate("/join-session")}>
+              Join
+            </button>
+            <button style={navButton} onClick={() => navigate("/host-session")}>
+              Host
+            </button>
+            <button style={navButtonActive} onClick={() => navigate("/profile")}>
+              Profile
+            </button>
+          </nav>
+        </header>
+
+        <section
+          style={{
+            ...heroSection,
+            minHeight: "calc(100vh - 76px)",
+            padding: isPhone ? "28px 14px 40px" : "42px 20px 52px",
+          }}
+        >
+          <div style={heroGlowOne} />
+          <div style={heroGlowTwo} />
+
+          <div style={authCard}>
+            <p style={sectionEyebrow}>Profile</p>
+            <h1 style={pageTitle}>You need to sign in</h1>
+            <p style={introText}>
+              Sign in to view or edit your RollPlay profile, avatar, and hosting setup.
+            </p>
+            <button style={primaryButton} onClick={() => navigate("/login")}>
+              Go to Login
+            </button>
+          </div>
+        </section>
       </div>
     );
   }
@@ -107,8 +189,6 @@ export default function Profile() {
       setAvatarJson(updatedProfile.avatarJson);
       setCardBrand(updatedProfile.cardBrand || "");
       setCardLast4(updatedProfile.cardLast4 || "");
-      // stay on page after save; if you want to bounce home uncomment:
-      // navigate("/");
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to save profile");
@@ -138,7 +218,7 @@ export default function Profile() {
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
-        avatarJson: avatarJson, // avatar doesn't change here
+        avatarJson: avatarJson,
         cardBrand: data.card_brand || null,
         cardLast4: data.card_last4 || null,
         tier: data.tier || profile.tier || "player",
@@ -228,245 +308,712 @@ export default function Profile() {
   }
 
   return (
-    <div style={wrapper}>
-      <h1 style={{ marginBottom: 10 }}>Your Profile</h1>
-      <p style={{ opacity: 0.7, marginBottom: 8 }}>
-        This profile is used across all games and sessions.
-      </p>
-      <p style={{ opacity: 0.85, marginBottom: 20 }}>
-        <strong>Tier:</strong> {isHost ? "Host" : "Player"}{" "}
-        {isAdmin && " · Admin / Dev"}
-      </p>
-
-      {error && <p style={{ color: "salmon", marginBottom: 16 }}>{error}</p>}
-
-      {/* Display name (profile-level) */}
-      <div style={{ marginBottom: 16, width: "100%" }}>
-        <label style={label}>Display Name</label>
-        <input
-          style={input}
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="e.g. Fluff, Ryan, DartsKing"
-        />
-      </div>
-
-      {/* Avatar section */}
-      <div
+    <div style={page}>
+      {/* TOP BAR */}
+      <header
         style={{
-          width: "100%",
-          marginTop: 8,
-          padding: 16,
-          borderRadius: 18,
-          background: "rgba(0,0,0,0.45)",
-          border: "1px solid rgba(255,255,255,0.1)",
+          ...topBar,
+          padding: isPhone ? "14px 16px" : "16px 24px",
+          flexDirection: isPhone ? "column" : "row",
+          alignItems: isPhone ? "stretch" : "center",
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 12 }}>Avatar</h3>
+        <div
+          style={{
+            ...logoWrap,
+            justifyContent: isPhone ? "center" : "flex-start",
+          }}
+        >
+          <div style={logoBox}>LOGO</div>
+          <div style={brandText}>RollPlay</div>
+        </div>
 
-        {!editingAvatar && (
-          <>
-            <div style={{ maxWidth: 520, margin: "0 auto" }}>
-              <AvatarBuilder
-                initialAvatar={avatarJson}
-                // read-only preview: just ignore changes
-                onAvatarChange={null}
-              />
-            </div>
-            <button
-              type="button"
-              style={{ ...btnSecondary, marginTop: 16 }}
-              onClick={() => setEditingAvatar(true)}
-            >
-              Edit Appearance
-            </button>
-          </>
-        )}
-
-        {editingAvatar && (
-          <>
-            <div style={{ maxWidth: 520, margin: "0 auto" }}>
-              <AvatarBuilder
-                initialAvatar={avatarJson}
-                onAvatarChange={(model) => {
-                  setAvatarJson(JSON.stringify(model));
-                }}
-              />
-            </div>
-            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                style={btnPrimary}
-                onClick={() => {
-                  // we already stored latest model in avatarJson,
-                  // just exit edit mode. Full profile save uses Save Profile.
-                  setEditingAvatar(false);
-                }}
-              >
-                Done Editing
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  // reset to profile value
-                  if (profile.avatarJson) {
-                    setAvatarJson(profile.avatarJson);
-                  } else if (profile.avatar_json) {
-                    setAvatarJson(JSON.stringify(profile.avatar_json));
-                  } else {
-                    setAvatarJson(null);
-                  }
-                  setEditingAvatar(false);
-                }}
-              >
-                Cancel Changes
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Demo card + upgrade section */}
-      <div
-        style={{
-          width: "100%",
-          marginTop: 24,
-          padding: 16,
-          borderRadius: 12,
-          background: "rgba(0,0,0,0.35)",
-          border: "1px solid rgba(255,255,255,0.1)",
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: 8 }}>Demo Card & Hosting</h3>
-        <p style={{ fontSize: 14, opacity: 0.75, marginBottom: 12 }}>
-          Card details are <strong>demo-only</strong> and never charged. We
-          just use them as flavour for hosting & bill splitting.
-        </p>
-
-        {cardBrand && cardLast4 ? (
-          <p style={{ marginBottom: 12 }}>
-            <strong>{cardBrand}</strong> • **** **** **** {cardLast4}
-          </p>
-        ) : (
-          <p style={{ marginBottom: 12, opacity: 0.7 }}>No demo card yet.</p>
-        )}
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={handleGenerateCard}
-            disabled={savingCard}
-            style={btnSecondary}
-          >
-            {savingCard ? "Generating…" : "Generate Demo Card"}
+        <nav
+          style={{
+            ...navLinks,
+            justifyContent: isPhone ? "center" : "flex-end",
+          }}
+        >
+          <button style={navButton} onClick={() => navigate("/join-session")}>
+            Join
           </button>
+          <button style={navButton} onClick={() => navigate("/host-session")}>
+            Host
+          </button>
+          <button style={navButtonActive} onClick={() => navigate("/profile")}>
+            Profile
+          </button>
+        </nav>
+      </header>
 
-          {!isHost && (
-            <button
-              type="button"
-              onClick={handleUpgradeToHost}
-              disabled={upgrading}
+      <section
+        style={{
+          ...heroSection,
+          padding: isPhone ? "28px 14px 40px" : "42px 20px 52px",
+        }}
+      >
+        <div style={heroGlowOne} />
+        <div style={heroGlowTwo} />
+        {!isPhone && <div style={heroBubbleOne} />}
+        {!isPhone && <div style={heroBubbleTwo} />}
+
+        <div
+          style={{
+            ...profileLayout,
+            gridTemplateColumns:
+              isPhone || isLaptop
+                ? "1fr"
+                : "minmax(320px, 0.82fr) minmax(0, 1.18fr)",
+            gap: isPhone ? 18 : 24,
+          }}
+        >
+          {/* LEFT SIDE */}
+          <div style={sideCard}>
+            <p style={sectionEyebrow}>Profile overview</p>
+            <h1
               style={{
-                ...btnPrimary,
-                paddingInline: 20,
-                fontSize: 14,
+                ...pageTitle,
+                fontSize: isPhone ? 40 : isLaptop ? 52 : 64,
               }}
             >
-              {upgrading ? "Processing…" : "Pay for the Game (Upgrade to Host)"}
-            </button>
-          )}
+              Your profile
+            </h1>
+
+            <p style={introText}>
+              This profile is used across all sessions, games, and multiplayer lobbies.
+            </p>
+
+            <div style={profileSummaryCard}>
+              <div style={avatarCircle}>{initials}</div>
+
+              <div style={{ minWidth: 0 }}>
+                <div style={profileLabel}>Display name</div>
+                <div style={profileName}>{shownName}</div>
+                <div style={profileSubtext}>
+                  {isHost ? "Host account" : "Player account"}
+                  {isAdmin ? " · Admin / Dev" : ""}
+                </div>
+              </div>
+            </div>
+
+            <div style={statusGrid}>
+              <div style={statusCard}>
+                <div style={statusLabel}>Account Tier</div>
+                <div style={statusValue}>{isHost ? "Host" : "Player"}</div>
+              </div>
+
+              <div style={statusCard}>
+                <div style={statusLabel}>Demo Card</div>
+                <div style={statusValue}>
+                  {cardBrand && cardLast4 ? `${cardBrand} • ${cardLast4}` : "Not added"}
+                </div>
+              </div>
+            </div>
+
+            <div style={tipsCard}>
+              <h3 style={smallCardTitle}>What this page controls</h3>
+              <ul style={tipsList}>
+                <li>Your public display name in sessions</li>
+                <li>Your avatar and appearance</li>
+                <li>Your demo card and host upgrade status</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* RIGHT SIDE */}
+          <div style={mainColumn}>
+            {error && <p style={errorText}>{error}</p>}
+
+            {/* BASIC DETAILS */}
+            <div style={contentCard}>
+              <p style={sectionEyebrow}>Profile details</p>
+              <h2 style={cardHeading}>Basic information</h2>
+
+              <div style={fieldBlock}>
+                <label style={labelStyle}>Display Name</label>
+                <p style={helperText}>
+                  This is the name shown to other players in the lobby and arena.
+                </p>
+                <input
+                  style={inputStyle}
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g. Fluff, Ryan, DartsKing"
+                />
+              </div>
+            </div>
+
+            {/* AVATAR */}
+            <div style={contentCard}>
+              <p style={sectionEyebrow}>Avatar</p>
+              <h2 style={cardHeading}>Appearance</h2>
+
+              {!editingAvatar && (
+                <>
+                  <div style={{ maxWidth: 520, margin: "0 auto" }}>
+                    <AvatarBuilder
+                      initialAvatar={avatarJson}
+                      onAvatarChange={null}
+                    />
+                  </div>
+
+                  <div style={buttonGroup}>
+                    <button
+                      type="button"
+                      style={secondaryButton}
+                      onClick={() => setEditingAvatar(true)}
+                    >
+                      Edit Appearance
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {editingAvatar && (
+                <>
+                  <div style={{ maxWidth: 520, margin: "0 auto" }}>
+                    <AvatarBuilder
+                      initialAvatar={avatarJson}
+                      onAvatarChange={(model) => {
+                        setAvatarJson(JSON.stringify(model));
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      ...buttonGroup,
+                      flexDirection: isPhone ? "column" : "row",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={primaryButton}
+                      onClick={() => {
+                        setEditingAvatar(false);
+                      }}
+                    >
+                      Done Editing
+                    </button>
+
+                    <button
+                      type="button"
+                      style={ghostButton}
+                      onClick={() => {
+                        if (profile.avatarJson) {
+                          setAvatarJson(profile.avatarJson);
+                        } else if (profile.avatar_json) {
+                          setAvatarJson(JSON.stringify(profile.avatar_json));
+                        } else {
+                          setAvatarJson(null);
+                        }
+                        setEditingAvatar(false);
+                      }}
+                    >
+                      Cancel Changes
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* HOSTING / CARD */}
+            <div style={contentCard}>
+              <p style={sectionEyebrow}>Hosting</p>
+              <h2 style={cardHeading}>Demo card & upgrade</h2>
+
+              <p style={infoText}>
+                Card details are <strong>demo-only</strong> and never charged. They are
+                only used as part of the project flow and hosting setup.
+              </p>
+
+              <div style={summaryPanel}>
+                <div style={summaryRow}>
+                  <span style={summaryLabel}>Current demo card</span>
+                  <strong style={summaryValue}>
+                    {cardBrand && cardLast4
+                      ? `${cardBrand} • **** **** **** ${cardLast4}`
+                      : "No demo card yet"}
+                  </strong>
+                </div>
+
+                <div style={summaryRow}>
+                  <span style={summaryLabel}>Hosting access</span>
+                  <strong style={summaryValue}>
+                    {isHost ? "Unlocked" : "Not unlocked"}
+                  </strong>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  ...buttonGroup,
+                  flexDirection: isPhone ? "column" : "row",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleGenerateCard}
+                  disabled={savingCard}
+                  style={secondaryButton}
+                >
+                  {savingCard ? "Generating..." : "Generate Demo Card"}
+                </button>
+
+                {!isHost && (
+                  <button
+                    type="button"
+                    onClick={handleUpgradeToHost}
+                    disabled={upgrading}
+                    style={primaryButton}
+                  >
+                    {upgrading
+                      ? "Processing..."
+                      : "Pay for the Game (Upgrade to Host)"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ACTIONS */}
+            <div style={contentCard}>
+              <p style={sectionEyebrow}>Actions</p>
+              <h2 style={cardHeading}>Save or leave</h2>
+
+              <div
+                style={{
+                  ...buttonGroup,
+                  flexDirection: isPhone ? "column" : "row",
+                }}
+              >
+                <button
+                  style={primaryButton}
+                  onClick={handleSaveProfile}
+                  disabled={loading}
+                >
+                  {loading ? "Saving..." : "Save Profile"}
+                </button>
+
+                <button style={ghostButton} onClick={() => navigate("/")}>
+                  Cancel
+                </button>
+
+                <button
+                  style={dangerGhostButton}
+                  onClick={handleSignOut}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* Actions */}
-      <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
-        <button
-          style={btnPrimary}
-          onClick={handleSaveProfile}
-          disabled={loading}
-        >
-          {loading ? "Saving…" : "Save Profile"}
-        </button>
-        <button style={btnGhost} onClick={() => navigate("/")}>
-          Cancel
-        </button>
-      </div>
-
-      {/* Sign out */}
-      <button
-        style={{
-          ...btnGhost,
-          marginTop: 24,
-          borderColor: "#ff6666",
-          color: "#ff6666",
-        }}
-        onClick={handleSignOut}
-      >
-        Sign Out
-      </button>
+      </section>
     </div>
   );
 }
 
-/* --- inline styles --- */
+/* --- styles --- */
 
-const wrapper = {
-  paddingTop: 80,
+const page = {
   minHeight: "100vh",
+  color: "#fff",
+  background:
+    "radial-gradient(circle at top, rgba(255,210,90,0.10), transparent 18%), linear-gradient(180deg, #0d1118 0%, #151b26 35%, #1b2130 100%)",
+};
+
+const topBar = {
+  position: "sticky",
+  top: 0,
+  zIndex: 100,
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 20,
+  background: "rgba(8, 10, 16, 0.82)",
+  backdropFilter: "blur(10px)",
+  borderBottom: "1px solid rgba(255,255,255,0.08)",
+};
+
+const logoWrap = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+};
+
+const logoBox = {
+  width: 44,
+  height: 44,
+  borderRadius: 12,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  fontSize: 11,
+  fontWeight: 700,
+};
+
+const brandText = {
+  fontSize: 24,
+  fontWeight: 800,
+};
+
+const navLinks = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const navButton = {
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.04)",
+  color: "white",
+  cursor: "pointer",
+  fontSize: 14,
+};
+
+const navButtonActive = {
+  ...navButton,
+  background: "rgba(244,196,49,0.16)",
+  border: "1px solid rgba(244,196,49,0.34)",
+  color: "#f6cf64",
+};
+
+const heroSection = {
+  position: "relative",
+  display: "flex",
+  justifyContent: "center",
+  overflow: "hidden",
+  paddingBottom: 48,
+};
+
+const heroGlowOne = {
+  position: "absolute",
+  width: 520,
+  height: 520,
+  borderRadius: "50%",
+  background: "rgba(255, 196, 54, 0.18)",
+  filter: "blur(90px)",
+  top: 60,
+  left: -100,
+};
+
+const heroGlowTwo = {
+  position: "absolute",
+  width: 440,
+  height: 440,
+  borderRadius: "50%",
+  background: "rgba(255, 115, 64, 0.12)",
+  filter: "blur(90px)",
+  bottom: 40,
+  right: -80,
+};
+
+const heroBubbleOne = {
+  position: "absolute",
+  width: 120,
+  height: 120,
+  borderRadius: "50%",
+  border: "7px solid rgba(255,220,140,0.12)",
+  top: 120,
+  right: "12%",
+};
+
+const heroBubbleTwo = {
+  position: "absolute",
+  width: 78,
+  height: 78,
+  borderRadius: "50%",
+  border: "6px solid rgba(255,220,140,0.10)",
+  bottom: 120,
+  left: "10%",
+};
+
+const profileLayout = {
+  position: "relative",
+  zIndex: 2,
+  width: "100%",
+  maxWidth: 1180,
+  display: "grid",
+  alignItems: "start",
+};
+
+const sideCard = {
+  background: "rgba(0, 0, 0, 0.38)",
+  borderRadius: 30,
+  padding: "28px 24px",
+  border: "1px solid rgba(255,255,255,0.1)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+};
+
+const mainColumn = {
   display: "flex",
   flexDirection: "column",
-  alignItems: "center",
-  color: "white",
-  textAlign: "left",
-  maxWidth: 720,
-  margin: "0 auto",
+  gap: 20,
 };
 
-const label = {
-  display: "block",
-  fontSize: 14,
-  marginBottom: 6,
-  opacity: 0.85,
+const contentCard = {
+  background: "rgba(0, 0, 0, 0.42)",
+  borderRadius: 30,
+  border: "1px solid rgba(255,255,255,0.1)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
+  padding: "28px 24px",
 };
 
-const input = {
+const authCard = {
+  position: "relative",
+  zIndex: 2,
   width: "100%",
-  padding: "8px 10px",
-  borderRadius: 8,
-  border: "1px solid #666",
-  background: "#111",
-  color: "white",
-  fontSize: 16,
+  maxWidth: 720,
+  background: "rgba(0, 0, 0, 0.42)",
+  borderRadius: 30,
+  border: "1px solid rgba(255,255,255,0.1)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
+  padding: "32px 24px",
+  textAlign: "center",
 };
 
-const btnPrimary = {
-  padding: "10px 20px",
+const sectionEyebrow = {
+  margin: 0,
+  marginBottom: 10,
+  color: "#f6cf64",
+  textTransform: "uppercase",
+  letterSpacing: 1.5,
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const pageTitle = {
+  margin: 0,
+  lineHeight: 0.98,
+  fontWeight: 900,
+};
+
+const cardHeading = {
+  margin: "0 0 16px",
+  fontSize: 30,
+  lineHeight: 1.05,
+};
+
+const introText = {
+  marginTop: 14,
+  fontSize: 17,
+  lineHeight: 1.65,
+  opacity: 0.9,
+};
+
+const profileSummaryCard = {
+  marginTop: 24,
+  padding: 18,
+  borderRadius: 22,
+  display: "flex",
+  alignItems: "center",
+  gap: 16,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.1)",
+};
+
+const avatarCircle = {
+  width: 68,
+  height: 68,
+  borderRadius: "50%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "linear-gradient(135deg, #f4c431, #ff9d2f)",
+  color: "#1b1b1b",
+  fontWeight: 900,
+  fontSize: 22,
+  flexShrink: 0,
+};
+
+const profileLabel = {
+  fontSize: 13,
+  opacity: 0.72,
+  marginBottom: 4,
+};
+
+const profileName = {
+  fontSize: 22,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const profileSubtext = {
+  fontSize: 14,
+  opacity: 0.76,
+  marginTop: 4,
+};
+
+const statusGrid = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 12,
+  marginTop: 18,
+};
+
+const statusCard = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.1)",
+};
+
+const statusLabel = {
+  fontSize: 12,
+  opacity: 0.72,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 1,
+};
+
+const statusValue = {
+  fontSize: 16,
+  fontWeight: 700,
+  lineHeight: 1.4,
+};
+
+const tipsCard = {
+  marginTop: 20,
+  padding: 20,
+  borderRadius: 22,
+  background:
+    "linear-gradient(180deg, rgba(244,196,49,0.12), rgba(255,255,255,0.03))",
+  border: "1px solid rgba(255,255,255,0.1)",
+};
+
+const smallCardTitle = {
+  margin: "0 0 12px",
+  fontSize: 18,
+};
+
+const tipsList = {
+  margin: 0,
+  paddingLeft: 20,
+  lineHeight: 1.9,
+  fontSize: 15,
+  opacity: 0.9,
+};
+
+const fieldBlock = {
+  marginBottom: 8,
+};
+
+const labelStyle = {
+  display: "block",
+  marginBottom: 8,
+  fontSize: 16,
+  fontWeight: 700,
+};
+
+const helperText = {
+  margin: "0 0 10px",
+  fontSize: 14,
+  lineHeight: 1.5,
+  opacity: 0.76,
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 17,
+  boxSizing: "border-box",
+};
+
+const infoText = {
+  margin: "0 0 18px",
+  fontSize: 15,
+  lineHeight: 1.75,
+  opacity: 0.88,
+};
+
+const summaryPanel = {
+  marginTop: 8,
+  marginBottom: 22,
+  padding: 18,
+  borderRadius: 20,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.1)",
+};
+
+const summaryRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  padding: "6px 0",
+};
+
+const summaryLabel = {
+  opacity: 0.78,
+  fontSize: 15,
+};
+
+const summaryValue = {
+  fontSize: 16,
+  textAlign: "right",
+};
+
+const buttonGroup = {
+  display: "flex",
+  gap: 12,
+  flexWrap: "wrap",
+  marginTop: 12,
+};
+
+const errorText = {
+  color: "#ff9a9a",
+  fontWeight: 700,
+  marginBottom: 4,
+};
+
+const primaryButton = {
+  padding: "14px 22px",
   borderRadius: 999,
   border: "none",
-  background: "#ffcc33",
-  color: "#222",
+  background: "#f4c431",
+  color: "#161616",
+  fontSize: 17,
+  fontWeight: 800,
   cursor: "pointer",
-  fontSize: 16,
-  fontWeight: 600,
+  minWidth: 200,
+  boxShadow: "0 10px 24px rgba(244,196,49,0.24)",
 };
 
-const btnSecondary = {
-  padding: "8px 16px",
+const secondaryButton = {
+  padding: "14px 22px",
   borderRadius: 999,
-  border: "1px solid #888",
-  background: "#222",
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
   color: "white",
+  fontSize: 16,
+  fontWeight: 700,
   cursor: "pointer",
-  fontSize: 14,
+  minWidth: 170,
 };
 
-const btnGhost = {
-  padding: "8px 16px",
+const ghostButton = {
+  padding: "14px 22px",
   borderRadius: 999,
-  border: "1px solid #666",
+  border: "1px solid rgba(255,255,255,0.16)",
   background: "transparent",
   color: "white",
+  fontSize: 16,
+  fontWeight: 700,
   cursor: "pointer",
-  fontSize: 14,
+  minWidth: 140,
+};
+
+const dangerGhostButton = {
+  ...ghostButton,
+  border: "1px solid rgba(255,120,120,0.4)",
+  color: "#ff9a9a",
 };
