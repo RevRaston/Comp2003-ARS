@@ -14,7 +14,7 @@ const API_BASE = (
   defaultBase
 ).replace(/\/$/, "");
 
-export default function HostSession() {
+export default function HostSession({ token }) {
   const navigate = useNavigate();
 
   const {
@@ -48,13 +48,11 @@ export default function HostSession() {
   const isLaptop = screenWidth <= 1100;
 
   const displayName =
-    profile?.display_name ||
-    profile?.username ||
-    profile?.email ||
-    "Host";
+    profile?.display_name || profile?.username || profile?.email || "Host";
 
   const initials = useMemo(() => {
-    const parts = String(displayName).trim().split(" ");
+    const parts = String(displayName).trim().split(" ").filter(Boolean);
+    if (parts.length === 0) return "RP";
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }, [displayName]);
@@ -62,7 +60,6 @@ export default function HostSession() {
   async function handleCreateSession() {
     setError("");
 
-    const token = localStorage.getItem("token");
     if (!token) {
       navigate("/login?mode=host");
       return;
@@ -146,7 +143,10 @@ export default function HostSession() {
           <button style={navButton} onClick={() => navigate("/join-session")}>
             Join
           </button>
-          <button style={navButtonActive} onClick={() => navigate("/host-session")}>
+          <button
+            style={navButtonActive}
+            onClick={() => navigate("/host-session")}
+          >
             Host
           </button>
           <button style={navButton} onClick={() => navigate("/profile")}>
@@ -172,7 +172,9 @@ export default function HostSession() {
           style={{
             ...hostLayout,
             gridTemplateColumns:
-              isPhone || isLaptop ? "1fr" : "minmax(320px, 0.9fr) minmax(0, 1.1fr)",
+              isPhone || isLaptop
+                ? "1fr"
+                : "minmax(320px, 0.9fr) minmax(0, 1.1fr)",
             gap: isPhone ? 18 : 24,
           }}
         >
@@ -223,7 +225,8 @@ export default function HostSession() {
             <p style={sectionEyebrow}>Session setup</p>
             <h2 style={formTitle}>Create a new session</h2>
             <p style={formIntro}>
-              Set the total bill and choose the session rule before creating the room.
+              Set the total bill and choose the session rule before creating the
+              room.
             </p>
 
             <div style={fieldBlock}>
