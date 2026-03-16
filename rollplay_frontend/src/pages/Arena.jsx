@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
 import { supabase } from "../supabase";
 import AvatarPreview from "../components/AvatarPreview";
-import { GAME_CATALOGUE } from "../GameList";
+import { GAME_CATALOGUE, PACK_LOOKUP } from "../GameList";
 
 import SumoGame from "../games/Sumo/SumoGame";
 import DartsGame from "../games/Darts/DartsGame";
@@ -49,10 +49,25 @@ export default function Arena() {
   const [roundComplete, setRoundComplete] = useState(false);
   const [advancingRound, setAdvancingRound] = useState(false);
   const [roundActionError, setRoundActionError] = useState("");
+  const [screenWidth, setScreenWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
 
   const lastServerRoundRef = useRef(null);
 
   const code = sessionCode || localStorage.getItem("session_code");
+
+  useEffect(() => {
+    function handleResize() {
+      setScreenWidth(window.innerWidth);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isPhone = screenWidth <= 700;
+  const isTablet = screenWidth <= 1100;
 
   useEffect(() => {
     if (!code) return;
@@ -72,7 +87,6 @@ export default function Arena() {
         if (!res.ok || !data?.session) return;
         if (cancelled) return;
 
-        // ✅ Shared session finish → everyone goes to results
         if (data.session.status === "finished") {
           navigate("/results");
           return;
@@ -83,7 +97,6 @@ export default function Arena() {
         setPlayers(data.players || []);
         setRound(serverRound);
 
-        // Only clear round-complete UI when the backend round genuinely advances
         if (
           lastServerRoundRef.current !== null &&
           serverRound > lastServerRoundRef.current
@@ -159,6 +172,7 @@ export default function Arena() {
       const everyoneHasAvatar = players.every(
         (p) => p.avatar_json || p.avatarJson
       );
+
       if (everyoneHasAvatar) {
         setEnrichedPlayers(players);
         return;
@@ -239,7 +253,9 @@ export default function Arena() {
 
   const currentLevel = currentLevelEntry?.level || null;
   const currentLevelId = currentLevel?.id || "sumo";
-  const currentLevelName = currentLevel?.name || "Sumo (MVP)";
+  const currentLevelName = currentLevel?.name || "Sumo";
+  const currentPackName =
+    PACK_LOOKUP?.[currentLevel?.pack]?.name || currentLevel?.pack || "Game Pack";
 
   const CurrentGameComponent = GAME_COMPONENTS[currentLevelId] || SumoGame;
 
@@ -259,7 +275,6 @@ export default function Arena() {
     setAdvancingRound(true);
 
     try {
-      // ✅ Final completion is now shared through backend
       if (!hasNextRound) {
         const finishRes = await fetch(`${API_BASE}/sessions/${code}/finish`, {
           method: "POST",
@@ -299,211 +314,486 @@ export default function Arena() {
     }
   }
 
+  const topStripPlayers = isTablet
+    ? [slotPlayers[0], slotPlayers[1]].filter(Boolean)
+    : [];
+  const bottomStripPlayers = isTablet
+    ? [slotPlayers[2], slotPlayers[3]].filter(Boolean)
+    : [];
+
   return (
     <div style={page}>
-      <div style={titleWrap}>
-        <h1 style={title}>Arena</h1>
-        <p style={subtitle}>
-          Everyone sees the same game. Your avatars sit around the arena.
-        </p>
-        <p style={{ margin: 4, opacity: 0.8, fontSize: 13 }}>
-          Round {currentRound}
-          {currentLevelName ? ` — ${currentLevelName}` : ""}
-        </p>
-      </div>
+      <div style={topGlow} />
+      <div style={sideGlow} />
 
-      <div style={arenaShell}>
-        <div style={leftCol}>
-          <ArenaSlot player={slotPlayers[0]} label="P1" />
-          <ArenaSlot player={slotPlayers[2]} label="P3" />
-        </div>
-
-        <div style={centerCol}>
-          <div style={centerHeader}>
-            <h2 style={{ margin: 0 }}>{currentLevelName}</h2>
-            <p style={centerHint}>
-              This round&apos;s game plays here. Host runs the simulation; other
-              players send input.
-            </p>
-            <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
-              Your dot is <strong>BLUE</strong> on your screen. Opponent is{" "}
-              <strong>RED</strong>.
-            </p>
-            <p
+      <main
+        style={{
+          ...shell,
+          padding: isPhone ? "22px 12px 34px" : "30px 20px 48px",
+        }}
+      >
+        <section
+          style={{
+            ...heroCard,
+            padding: isPhone ? "18px 16px" : "24px 24px",
+            flexDirection: isPhone ? "column" : "row",
+            alignItems: isPhone ? "flex-start" : "center",
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <p style={eyebrow}>Live game arena</p>
+            <h1
               style={{
-                marginTop: 8,
-                marginBottom: 0,
-                fontSize: 12,
-                opacity: 0.7,
+                ...title,
+                fontSize: isPhone ? 30 : isTablet ? 42 : 52,
               }}
             >
-              Tip: click the game canvas before moving (focus).
+              {currentLevelName}
+            </h1>
+            <p
+              style={{
+                ...subtitle,
+                fontSize: isPhone ? 14 : 16,
+              }}
+            >
+              Everyone sees the same round. The host runs the simulation and
+              players interact inside the shared arena.
             </p>
+
+            <div
+              style={{
+                ...metaRow,
+                flexDirection: isPhone ? "column" : "row",
+                alignItems: isPhone ? "flex-start" : "center",
+              }}
+            >
+              <div style={metaPill}>
+                Round <strong>{currentRound}</strong> of <strong>{maxRounds}</strong>
+              </div>
+              <div style={metaPill}>
+                Pack <strong>{currentPackName}</strong>
+              </div>
+              <div style={metaPill}>
+                Session <strong>{code || "N/A"}</strong>
+              </div>
+              <div style={{ ...metaPill, ...(isHost ? hostPill : playerPill) }}>
+                {isHost ? "Host controls active" : "Player view"}
+              </div>
+            </div>
           </div>
 
-          <div style={gameShell}>
-            <div style={gameBox}>
-              <CurrentGameComponent
-                sessionCode={code}
-                players={enrichedPlayers}
-                isHost={Boolean(isHost)}
-                myUserId={myUserId}
-                mySeatIndex={mySeatIndex}
-                onRoundComplete={handleRoundComplete}
+          <div
+            style={{
+              ...legendCard,
+              width: isPhone ? "100%" : 320,
+            }}
+          >
+            <div style={legendTitle}>Quick notes</div>
+            <div style={legendText}>Your dot is <strong>blue</strong> on your screen.</div>
+            <div style={legendText}>Opponents appear <strong>red</strong>.</div>
+            <div style={legendText}>Click the game area first if controls need focus.</div>
+          </div>
+        </section>
+
+        {isTablet && (
+          <section style={{ marginTop: 16 }}>
+            <div style={mobilePlayersHeader}>Players</div>
+            <div
+              style={{
+                ...mobilePlayersGrid,
+                gridTemplateColumns:
+                  isPhone ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))",
+              }}
+            >
+              {slotPlayers.map((player, index) => (
+                <ArenaSlot
+                  key={index}
+                  player={player}
+                  label={`P${index + 1}`}
+                  compact
+                  highlightMe={index === mySeatIndex}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section
+          style={{
+            ...arenaShell,
+            gridTemplateColumns: isTablet
+              ? "1fr"
+              : "180px minmax(0, 1fr) 180px",
+            gap: isPhone ? 14 : 20,
+            marginTop: 18,
+          }}
+        >
+          {!isTablet && (
+            <div style={sideColumn}>
+              <ArenaSlot
+                player={slotPlayers[0]}
+                label="P1"
+                highlightMe={mySeatIndex === 0}
+              />
+              <ArenaSlot
+                player={slotPlayers[2]}
+                label="P3"
+                highlightMe={mySeatIndex === 2}
               />
             </div>
+          )}
 
-            {roundComplete && (
-              <div style={overlayWrap}>
-                <div style={overlayCard}>
-                  <h3 style={{ marginTop: 0, marginBottom: 10 }}>
-                    Round complete
-                  </h3>
-
-                  {isHost ? (
-                    <>
-                      <p style={panelText}>
-                        {hasNextRound
-                          ? "Start the next round when you're ready."
-                          : "No more rounds left. Continue to results."}
-                      </p>
-
-                      {roundActionError && (
-                        <p style={errorText}>{roundActionError}</p>
-                      )}
-
-                      <button
-                        onClick={handleAdvanceRound}
-                        disabled={advancingRound}
-                        style={advanceButton}
-                      >
-                        {advancingRound
-                          ? "Advancing..."
-                          : hasNextRound
-                          ? "Start Next Round"
-                          : "Go To Results"}
-                      </button>
-                    </>
-                  ) : (
-                    <p style={panelText}>Waiting for the host to continue…</p>
-                  )}
+          <div style={centerColumn}>
+            <div
+              style={{
+                ...gameHeader,
+                padding: isPhone ? "14px 14px" : "16px 18px",
+                flexDirection: isPhone ? "column" : "row",
+                alignItems: isPhone ? "flex-start" : "center",
+              }}
+            >
+              <div>
+                <div style={gameHeaderTitle}>{currentLevelName}</div>
+                <div style={gameHeaderText}>
+                  {isHost
+                    ? "Run the round, finish the simulation, then move the session on."
+                    : "Stay in the arena and wait for the host to continue after the round ends."}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
 
-        <div style={rightCol}>
-          <ArenaSlot player={slotPlayers[1]} label="P2" />
-          <ArenaSlot player={slotPlayers[3]} label="P4" />
-        </div>
-      </div>
+              <div style={gameHeaderBadge}>
+                {roundComplete ? "Round complete" : "Round in progress"}
+              </div>
+            </div>
+
+            <div style={gameShell}>
+              <div
+                style={{
+                  ...gameFrame,
+                  minHeight: isPhone ? 320 : 420,
+                  padding: isPhone ? 10 : 14,
+                }}
+              >
+                <div
+                  style={{
+                    ...gameViewport,
+                    minHeight: isPhone ? 300 : 390,
+                  }}
+                >
+                  <CurrentGameComponent
+                    sessionCode={code}
+                    players={enrichedPlayers}
+                    isHost={Boolean(isHost)}
+                    myUserId={myUserId}
+                    mySeatIndex={mySeatIndex}
+                    onRoundComplete={handleRoundComplete}
+                  />
+                </div>
+              </div>
+
+              {roundComplete && (
+                <div style={overlayWrap}>
+                  <div style={overlayCard}>
+                    <h3 style={overlayTitle}>Round complete</h3>
+
+                    {isHost ? (
+                      <>
+                        <p style={panelText}>
+                          {hasNextRound
+                            ? "Start the next round when you're ready."
+                            : "That was the final round. Continue to results."}
+                        </p>
+
+                        {roundActionError && (
+                          <p style={errorText}>{roundActionError}</p>
+                        )}
+
+                        <button
+                          onClick={handleAdvanceRound}
+                          disabled={advancingRound}
+                          style={advanceButton}
+                        >
+                          {advancingRound
+                            ? "Advancing..."
+                            : hasNextRound
+                            ? "Start next round"
+                            : "Go to results"}
+                        </button>
+                      </>
+                    ) : (
+                      <p style={panelText}>Waiting for the host to continue…</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {!isTablet && (
+            <div style={sideColumn}>
+              <ArenaSlot
+                player={slotPlayers[1]}
+                label="P2"
+                highlightMe={mySeatIndex === 1}
+              />
+              <ArenaSlot
+                player={slotPlayers[3]}
+                label="P4"
+                highlightMe={mySeatIndex === 3}
+              />
+            </div>
+          )}
+        </section>
+
+        {isPhone && (
+          <div style={phoneHelpBox}>
+            For the best experience on smaller screens, keep your phone in
+            landscape if a game feels cramped.
+          </div>
+        )}
+      </main>
     </div>
   );
 }
 
-function ArenaSlot({ player, label }) {
+function ArenaSlot({ player, label, compact = false, highlightMe = false }) {
   const name = player?.display_name || player?.name || "Waiting…";
   const avatarJson = player?.avatarJson || player?.avatar_json || null;
   const isEmpty = !player;
 
   return (
-    <div style={slotWrap}>
-      <div style={slotCard}>
+    <div
+      style={{
+        ...slotWrap,
+        ...(compact ? compactSlotWrap : {}),
+      }}
+    >
+      <div
+        style={{
+          ...slotCard,
+          ...(compact ? compactSlotCard : {}),
+          ...(highlightMe ? mySlotCard : {}),
+        }}
+      >
         {!isEmpty ? (
           <AvatarPreview avatarJson={avatarJson} displayName={name} />
         ) : (
           <div style={emptyInner} />
         )}
       </div>
+
       <div style={slotFooter}>
         <span style={slotName}>{name}</span>
-        <span style={slotLabel}>{label}</span>
+        <span style={slotLabel}>{highlightMe ? "YOU" : label}</span>
       </div>
     </div>
   );
 }
 
-/* --- styles --- */
+/* ---------------- styles ---------------- */
 
 const page = {
-  paddingTop: 80,
   minHeight: "100vh",
-  color: "white",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
+  color: "#fff",
+  position: "relative",
+  overflow: "hidden",
+  background:
+    "radial-gradient(circle at top, rgba(255,210,90,0.10), transparent 18%), linear-gradient(180deg, #0d1118 0%, #151b26 35%, #1b2130 100%)",
 };
 
-const titleWrap = {
-  textAlign: "center",
-  marginBottom: 16,
+const topGlow = {
+  position: "absolute",
+  width: 520,
+  height: 520,
+  borderRadius: "50%",
+  background: "rgba(255, 196, 54, 0.14)",
+  filter: "blur(90px)",
+  top: -120,
+  left: -120,
+};
+
+const sideGlow = {
+  position: "absolute",
+  width: 420,
+  height: 420,
+  borderRadius: "50%",
+  background: "rgba(255, 132, 82, 0.10)",
+  filter: "blur(90px)",
+  right: -80,
+  top: 180,
+};
+
+const shell = {
+  width: "100%",
+  maxWidth: 1280,
+  margin: "0 auto",
+  position: "relative",
+  zIndex: 2,
+};
+
+const heroCard = {
+  display: "flex",
+  gap: 20,
+  justifyContent: "space-between",
+  borderRadius: 30,
+  background: "rgba(0, 0, 0, 0.38)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+};
+
+const eyebrow = {
+  margin: "0 0 10px",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: 1.6,
+  color: "#f6cf64",
+  fontSize: 13,
 };
 
 const title = {
   margin: 0,
-  fontSize: 40,
-  letterSpacing: 2,
+  lineHeight: 0.96,
+  fontWeight: 900,
 };
 
 const subtitle = {
-  margin: 0,
-  opacity: 0.7,
+  margin: "12px 0 0",
+  maxWidth: 760,
+  lineHeight: 1.6,
+  opacity: 0.88,
+};
+
+const metaRow = {
+  display: "flex",
+  gap: 10,
+  marginTop: 18,
+  flexWrap: "wrap",
+};
+
+const metaPill = {
+  padding: "8px 12px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  fontSize: 13,
+};
+
+const hostPill = {
+  color: "#f6cf64",
+  border: "1px solid rgba(244,196,49,0.26)",
+  background: "rgba(244,196,49,0.10)",
+};
+
+const playerPill = {
+  color: "#fff",
+};
+
+const legendCard = {
+  borderRadius: 22,
+  padding: 16,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const legendTitle = {
   fontSize: 14,
+  fontWeight: 800,
+  color: "#f6cf64",
+  textTransform: "uppercase",
+  letterSpacing: 1.2,
+};
+
+const legendText = {
+  fontSize: 14,
+  lineHeight: 1.5,
+  opacity: 0.86,
+};
+
+const mobilePlayersHeader = {
+  marginBottom: 10,
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#f6cf64",
+  textTransform: "uppercase",
+  letterSpacing: 1.2,
+};
+
+const mobilePlayersGrid = {
+  display: "grid",
+  gap: 10,
 };
 
 const arenaShell = {
-  marginTop: 24,
-  maxWidth: 980,
-  width: "100%",
   display: "grid",
-  gridTemplateColumns: "220px minmax(0, 1fr) 220px",
-  gap: 24,
   alignItems: "stretch",
 };
 
-const leftCol = {
+const sideColumn = {
   display: "flex",
   flexDirection: "column",
   justifyContent: "space-between",
-  gap: 16,
+  gap: 14,
 };
 
-const rightCol = {
-  ...leftCol,
-};
-
-const centerCol = {
+const centerColumn = {
   display: "flex",
   flexDirection: "column",
-  gap: 16,
+  gap: 14,
+  minWidth: 0,
 };
 
-const centerHeader = {
-  borderRadius: 28,
-  padding: "18px 24px",
-  background: "rgba(0,0,0,0.45)",
-  border: "1px solid rgba(255,255,255,0.18)",
-  textAlign: "center",
+const gameHeader = {
+  borderRadius: 22,
+  background: "rgba(0,0,0,0.38)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
 };
 
-const centerHint = {
-  marginTop: 8,
-  marginBottom: 8,
-  fontSize: 13,
-  opacity: 0.8,
+const gameHeaderTitle = {
+  fontSize: 24,
+  fontWeight: 900,
+  lineHeight: 1.1,
+  marginBottom: 6,
+};
+
+const gameHeaderText = {
+  fontSize: 14,
+  lineHeight: 1.6,
+  opacity: 0.82,
+};
+
+const gameHeaderBadge = {
+  padding: "8px 12px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  fontSize: 12,
+  fontWeight: 700,
+  whiteSpace: "nowrap",
 };
 
 const gameShell = {
   position: "relative",
 };
 
-const gameBox = {
-  minHeight: 360,
+const gameFrame = {
   borderRadius: 28,
   background: "rgba(0,0,0,0.28)",
   border: "1px solid rgba(255,255,255,0.14)",
-  padding: 14,
+  boxShadow: "0 18px 40px rgba(0,0,0,0.20)",
+};
+
+const gameViewport = {
+  width: "100%",
+  borderRadius: 20,
+  overflow: "hidden",
+  background:
+    "radial-gradient(circle at top, rgba(255,255,255,0.04), rgba(0,0,0,0.18))",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -531,6 +821,12 @@ const overlayCard = {
   boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
 };
 
+const overlayTitle = {
+  marginTop: 0,
+  marginBottom: 10,
+  fontSize: 24,
+};
+
 const panelText = {
   opacity: 0.85,
   marginBottom: 14,
@@ -546,10 +842,12 @@ const advanceButton = {
   padding: "12px 18px",
   borderRadius: 14,
   border: "1px solid rgba(255,255,255,0.18)",
-  background: "rgba(255,255,255,0.12)",
-  color: "white",
+  background: "#f4c431",
+  color: "#1d1d1d",
   cursor: "pointer",
   fontSize: 15,
+  fontWeight: 800,
+  boxShadow: "0 10px 24px rgba(244,196,49,0.22)",
 };
 
 const slotWrap = {
@@ -557,22 +855,37 @@ const slotWrap = {
   flexDirection: "column",
   alignItems: "center",
   gap: 8,
+  minWidth: 0,
+};
+
+const compactSlotWrap = {
+  alignItems: "stretch",
 };
 
 const slotCard = {
   width: "100%",
   aspectRatio: "3 / 4",
-  borderRadius: 26,
+  borderRadius: 24,
   padding: 6,
   background:
     "linear-gradient(145deg, rgba(3,3,15,0.9), rgba(40,30,80,0.95))",
   boxShadow: "0 18px 40px rgba(0,0,0,0.55)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const compactSlotCard = {
+  aspectRatio: "1 / 1.05",
+  borderRadius: 18,
+};
+
+const mySlotCard = {
+  boxShadow: "0 0 0 2px rgba(122,162,255,0.55), 0 18px 40px rgba(0,0,0,0.55)",
 };
 
 const emptyInner = {
   width: "100%",
   height: "100%",
-  borderRadius: 20,
+  borderRadius: 18,
   background:
     "radial-gradient(circle at 20% 0%, #1A1035, #04040C 60%, #020208)",
 };
@@ -581,16 +894,32 @@ const slotFooter = {
   width: "100%",
   display: "flex",
   justifyContent: "space-between",
+  gap: 10,
   fontSize: 11,
-  opacity: 0.9,
+  opacity: 0.92,
 };
 
 const slotName = {
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
+  minWidth: 0,
+  flex: 1,
 };
 
 const slotLabel = {
-  opacity: 0.6,
+  opacity: 0.7,
+  fontWeight: 800,
+  flexShrink: 0,
+};
+
+const phoneHelpBox = {
+  marginTop: 14,
+  borderRadius: 16,
+  padding: 14,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  fontSize: 13,
+  lineHeight: 1.6,
+  opacity: 0.82,
 };
