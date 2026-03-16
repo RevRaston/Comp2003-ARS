@@ -104,7 +104,7 @@ export default function HostSession({ token }) {
         isHost: true,
       });
 
-      navigate("/lobby");
+      navigate("/split-setup");
     } catch (err) {
       console.error("Create session error:", err);
       setError(err.message || "Failed to create session");
