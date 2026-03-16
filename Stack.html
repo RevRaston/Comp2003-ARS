@@ -1,0 +1,335 @@
+import React, { useRef, useEffect, useState } from "react";
+
+export default function StackGamePreview(){
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+
+  const [score,setScore] = useState(0);
+  const [combo,setCombo] = useState(1);
+  const [best,setBest] = useState(()=>Number(localStorage.getItem("best_stack_score")||0));
+  const [gameOver,setGameOver] = useState(false);
+  const [flash,setFlash] = useState(false);
+
+  const gameRef = useRef(null);
+
+  useEffect(()=>{
+    start();
+    return stop;
+  },[]);
+
+  function start(){
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    const DPR = window.devicePixelRatio || 1;
+    const width = 400;
+    const height = 600;
+
+    canvas.width = width * DPR;
+    canvas.height = height * DPR;
+    canvas.style.width = width+"px";
+    canvas.style.height = height+"px";
+
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+
+    const BLOCK_HEIGHT = 30;
+
+    function randomColor(){
+      const hue = Math.floor(Math.random()*360);
+      return `hsl(${hue},70%,55%)`;
+    }
+
+    function shade(hsl,amt){
+      const m = hsl.match(/hsl\((\d+),(\d+)%,(\d+)%\)/);
+      if(!m) return hsl;
+      let h = +m[1];
+      let s = +m[2];
+      let l = Math.max(0,Math.min(100,+m[3]+amt));
+      return `hsl(${h},${s}%,${l}%)`;
+    }
+
+    function drawBlock(x,y,w,color){
+      const depth = 10;
+
+      ctx.fillStyle=color;
+      ctx.fillRect(x,y,w,BLOCK_HEIGHT);
+
+      ctx.fillStyle=shade(color,15);
+      ctx.beginPath();
+      ctx.moveTo(x,y);
+      ctx.lineTo(x+depth,y-depth);
+      ctx.lineTo(x+w+depth,y-depth);
+      ctx.lineTo(x+w,y);
+      ctx.fill();
+
+      ctx.fillStyle=shade(color,-12);
+      ctx.beginPath();
+      ctx.moveTo(x+w,y);
+      ctx.lineTo(x+w+depth,y-depth);
+      ctx.lineTo(x+w+depth,y+BLOCK_HEIGHT-depth);
+      ctx.lineTo(x+w,y+BLOCK_HEIGHT);
+      ctx.fill();
+    }
+
+    const state = {
+      cameraY:0,
+      running:true,
+      shake:0,
+      blocks:[{
+        x:(width-180)/2,
+        y:height-BLOCK_HEIGHT,
+        width:180,
+        color:randomColor()
+      }],
+      moving:{
+        x:-180,
+        y:height-BLOCK_HEIGHT*2,
+        width:180,
+        dir:1,
+        speed:3,
+        color:randomColor()
+      },
+      falling:[],
+      particles:[],
+      stars:Array.from({length:80}).map(()=>({
+        x:Math.random()*width,
+        y:Math.random()*height*4,
+        size:Math.random()*2
+      }))
+    };
+
+    gameRef.current = state;
+
+    function spawnNext(widthNew,y){
+      const fromLeft = Math.random()<0.5;
+      state.moving={
+        x:fromLeft?-widthNew:width,
+        y,
+        width:widthNew,
+        dir:fromLeft?1:-1,
+        speed:Math.min(14,3+state.blocks.length*0.18),
+        color:randomColor()
+      };
+    }
+
+    function spawnParticles(x,y,color){
+      for(let i=0;i<20;i++){
+        state.particles.push({
+          x,y,
+          vx:(Math.random()-0.5)*6,
+          vy:Math.random()*-6,
+          size:6,
+          color
+        });
+      }
+    }
+
+    function update(dt){
+      const m = state.moving;
+
+      m.x += m.dir*m.speed*dt;
+
+      if(m.x<=0 && m.dir<0) m.dir=1;
+      if(m.x+m.width>=width && m.dir>0) m.dir=-1;
+
+      const screenY = m.y + state.cameraY;
+      const target = height*0.35;
+
+      if(screenY<target) state.cameraY += (target-screenY)*0.1;
+
+      state.falling.forEach(f=>{
+        f.vy+=0.5*dt;
+        f.y+=f.vy*dt;
+        f.x+=f.vx*dt;
+      });
+
+      state.falling = state.falling.filter(f=>f.y<height+200);
+
+      state.particles.forEach(p=>{
+        p.vy+=0.3*dt;
+        p.x+=p.vx*dt;
+        p.y+=p.vy*dt;
+        p.size*=0.96;
+      });
+
+      state.particles = state.particles.filter(p=>p.size>0.5);
+
+      if(state.shake>0) state.shake*=0.9;
+    }
+
+    function draw(){
+      ctx.save();
+
+      const shakeX=(Math.random()-0.5)*state.shake;
+      const shakeY=(Math.random()-0.5)*state.shake;
+
+      ctx.translate(shakeX,shakeY);
+
+      ctx.clearRect(0,0,width,height);
+
+      const t = Math.min(1,state.blocks.length/80);
+
+      const sky = ctx.createLinearGradient(0,0,0,height);
+      sky.addColorStop(0,`hsl(210,40%,${80-t*50}%)`);
+      sky.addColorStop(1,`hsl(220,30%,${50-t*40}%)`);
+
+      ctx.fillStyle=sky;
+      ctx.fillRect(0,0,width,height);
+
+      if(t>0.4){
+        ctx.fillStyle="white";
+        state.stars.forEach(s=>{
+          ctx.fillRect(s.x,s.y+state.cameraY*0.2,s.size,s.size);
+        });
+      }
+
+      state.blocks.forEach(b=>{
+        drawBlock(b.x,b.y+state.cameraY,b.width,b.color);
+      });
+
+      const m=state.moving;
+
+      if(state.running)
+        drawBlock(m.x,m.y+state.cameraY,m.width,m.color);
+
+      state.falling.forEach(f=>{
+        drawBlock(f.x,f.y+state.cameraY,f.width,f.color);
+      });
+
+      state.particles.forEach(p=>{
+        ctx.beginPath();
+        ctx.arc(p.x,p.y+state.cameraY,p.size,0,Math.PI*2);
+        ctx.fillStyle=p.color;
+        ctx.fill();
+      });
+
+      ctx.restore();
+    }
+
+    let last = performance.now();
+
+    function loop(now){
+      const dt=(now-last)/16.67;
+      last=now;
+
+      if(state.running){
+        update(dt);
+        draw();
+        rafRef.current=requestAnimationFrame(loop);
+      }
+    }
+
+    function place(){
+      if(!state.running) return;
+
+      const m = state.moving;
+      const top = state.blocks[state.blocks.length-1];
+
+      const overlap = Math.min(m.x+m.width,top.x+top.width) - Math.max(m.x,top.x);
+
+      const delta=Math.abs(m.x-top.x);
+      const PERFECT_TOL=Math.max(3,m.width*0.04);
+
+      let newCombo=1;
+
+      if(delta<PERFECT_TOL){
+        m.x=top.x;
+        spawnParticles(m.x+m.width/2,m.y,m.color);
+
+        setFlash(true);
+        setTimeout(()=>setFlash(false),120);
+
+        navigator.vibrate?.(10);
+
+        newCombo=combo+1;
+      }
+
+      if(overlap<=0){
+        state.running=false;
+        setGameOver(true);
+
+        const newBest=Math.max(score,best);
+        localStorage.setItem("best_stack_score",newBest);
+        setBest(newBest);
+
+        return;
+      }
+
+      const newX=Math.max(m.x,top.x);
+      const cut=m.width-overlap;
+
+      if(cut>0.5){
+        state.shake=8;
+
+        state.falling.push({
+          x:m.x<top.x?m.x:newX+overlap,
+          y:m.y,
+          width:cut,
+          color:m.color,
+          vx:(Math.random()-0.5)*4,
+          vy:-4
+        });
+      }
+
+      state.blocks.push({
+        x:newX,
+        y:m.y,
+        width:overlap,
+        color:m.color
+      });
+
+      if(state.blocks.length>200) state.blocks.shift();
+
+      setCombo(newCombo);
+      setScore(s=>s+newCombo);
+
+      spawnNext(overlap,m.y-BLOCK_HEIGHT);
+    }
+
+    canvas.addEventListener("pointerdown",place);
+
+    requestAnimationFrame(loop);
+  }
+
+  function stop(){
+    if(rafRef.current) cancelAnimationFrame(rafRef.current);
+  }
+
+  function restart(){
+    stop();
+    setScore(0);
+    setCombo(1);
+    setGameOver(false);
+    setTimeout(start,50);
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white gap-3">
+      <h1 className="text-3xl font-bold">Stack</h1>
+
+      <div className="relative">
+        <canvas ref={canvasRef} className="rounded-xl shadow-2xl" />
+
+        {flash && (
+          <div className="absolute inset-0 bg-white/20 rounded-xl pointer-events-none" />
+        )}
+
+        {gameOver && (
+          <div className="absolute inset-0 bg-black/70 rounded-xl flex flex-col items-center justify-center gap-3">
+            <div className="text-3xl font-bold">Game Over</div>
+            <div>Score: {score}</div>
+            <div>Best: {best}</div>
+            <button onClick={restart} className="bg-white text-black px-4 py-2 rounded-lg">
+              Play Again
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div>Score: {score}</div>
+      <div>Combo: x{combo}</div>
+      <div>Best: {best}</div>
+      <div className="opacity-60">Tap or click to stack</div>
+    </div>
+  );
+}
