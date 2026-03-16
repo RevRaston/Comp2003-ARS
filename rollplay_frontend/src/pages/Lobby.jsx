@@ -187,47 +187,317 @@ export default function Lobby({ token }) {
     sessionCode || localStorage.getItem("session_code") || "N/A";
 
   return (
-    <div
-      className="LobbyBox"
-      style={{ paddingTop: 80, maxWidth: 480, margin: "0 auto" }}
-    >
-      <h1>Lobby</h1>
+    <div style={page}>
+      <div style={glowOne} />
+      <div style={glowTwo} />
 
-      <p>
-        Session Code: <strong>{codeToShow}</strong>
-      </p>
+      <div style={shell}>
+        <div style={card}>
+          <p style={eyebrow}>Session lobby</p>
+          <h1 style={title}>Lobby</h1>
+          <p style={subtitle}>
+            Everyone joins here before the host starts the session.
+          </p>
 
-      {session && (
-        <p>
-          Rule: <strong>{session.rule}</strong> — Total bill:{" "}
-          <strong>£{session.total_cost}</strong>
-        </p>
-      )}
+          <div style={infoCard}>
+            <div style={infoRow}>
+              <span style={infoLabel}>Session code</span>
+              <span style={codeBadge}>{codeToShow}</span>
+            </div>
 
-      <h3 style={{ marginTop: 24 }}>Players:</h3>
+            {session && (
+              <>
+                <div style={infoRow}>
+                  <span style={infoLabel}>Rule</span>
+                  <span style={infoValue}>{session.rule || "Not set"}</span>
+                </div>
 
-      {players.length === 0 && <p>No players yet…</p>}
+                <div style={infoRow}>
+                  <span style={infoLabel}>Total bill</span>
+                  <span style={infoValue}>£{session.total_cost}</span>
+                </div>
+              </>
+            )}
+          </div>
 
-      <ul>
-        {players.map((p) => (
-          <li key={p.id || p.user_id}>
-            {p.display_name || p.name} {p.is_host ? "(Host)" : ""}
-          </li>
-        ))}
-      </ul>
+          <div style={playersSection}>
+            <div style={playersHeader}>
+              <h3 style={playersTitle}>Players</h3>
+              <span style={playersCount}>
+                {players.length} {players.length === 1 ? "joined" : "joined"}
+              </span>
+            </div>
 
-      {error && <p style={{ color: "red", marginTop: 16 }}>{error}</p>}
+            {players.length === 0 ? (
+              <div style={emptyState}>No players yet…</div>
+            ) : (
+              <ul style={playersList}>
+                {players.map((p) => (
+                  <li key={p.id || p.user_id} style={playerCard}>
+                    <span style={playerName}>
+                      {p.display_name || p.name || "Unknown player"}
+                    </span>
+                    <span
+                      style={{
+                        ...roleTag,
+                        ...(p.is_host ? hostTag : playerTag),
+                      }}
+                    >
+                      {p.is_host ? "Host" : "Player"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-      {isHost ? (
-        <button
-          style={{ marginTop: 24, padding: "10px 18px" }}
-          onClick={startGame}
-        >
-          Start Game
-        </button>
-      ) : (
-        <p style={{ marginTop: 16 }}>Waiting for host to start the game…</p>
-      )}
+          {error && <div style={errorBox}>{error}</div>}
+
+          {isHost ? (
+            <button style={startButton} onClick={startGame}>
+              Start Game
+            </button>
+          ) : (
+            <div style={waitingBox}>Waiting for host to start the game…</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+/* styles */
+
+const page = {
+  minHeight: "100vh",
+  color: "#fff",
+  position: "relative",
+  overflow: "hidden",
+  background:
+    "radial-gradient(circle at top, rgba(255,210,90,0.10), transparent 18%), linear-gradient(180deg, #0d1118 0%, #151b26 35%, #1b2130 100%)",
+};
+
+const glowOne = {
+  position: "absolute",
+  width: 420,
+  height: 420,
+  borderRadius: "50%",
+  background: "rgba(255, 196, 54, 0.12)",
+  filter: "blur(90px)",
+  top: -100,
+  left: -100,
+};
+
+const glowTwo = {
+  position: "absolute",
+  width: 320,
+  height: 320,
+  borderRadius: "50%",
+  background: "rgba(255, 132, 82, 0.10)",
+  filter: "blur(90px)",
+  right: -80,
+  top: 180,
+};
+
+const shell = {
+  position: "relative",
+  zIndex: 2,
+  maxWidth: 620,
+  margin: "0 auto",
+  padding: "84px 16px 40px",
+};
+
+const card = {
+  borderRadius: 30,
+  padding: "28px 22px",
+  background: "rgba(0, 0, 0, 0.40)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+};
+
+const eyebrow = {
+  margin: "0 0 10px",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: 1.6,
+  color: "#f6cf64",
+  fontSize: 13,
+  textAlign: "center",
+};
+
+const title = {
+  margin: 0,
+  fontSize: "clamp(2.2rem, 5vw, 3.2rem)",
+  lineHeight: 0.95,
+  fontWeight: 900,
+  textAlign: "center",
+};
+
+const subtitle = {
+  margin: "12px auto 22px",
+  maxWidth: 460,
+  textAlign: "center",
+  fontSize: 15,
+  lineHeight: 1.6,
+  opacity: 0.86,
+};
+
+const infoCard = {
+  borderRadius: 22,
+  padding: 16,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+};
+
+const infoRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const infoLabel = {
+  fontSize: 13,
+  opacity: 0.72,
+  textTransform: "uppercase",
+  letterSpacing: 1,
+};
+
+const infoValue = {
+  fontSize: 15,
+  fontWeight: 700,
+};
+
+const codeBadge = {
+  padding: "8px 12px",
+  borderRadius: 999,
+  background: "rgba(244,196,49,0.16)",
+  border: "1px solid rgba(244,196,49,0.28)",
+  color: "#f6cf64",
+  fontSize: 14,
+  fontWeight: 800,
+  letterSpacing: 1,
+};
+
+const playersSection = {
+  marginTop: 24,
+};
+
+const playersHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  marginBottom: 12,
+  flexWrap: "wrap",
+};
+
+const playersTitle = {
+  margin: 0,
+  fontSize: 15,
+  textTransform: "uppercase",
+  letterSpacing: 1.2,
+  color: "#f6cf64",
+};
+
+const playersCount = {
+  fontSize: 13,
+  opacity: 0.78,
+};
+
+const emptyState = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px dashed rgba(255,255,255,0.14)",
+  fontSize: 14,
+  opacity: 0.8,
+};
+
+const playersList = {
+  listStyle: "none",
+  padding: 0,
+  margin: 0,
+  display: "grid",
+  gap: 10,
+};
+
+const playerCard = {
+  padding: "14px 16px",
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const playerName = {
+  fontSize: 15,
+  fontWeight: 600,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const roleTag = {
+  padding: "6px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 700,
+  flexShrink: 0,
+};
+
+const hostTag = {
+  background: "rgba(244,196,49,0.16)",
+  border: "1px solid rgba(244,196,49,0.28)",
+  color: "#f6cf64",
+};
+
+const playerTag = {
+  background: "rgba(255,255,255,0.07)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  color: "#fff",
+};
+
+const errorBox = {
+  marginTop: 18,
+  padding: "12px 14px",
+  borderRadius: 16,
+  background: "rgba(255,99,99,0.12)",
+  border: "1px solid rgba(255,99,99,0.28)",
+  color: "#ffd1d1",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const startButton = {
+  marginTop: 24,
+  width: "100%",
+  padding: "14px 18px",
+  border: "none",
+  borderRadius: 999,
+  background: "linear-gradient(135deg, #f4c431, #ffb347)",
+  color: "#1d1d1d",
+  fontSize: 16,
+  fontWeight: 800,
+  cursor: "pointer",
+  boxShadow: "0 12px 28px rgba(244,196,49,0.22)",
+};
+
+const waitingBox = {
+  marginTop: 18,
+  padding: "14px 16px",
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  textAlign: "center",
+  fontSize: 14,
+  opacity: 0.82,
+};

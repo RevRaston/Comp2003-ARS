@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Sumo — WebSocket multiplayer simulation with win conditions.
+ * Desktop: keyboard controls
+ * Phone: on-screen touch controls
  */
 
 const defaultWsBase =
@@ -46,6 +48,15 @@ export default function SumoGame({
   const [statusLine, setStatusLine] = useState("");
   const [connLine, setConnLine] = useState("disconnected");
   const [summaryLine, setSummaryLine] = useState("");
+  const [screenWidth, setScreenWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+  const [mobilePress, setMobilePress] = useState({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+  });
 
   const wsRef = useRef(null);
   const runningRef = useRef(false);
@@ -57,9 +68,25 @@ export default function SumoGame({
   const announcedRef = useRef(false);
   const onRoundCompleteRef = useRef(onRoundComplete);
 
+  const mobileInputRef = useRef({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+  });
+
   useEffect(() => {
     onRoundCompleteRef.current = onRoundComplete;
   }, [onRoundComplete]);
+
+  useEffect(() => {
+    function handleResize() {
+      setScreenWidth(window.innerWidth);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   function wsSend(obj) {
     const ws = wsRef.current;
@@ -68,6 +95,11 @@ export default function SumoGame({
   }
 
   const code = sessionCode || localStorage.getItem("session_code") || "local";
+
+  const isPhoneLike =
+    typeof window !== "undefined" &&
+    screenWidth <= 820 &&
+    (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
 
   const active = useMemo(() => {
     const list = Array.isArray(players) ? players : [];
@@ -93,6 +125,80 @@ export default function SumoGame({
 
     return -1;
   }, [active.hasTwo, active.p1Key, active.p2Key, myId, mySeatIndex]);
+
+  function setTouchDir(dir, pressed) {
+    mobileInputRef.current = {
+      ...mobileInputRef.current,
+      [dir]: pressed,
+    };
+
+    setMobilePress((prev) => ({
+      ...prev,
+      [dir]: pressed,
+    }));
+  }
+
+  function clearTouchDirs() {
+    mobileInputRef.current = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+    };
+
+    setMobilePress({
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+    });
+  }
+
+  function bindTouchButton(dir) {
+    return {
+      onTouchStart: (e) => {
+        e.preventDefault();
+        setTouchDir(dir, true);
+      },
+      onTouchEnd: (e) => {
+        e.preventDefault();
+        setTouchDir(dir, false);
+      },
+      onTouchCancel: (e) => {
+        e.preventDefault();
+        setTouchDir(dir, false);
+      },
+      onMouseDown: (e) => {
+        e.preventDefault();
+        setTouchDir(dir, true);
+      },
+      onMouseUp: (e) => {
+        e.preventDefault();
+        setTouchDir(dir, false);
+      },
+      onMouseLeave: () => {
+        setTouchDir(dir, false);
+      },
+    };
+  }
+
+  useEffect(() => {
+    function handleGlobalRelease() {
+      clearTouchDirs();
+    }
+
+    window.addEventListener("mouseup", handleGlobalRelease);
+    window.addEventListener("touchend", handleGlobalRelease);
+    window.addEventListener("touchcancel", handleGlobalRelease);
+    window.addEventListener("blur", handleGlobalRelease);
+
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalRelease);
+      window.removeEventListener("touchend", handleGlobalRelease);
+      window.removeEventListener("touchcancel", handleGlobalRelease);
+      window.removeEventListener("blur", handleGlobalRelease);
+    };
+  }, []);
 
   useEffect(() => {
     if (!active.hasTwo) return;
@@ -174,6 +280,11 @@ export default function SumoGame({
       if (keys.has("s") || keys.has("S") || keys.has("ArrowDown")) ay += 1;
       if (keys.has("a") || keys.has("A") || keys.has("ArrowLeft")) ax -= 1;
       if (keys.has("d") || keys.has("D") || keys.has("ArrowRight")) ax += 1;
+
+      if (mobileInputRef.current.up) ay -= 1;
+      if (mobileInputRef.current.down) ay += 1;
+      if (mobileInputRef.current.left) ax -= 1;
+      if (mobileInputRef.current.right) ax += 1;
 
       const d = Math.hypot(ax, ay) || 1;
       if (ax !== 0 || ay !== 0) {
@@ -658,6 +769,7 @@ export default function SumoGame({
       isUnmountingRef.current = true;
       runningRef.current = false;
 
+      clearTouchDirs();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("pointerdown", onCanvasPointerDown);
@@ -679,7 +791,15 @@ export default function SumoGame({
 
       rafRef.current = 0;
     };
-  }, [active.hasTwo, active.p1Key, active.p2Key, code, isHost, myControlIndex, myId]);
+  }, [
+    active.hasTwo,
+    active.p1Key,
+    active.p2Key,
+    code,
+    isHost,
+    myControlIndex,
+    myId,
+  ]);
 
   if (!active.hasTwo) {
     return (
@@ -747,9 +867,62 @@ export default function SumoGame({
             border: "1px solid rgba(255,255,255,0.18)",
             background: "rgba(0,0,0,0.18)",
             outline: "none",
+            touchAction: "none",
           }}
         />
       </div>
+
+      {isPhoneLike && myControlIndex !== -1 && (
+        <div style={mobileControlsWrap}>
+          <div style={mobileHint}>Touch controls</div>
+
+          <button
+            type="button"
+            style={{
+              ...mobileButton,
+              ...(mobilePress.up ? mobileButtonActive : {}),
+            }}
+            {...bindTouchButton("up")}
+          >
+            ↑
+          </button>
+
+          <div style={mobileMiddleRow}>
+            <button
+              type="button"
+              style={{
+                ...mobileButton,
+                ...(mobilePress.left ? mobileButtonActive : {}),
+              }}
+              {...bindTouchButton("left")}
+            >
+              ←
+            </button>
+
+            <button
+              type="button"
+              style={{
+                ...mobileButton,
+                ...(mobilePress.down ? mobileButtonActive : {}),
+              }}
+              {...bindTouchButton("down")}
+            >
+              ↓
+            </button>
+
+            <button
+              type="button"
+              style={{
+                ...mobileButton,
+                ...(mobilePress.right ? mobileButtonActive : {}),
+              }}
+              {...bindTouchButton("right")}
+            >
+              →
+            </button>
+          </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -764,3 +937,49 @@ export default function SumoGame({
     </div>
   );
 }
+
+const mobileControlsWrap = {
+  marginTop: 8,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 10,
+};
+
+const mobileHint = {
+  fontSize: 12,
+  opacity: 0.78,
+  textTransform: "uppercase",
+  letterSpacing: 1,
+};
+
+const mobileMiddleRow = {
+  display: "flex",
+  gap: 12,
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const mobileButton = {
+  width: 64,
+  height: 64,
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "#fff",
+  fontSize: 28,
+  fontWeight: 800,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  touchAction: "none",
+  WebkitTapHighlightColor: "transparent",
+};
+
+const mobileButtonActive = {
+  background: "rgba(244,196,49,0.22)",
+  border: "1px solid rgba(244,196,49,0.36)",
+  transform: "scale(0.98)",
+};
