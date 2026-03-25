@@ -77,7 +77,13 @@ export default function Splash() {
             justifyContent: isPhone ? "center" : "flex-start",
           }}
         >
-          <div style={logoBox}>LOGO</div>
+          <div style={logoBox}>
+            <img
+              src="/RollPay Logo.png"
+              alt="RollPay logo"
+              style={logoImg}
+            />
+          </div>
           <div>
             <div style={brandText}>RollPlay</div>
           </div>
@@ -131,6 +137,17 @@ export default function Splash() {
             borderRadius: isPhone ? 24 : 32,
           }}
         >
+          <div style={heroLogoWrap}>
+            <img
+              src="/RollPay Logo.png"
+              alt="RollPay logo"
+              style={{
+                ...heroLogo,
+                maxWidth: isPhone ? 140 : 180,
+              }}
+            />
+          </div>
+
           <p
             style={{
               ...eyebrow,
@@ -143,11 +160,7 @@ export default function Splash() {
           <h1
             style={{
               ...titleStyle,
-              fontSize: isPhone
-                ? "52px"
-                : isLaptop
-                ? "72px"
-                : "96px",
+              fontSize: isPhone ? "52px" : isLaptop ? "72px" : "96px",
             }}
           >
             RollPlay
@@ -223,7 +236,10 @@ export default function Splash() {
       </section>
 
       {/* HOW TO USE */}
-      <section style={{ ...section, padding: isPhone ? "64px 14px" : "90px 20px" }} id="how-to-use">
+      <section
+        style={{ ...section, padding: isPhone ? "64px 14px" : "90px 20px" }}
+        id="how-to-use"
+      >
         <div style={sectionInner}>
           <p style={sectionEyebrow}>How to use</p>
           <h2
@@ -303,7 +319,10 @@ export default function Splash() {
           <div
             style={{
               ...aboutGrid,
-              gridTemplateColumns: isPhone || isLaptop ? "1fr" : "minmax(0, 1.2fr) minmax(280px, 0.8fr)",
+              gridTemplateColumns:
+                isPhone || isLaptop
+                  ? "1fr"
+                  : "minmax(0, 1.2fr) minmax(280px, 0.8fr)",
             }}
           >
             <div>
@@ -382,7 +401,8 @@ export default function Splash() {
             }}
           >
             Use placeholders for now. Later this section can show real game
-            screenshots, lobby images, arena visuals, and gameplay videos.
+            screenshots, lobby images, arena visuals, gameplay videos, and quick
+            mobile access for players.
           </p>
 
           <div
@@ -412,14 +432,25 @@ export default function Splash() {
             >
               Image Placeholder 1
             </div>
+
             <div
               style={{
                 ...galleryCard,
+                ...qrGalleryCard,
                 gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
               }}
             >
-              Image Placeholder 2
+              <img
+                src="/RollPay QR.png"
+                alt="Scan to open RollPlay on mobile"
+                style={qrImage}
+              />
+              <div style={qrTitle}>Scan to play</div>
+              <div style={qrText}>
+                Open RollPlay on your phone instantly.
+              </div>
             </div>
+
             <div
               style={{
                 ...galleryCard,
@@ -428,6 +459,7 @@ export default function Splash() {
             >
               Image Placeholder 3
             </div>
+
             <div
               style={{
                 ...galleryCard,
@@ -509,16 +541,22 @@ const logoWrap = {
 };
 
 const logoBox = {
-  width: 44,
-  height: 44,
-  borderRadius: 12,
+  width: 52,
+  height: 52,
+  borderRadius: 14,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background: "rgba(255,255,255,0.08)",
   border: "1px solid rgba(255,255,255,0.14)",
-  fontSize: 11,
-  fontWeight: 700,
+  overflow: "hidden",
+  padding: 4,
+};
+
+const logoImg = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
 };
 
 const brandText = {
@@ -612,6 +650,19 @@ const heroCard = {
   color: "#fff",
   border: "1px solid rgba(255,255,255,0.1)",
   boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
+};
+
+const heroLogoWrap = {
+  display: "flex",
+  justifyContent: "center",
+  marginBottom: 18,
+};
+
+const heroLogo = {
+  width: "100%",
+  height: "auto",
+  objectFit: "contain",
+  filter: "drop-shadow(0 10px 24px rgba(0,0,0,0.30))",
 };
 
 const eyebrow = {
@@ -833,6 +884,34 @@ const galleryCard = {
   fontWeight: 700,
   textAlign: "center",
   padding: 12,
+};
+
+const qrGalleryCard = {
+  flexDirection: "column",
+  gap: 12,
+  padding: 16,
+};
+
+const qrImage = {
+  width: "100%",
+  maxWidth: 180,
+  borderRadius: 16,
+  background: "#fff",
+  padding: 8,
+  objectFit: "contain",
+  boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
+};
+
+const qrTitle = {
+  fontSize: 18,
+  fontWeight: 800,
+};
+
+const qrText = {
+  fontSize: 14,
+  lineHeight: 1.5,
+  opacity: 0.82,
+  fontWeight: 500,
 };
 
 const footer = {
