@@ -79,8 +79,8 @@ export default function Splash() {
         >
           <div style={logoBox}>
             <img
-              src="/RollPay Logo.png"
-              alt="RollPay logo"
+              src="/RollPay_Logo.png"
+              alt="RollPay_logo"
               style={logoImg}
             />
           </div>
@@ -139,8 +139,8 @@ export default function Splash() {
         >
           <div style={heroLogoWrap}>
             <img
-              src="/RollPay Logo.png"
-              alt="RollPay logo"
+              src="/RollPay_Logo.png"
+              alt="RollPay_logo"
               style={{
                 ...heroLogo,
                 maxWidth: isPhone ? 140 : 180,
@@ -441,7 +441,7 @@ export default function Splash() {
               }}
             >
               <img
-                src="/RollPay QR.png"
+                src="/RollPay_QR.png"
                 alt="Scan to open RollPlay on mobile"
                 style={qrImage}
               />
