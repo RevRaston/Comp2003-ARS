@@ -1,4 +1,3 @@
-// src/games/GuessingCard/GuessingCardGame.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./GuessingCard.css";
 
@@ -90,7 +89,6 @@ export default function GuessingCardGame({
 
     const s = stateRef.current;
 
-    // only rebuild player list if empty or changed size
     if (s.players.length === playerList.length && s.players.length > 0) return;
 
     s.players = playerList.map((p) => ({
@@ -115,7 +113,7 @@ export default function GuessingCardGame({
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setConnLine("connected ✅");
+      setConnLine("connected");
       wsSend({ type: "join", sessionCode: code });
     };
 
@@ -175,7 +173,6 @@ export default function GuessingCardGame({
 
     const s = stateRef.current;
 
-    // don’t start until players exist
     if (!s.players.length) return;
 
     const interval = setInterval(() => {
@@ -311,83 +308,131 @@ export default function GuessingCardGame({
   }
 
   let heading = "";
+  let subheading = "";
+
   if (ui.phase === "countdown") {
     heading = ui.timer > 0 ? `${ui.timer}…` : "Go!";
+    subheading = "Get ready to lock in your guesses.";
   } else if (ui.phase === "picking") {
-    heading = `Pick your cards (${ui.timer}s)`;
+    heading = `Pick your cards`;
+    subheading = `${ui.timer}s remaining`;
   } else {
     heading = "Results";
+    subheading = "The AI card has been revealed.";
   }
 
   return (
-    <div className="guessing-card-page">
-      <h1 className="title">Guessing Card</h1>
+    <div className="gc-shell">
+      <div className="gc-top-info">
+        <div className="gc-info-block">
+          <div className="gc-info-label">Game</div>
+          <div className="gc-info-value">Guessing Card</div>
+        </div>
 
-      <div
-        style={{ color: "white", opacity: 0.7, fontSize: 12, marginBottom: 8 }}
-      >
-        {connLine} {isHost ? "— HOST" : "— CLIENT"} (room: {code})
+        <div className="gc-info-block">
+          <div className="gc-info-label">Role</div>
+          <div className="gc-info-value">
+            {isHost ? "Host controls MVP picks" : "Watching synced round"}
+          </div>
+        </div>
+
+        <div className="gc-info-block">
+          <div className="gc-info-label">Connection</div>
+          <div className="gc-info-value">{connLine}</div>
+        </div>
       </div>
 
-      <h2>{heading}</h2>
+      <h1 className="gc-title">Guessing Card</h1>
 
-      <div className="card-row">
+      <p className="gc-instruction">
+        Choose the card value closest to the hidden AI card. The smallest
+        distance wins the round.
+      </p>
+
+      <div className="gc-phase-card">
+        <div className="gc-phase-main">{heading}</div>
+        <div className="gc-phase-sub">{subheading}</div>
+      </div>
+
+      <div className="gc-card-row">
         {ui.players.map((player) => (
-          <div className="card" key={player.id}>
-            <p>{player.name}</p>
-            <div className="card-face">{labelForValue(player.value)}</div>
+          <div className={`gc-card ${player.locked ? "is-locked" : ""}`} key={player.id}>
+            <p className="gc-card-name">{player.name}</p>
+
+            <div className="gc-card-face">{labelForValue(player.value)}</div>
+
+            <div className="gc-card-meta">
+              {player.locked ? "Locked in" : ui.phase === "picking" ? "Choosing" : "Waiting"}
+            </div>
+
             {ui.phase === "reveal" && (
-              <p style={{ opacity: 0.75 }}>Δ {player.distance}</p>
+              <p className="gc-card-distance">Δ {player.distance}</p>
             )}
           </div>
         ))}
 
-        <div className="card">
-          <p>AI Card</p>
-          <div className="card-face">
+        <div className="gc-card gc-ai-card">
+          <p className="gc-card-name">AI Card</p>
+          <div className="gc-card-face">
             {ui.phase === "reveal" && ui.aiCard ? labelForValue(ui.aiCard) : "?"}
+          </div>
+          <div className="gc-card-meta">
+            {ui.phase === "reveal" ? "Revealed" : "Hidden"}
           </div>
         </div>
       </div>
 
-      <div className="controls">
-        {ui.players.map((player) => (
-          <div key={player.id} className="player-controls">
-            <span>{player.name}</span>
+      <div className="gc-controls-card">
+        <div className="gc-controls-title">Player controls</div>
 
-            <select
-              disabled={!isHost || ui.phase !== "picking" || player.locked}
-              value={player.value}
-              onChange={(e) => updatePlayerValue(player.id, e.target.value)}
-            >
-              {Array.from({ length: 13 }).map((_, i) => {
-                const v = i + 1;
-                return (
-                  <option key={v} value={v}>
-                    {labelForValue(v)}
-                  </option>
-                );
-              })}
-            </select>
+        <div className="gc-controls-list">
+          {ui.players.map((player) => (
+            <div key={player.id} className="gc-player-controls">
+              <div className="gc-player-name">{player.name}</div>
 
-            <button
-              disabled={!isHost || ui.phase !== "picking" || player.locked}
-              onClick={() => lockPlayer(player.id)}
-            >
-              {player.locked ? "Locked" : "Lock"}
-            </button>
-          </div>
-        ))}
+              <select
+                className="gc-select"
+                disabled={!isHost || ui.phase !== "picking" || player.locked}
+                value={player.value}
+                onChange={(e) => updatePlayerValue(player.id, e.target.value)}
+              >
+                {Array.from({ length: 13 }).map((_, i) => {
+                  const v = i + 1;
+                  return (
+                    <option key={v} value={v}>
+                      {labelForValue(v)}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <button
+                className="gc-lock-btn"
+                disabled={!isHost || ui.phase !== "picking" || player.locked}
+                onClick={() => lockPlayer(player.id)}
+              >
+                {player.locked ? "Locked" : "Lock"}
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <h2 style={{ marginTop: 20 }}>{ui.outcome}</h2>
+      <div className="gc-outcome-card">
+        <div className="gc-outcome-title">Round outcome</div>
+        <div className="gc-outcome-text">
+          {ui.outcome || "Results will appear here once all guesses are locked."}
+        </div>
+      </div>
 
       {ui.phase === "reveal" && (
-        <div style={{ marginTop: 14 }}>
+        <div className="gc-finish-panel">
           {isHost ? (
-            <button onClick={handleReplay}>Replay (host)</button>
+            <button className="gc-replay-btn" onClick={handleReplay}>
+              Replay (host)
+            </button>
           ) : (
-            <p style={{ opacity: 0.8 }}>Waiting for host…</p>
+            <p className="gc-waiting">Waiting for host…</p>
           )}
         </div>
       )}

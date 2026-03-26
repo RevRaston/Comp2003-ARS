@@ -1,50 +1,257 @@
 /* src/games/Darts/darts.css */
 
-.darts-container {
-  padding-top: 80px;
-  text-align: center;
-  color: #d87f00;
-}
-
-#dartsCanvas {
-  background: #111;
-  border: 3px solid #555;
-  display: block;
-  margin: 0 auto;
-}
-
-.fire-btn {
-  margin-top: 20px;
-  padding: 12px 32px;
-  border: none;
-  border-radius: 10px;
-  font-size: 20px;
-  cursor: pointer;
-  background: #e63946;
+.darts-shell {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   color: white;
 }
 
+.darts-top-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.darts-info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100px;
+}
+
+.darts-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+}
+
+.darts-info-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.darts-title {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  line-height: 1;
+  font-weight: 900;
+}
+
+.darts-instruction {
+  margin: 0 auto;
+  max-width: 640px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.darts-turn-card {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.darts-turn-main {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.darts-turn-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.darts-canvas-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+#dartsCanvas {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+}
+
+.darts-action-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.fire-btn {
+  margin-top: 2px;
+  padding: 14px 26px;
+  min-width: 180px;
+  border: none;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  background: linear-gradient(135deg, #f4c431, #ffb347);
+  color: #1d1d1d;
+  box-shadow: 0 12px 28px rgba(244, 196, 49, 0.22);
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.fire-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
 .fire-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: default;
+  transform: none;
 }
 
 .game-message {
-  margin-top: 12px;
-  min-height: 24px;
-  color: #e5b936;
+  min-height: 22px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #f6cf64;
+}
+
+.darts-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.darts-stat-card {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+.darts-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.72;
+}
+
+.darts-stat-value {
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.darts-scoreboard {
+  margin-top: 4px;
+  width: 100%;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 16px;
+  box-sizing: border-box;
+}
+
+.darts-scoreboard-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #f6cf64;
+}
+
+.darts-score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.darts-score-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  opacity: 0.84;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.darts-score-row:last-child {
+  border-bottom: none;
+}
+
+.darts-score-row.is-active {
+  opacity: 1;
+  font-weight: 800;
 }
 
 .turn-finished-panel {
-  margin-top: 20px;
+  margin-top: 4px;
+  padding: 16px;
+  border-radius: 18px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.turn-finished-panel p {
+  margin: 0;
+  line-height: 1.6;
 }
 
 .next-btn {
-  margin-top: 8px;
-  padding: 8px 20px;
-  border-radius: 8px;
+  margin-top: 12px;
+  padding: 12px 22px;
+  border-radius: 999px;
   border: none;
-  background: #3a86ff;
+  background: #2d3442;
   color: #fff;
+  font-weight: 700;
   cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.waiting-text {
+  margin-top: 8px !important;
+  opacity: 0.8;
+}
+
+@media (max-width: 640px) {
+  .darts-title {
+    font-size: 2rem;
+  }
+
+  .darts-top-info {
+    padding: 12px;
+  }
+
+  .darts-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fire-btn {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .darts-scoreboard {
+    padding: 12px 14px;
+  }
 }

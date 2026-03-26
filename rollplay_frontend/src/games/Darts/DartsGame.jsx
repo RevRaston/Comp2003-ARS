@@ -1,4 +1,3 @@
-// src/games/Darts/DartsGame.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./darts.css";
 
@@ -85,6 +84,9 @@ export default function DartsGame({
   const activePlayerName =
     playerNames[currentPlayerIndex] || `Player ${currentPlayerIndex + 1}`;
 
+  const myRoleLabel =
+    myPlayerIndex === -1 ? "Spectating" : `You are P${myPlayerIndex + 1}`;
+
   const stateRef = useRef({
     score: 0,
     dartsLeft: 5,
@@ -128,7 +130,7 @@ export default function DartsGame({
 
     s.dart.fired = true;
     s.dartsLeft -= 1;
-    s.msg = `🔥 ${playerNames[s.currentPlayerIndex] || "Player"} fires!`;
+    s.msg = `🎯 ${playerNames[s.currentPlayerIndex] || "Player"} fires!`;
 
     syncUiFromState();
   }
@@ -142,13 +144,11 @@ export default function DartsGame({
     if (s.dartsLeft <= 0) return;
     if (myPlayerIndex !== s.currentPlayerIndex) return;
 
-    // Host applies immediately
     if (isHost) {
       applyHostFire();
       return;
     }
 
-    // Client requests host to fire
     wsSend({
       type: "darts_fire",
       sessionCode: code,
@@ -203,7 +203,6 @@ export default function DartsGame({
     resetTurnStateForCurrentPlayer();
   }
 
-  // ---- WS connect + message handling ----
   useEffect(() => {
     if (runningRef.current) return;
     runningRef.current = true;
@@ -214,7 +213,7 @@ export default function DartsGame({
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setConnLine("connected ✅");
+      setConnLine("connected");
       wsSend({ type: "join", sessionCode: code });
     };
 
@@ -289,7 +288,6 @@ export default function DartsGame({
     };
   }, [code, isHost, myPlayerIndex, myUserId, playerNames]);
 
-  // ---- Reset round state when players become available ----
   useEffect(() => {
     if (!playerNames.length) return;
 
@@ -306,7 +304,6 @@ export default function DartsGame({
     resetTurnStateForCurrentPlayer();
   }, [playerNames.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Host sim loop ----
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -384,46 +381,51 @@ export default function DartsGame({
       const t = s.target;
 
       ctx.beginPath();
-      ctx.arc(t.x, t.y, t.radius + 8, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.arc(t.x, t.y, t.radius + 10, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.36)";
       ctx.fill();
 
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
       const ring1 = ctx.createRadialGradient(t.x, t.y, 10, t.x, t.y, t.radius);
-      ring1.addColorStop(0, "#ff4d4d");
-      ring1.addColorStop(1, "#b30000");
+      ring1.addColorStop(0, "#ff5d5d");
+      ring1.addColorStop(1, "#8e1212");
       ctx.fillStyle = ring1;
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(t.x, t.y, t.radius * 0.6, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, t.radius * 0.66, 0, Math.PI * 2);
       const ring2 = ctx.createRadialGradient(
         t.x,
         t.y,
-        5,
+        4,
         t.x,
         t.y,
-        t.radius * 0.6
+        t.radius * 0.66
       );
-      ring2.addColorStop(0, "white");
-      ring2.addColorStop(1, "#ccc");
+      ring2.addColorStop(0, "#ffffff");
+      ring2.addColorStop(1, "#d8d8d8");
       ctx.fillStyle = ring2;
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(t.x, t.y, t.radius * 0.3, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, t.radius * 0.36, 0, Math.PI * 2);
       const ring3 = ctx.createRadialGradient(
         t.x,
         t.y,
         2,
         t.x,
         t.y,
-        t.radius * 0.3
+        t.radius * 0.36
       );
-      ring3.addColorStop(0, "#3399ff");
-      ring3.addColorStop(1, "#003d66");
+      ring3.addColorStop(0, "#64b5ff");
+      ring3.addColorStop(1, "#134a73");
       ctx.fillStyle = ring3;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
       ctx.fill();
     }
 
@@ -450,11 +452,14 @@ export default function DartsGame({
     }
 
     function drawUI() {
-      ctx.fillStyle = "white";
-      ctx.font = "20px Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.font = "bold 18px system-ui, -apple-system, Segoe UI, sans-serif";
       ctx.fillText("Score: " + s.score, 20, 30);
       ctx.fillText("Darts: " + s.dartsLeft, 270, 30);
-      ctx.fillText("Time: " + s.timer, 160, 55);
+
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.font = "14px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText("Time: " + s.timer, 170, 54);
     }
 
     function drawParticles() {
@@ -463,7 +468,7 @@ export default function DartsGame({
         ctx.arc(
           s.target.x,
           s.target.y,
-          s.target.radius + 12,
+          s.target.radius + 14,
           0,
           Math.PI * 2
         );
@@ -485,8 +490,8 @@ export default function DartsGame({
 
     function drawBackground() {
       const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      bg.addColorStop(0, "#1a1a1a");
-      bg.addColorStop(1, "#333");
+      bg.addColorStop(0, "#151925");
+      bg.addColorStop(1, "#0c1018");
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
@@ -567,72 +572,87 @@ export default function DartsGame({
   }, [code, isHost, playerNames]);
 
   return (
-    <div className="darts-container">
-      <h1 className="title">Aim &amp; Fire!</h1>
+    <div className="darts-shell">
+      <div className="darts-top-info">
+        <div className="darts-info-block">
+          <div className="darts-info-label">Game</div>
+          <div className="darts-info-value">Darts Challenge</div>
+        </div>
 
-      <div
-        style={{
-          color: "white",
-          opacity: 0.7,
-          fontSize: 12,
-          marginBottom: 8,
-        }}
-      >
-        {connLine} {isHost ? "— HOST" : "— CLIENT"} (room: {code})
+        <div className="darts-info-block">
+          <div className="darts-info-label">Role</div>
+          <div className="darts-info-value">{myRoleLabel}</div>
+        </div>
+
+        <div className="darts-info-block">
+          <div className="darts-info-label">Connection</div>
+          <div className="darts-info-value">{connLine}</div>
+        </div>
       </div>
 
-      <div style={{ color: "white", marginBottom: 10, textAlign: "center" }}>
-        <div style={{ fontWeight: 700 }}>Current turn: {activePlayerName}</div>
-        <div style={{ opacity: 0.8, fontSize: 14 }}>
+      <h1 className="darts-title">Aim &amp; Fire</h1>
+
+      <p className="darts-instruction">
+        Take your turn, fire your darts, and score as highly as possible before
+        the timer expires.
+      </p>
+
+      <div className="darts-turn-card">
+        <div className="darts-turn-main">Current turn: {activePlayerName}</div>
+        <div className="darts-turn-sub">
           Player {currentPlayerIndex + 1} of {Math.max(playerNames.length, 1)}
         </div>
       </div>
 
-      <canvas ref={canvasRef} id="dartsCanvas" width={400} height={500} />
+      <div className="darts-canvas-wrap">
+        <canvas ref={canvasRef} id="dartsCanvas" width={400} height={500} />
+      </div>
 
-      <button
-        onClick={fireDart}
-        className="fire-btn"
-        disabled={
-          turnFinished || roundFinished || myPlayerIndex !== currentPlayerIndex
-        }
-      >
-        {myPlayerIndex === currentPlayerIndex ? "FIRE" : "Not your turn"}
-      </button>
+      <div className="darts-action-wrap">
+        <button
+          onClick={fireDart}
+          className="fire-btn"
+          disabled={
+            turnFinished || roundFinished || myPlayerIndex !== currentPlayerIndex
+          }
+        >
+          {myPlayerIndex === currentPlayerIndex ? "Fire Dart" : "Not your turn"}
+        </button>
+      </div>
 
       <div className="game-message">{statusMessage}</div>
 
-      <div style={{ marginTop: 10, color: "white", opacity: 0.85 }}>
-        <div>Score: {score}</div>
-        <div>Darts left: {dartsLeft}</div>
-        <div>Time: {timer}</div>
+      <div className="darts-stats-grid">
+        <div className="darts-stat-card">
+          <span className="darts-stat-label">Score</span>
+          <span className="darts-stat-value">{score}</span>
+        </div>
+        <div className="darts-stat-card">
+          <span className="darts-stat-label">Darts Left</span>
+          <span className="darts-stat-value">{dartsLeft}</span>
+        </div>
+        <div className="darts-stat-card">
+          <span className="darts-stat-label">Time</span>
+          <span className="darts-stat-value">{timer}</span>
+        </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 18,
-          color: "white",
-          width: "100%",
-          maxWidth: 420,
-          textAlign: "left",
-        }}
-      >
-        <h3 style={{ marginBottom: 8 }}>Turn Order Scores</h3>
-        {turnScores.map((entry) => (
-          <div
-            key={`${entry.playerIndex}-${entry.playerName}`}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "6px 0",
-              opacity: entry.playerIndex === currentPlayerIndex ? 1 : 0.82,
-              fontWeight: entry.playerIndex === currentPlayerIndex ? 700 : 400,
-            }}
-          >
-            <span>{entry.playerName}</span>
-            <span>{entry.score}</span>
-          </div>
-        ))}
+      <div className="darts-scoreboard">
+        <h3 className="darts-scoreboard-title">Turn Order Scores</h3>
+
+        <div className="darts-score-list">
+          {turnScores.map((entry) => (
+            <div
+              key={`${entry.playerIndex}-${entry.playerName}`}
+              className={`darts-score-row ${
+                entry.playerIndex === currentPlayerIndex ? "is-active" : ""
+              }`}
+            >
+              <span>{entry.playerName}</span>
+              <span>{entry.score}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {turnFinished && !roundFinished && (
@@ -640,6 +660,7 @@ export default function DartsGame({
           <p>
             Turn finished — {activePlayerName} scored {score}
           </p>
+
           {isHost ? (
             <button className="next-btn" onClick={handleNextPlayer}>
               {currentPlayerIndex < playerNames.length - 1
@@ -647,7 +668,7 @@ export default function DartsGame({
                 : "Finish Round"}
             </button>
           ) : (
-            <p style={{ opacity: 0.8 }}>Waiting for host…</p>
+            <p className="waiting-text">Waiting for host…</p>
           )}
         </div>
       )}
@@ -655,7 +676,7 @@ export default function DartsGame({
       {roundFinished && (
         <div className="turn-finished-panel">
           <p>Round finished — all players have completed their turns.</p>
-          {!isHost && <p style={{ opacity: 0.8 }}>Waiting for host…</p>}
+          {!isHost && <p className="waiting-text">Waiting for host…</p>}
         </div>
       )}
     </div>

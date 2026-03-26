@@ -126,6 +126,9 @@ export default function SumoGame({
     return -1;
   }, [active.hasTwo, active.p1Key, active.p2Key, myId, mySeatIndex]);
 
+  const myRoleLabel =
+    myControlIndex === -1 ? "Spectating" : `You are P${myControlIndex + 1}`;
+
   function setTouchDir(dir, pressed) {
     mobileInputRef.current = {
       ...mobileInputRef.current,
@@ -376,6 +379,27 @@ export default function SumoGame({
     function drawArena() {
       ctx.clearRect(0, 0, W, H);
 
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, "#1b1f2a");
+      bg.addColorStop(1, "#0d1018");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      const ringGlow = ctx.createRadialGradient(
+        arena.x,
+        arena.y,
+        10,
+        arena.x,
+        arena.y,
+        arena.radius + 40
+      );
+      ringGlow.addColorStop(0, "rgba(244,196,49,0.10)");
+      ringGlow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.beginPath();
+      ctx.arc(arena.x, arena.y, arena.radius + 26, 0, Math.PI * 2);
+      ctx.fillStyle = ringGlow;
+      ctx.fill();
+
       const grd = ctx.createRadialGradient(
         arena.x,
         arena.y,
@@ -384,8 +408,8 @@ export default function SumoGame({
         arena.y,
         arena.radius
       );
-      grd.addColorStop(0, "rgba(255,255,255,0.06)");
-      grd.addColorStop(1, "rgba(0,0,0,0.65)");
+      grd.addColorStop(0, "rgba(255,255,255,0.08)");
+      grd.addColorStop(1, "rgba(0,0,0,0.72)");
 
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius, 0, Math.PI * 2);
@@ -394,9 +418,25 @@ export default function SumoGame({
 
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.25)";
-      ctx.lineWidth = 6;
+      ctx.strokeStyle = "rgba(244,196,49,0.35)";
+      ctx.lineWidth = 7;
       ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(arena.x, arena.y, arena.radius - 20, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(arena.x, arena.y, 18, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(244,196,49,0.16)";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(arena.x, arena.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fill();
     }
 
     function drawPlayer(p, color) {
@@ -412,18 +452,18 @@ export default function SumoGame({
         0,
         Math.PI * 2
       );
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
       ctx.fill();
 
       const g = ctx.createRadialGradient(
-        p.x - p.r * 0.4,
-        p.y - p.r * 0.4,
+        p.x - p.r * 0.45,
+        p.y - p.r * 0.45,
         4,
         p.x,
         p.y,
         p.r
       );
-      g.addColorStop(0, "rgba(255,255,255,0.55)");
+      g.addColorStop(0, "rgba(255,255,255,0.6)");
       g.addColorStop(1, color);
 
       ctx.beginPath();
@@ -439,48 +479,49 @@ export default function SumoGame({
     }
 
     function drawTopBar(state) {
-      const barX = 18;
-      const barY = 16;
-      const barW = 160;
-      const barH = 42;
+      const leftCardX = 16;
+      const leftCardY = 14;
+      const leftCardW = 184;
+      const leftCardH = 52;
 
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = "rgba(0,0,0,0.44)";
+      ctx.fillRect(leftCardX, leftCardY, leftCardW, leftCardH);
 
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.font = "13px system-ui, -apple-system, Segoe UI, sans-serif";
-      ctx.fillText(isHost ? "HOST" : "CLIENT", barX + 12, barY + 16);
+      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.font = "bold 13px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText(isHost ? "HOST VIEW" : "PLAYER VIEW", leftCardX + 12, leftCardY + 18);
 
+      ctx.fillStyle = "rgba(255,255,255,0.74)";
+      ctx.font = "12px system-ui, -apple-system, Segoe UI, sans-serif";
       const roleLine =
-        myControlIndex === -1 ? "Spectating" : `You are P${myControlIndex + 1}`;
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.fillText(roleLine, barX + 12, barY + 33);
+        myControlIndex === -1 ? "Spectating this round" : `Control: P${myControlIndex + 1}`;
+      ctx.fillText(roleLine, leftCardX + 12, leftCardY + 36);
 
-      const timerW = 140;
+      const timerW = 148;
       const timerX = W / 2 - timerW / 2;
       const timerY = 14;
 
-      ctx.fillStyle = "rgba(0,0,0,0.4)";
-      ctx.fillRect(timerX, timerY, timerW, 46);
+      ctx.fillStyle = "rgba(0,0,0,0.48)";
+      ctx.fillRect(timerX, timerY, timerW, 50);
 
       ctx.textAlign = "center";
       ctx.fillStyle = state.roundOver
-        ? "rgba(255,220,120,0.95)"
-        : "rgba(255,255,255,0.95)";
-      ctx.font = "bold 22px system-ui, -apple-system, Segoe UI, sans-serif";
+        ? "rgba(255,220,120,0.96)"
+        : "rgba(255,255,255,0.96)";
+      ctx.font = "bold 23px system-ui, -apple-system, Segoe UI, sans-serif";
 
       const timerText = state.roundOver ? "ROUND OVER" : `${Math.ceil(state.timeLeft)}`;
-      ctx.fillText(timerText, W / 2, timerY + 30);
+      ctx.fillText(timerText, W / 2, timerY + 31);
       ctx.textAlign = "left";
     }
 
     function drawBottomHint(state) {
-      const hintW = 420;
-      const hintH = 40;
+      const hintW = 448;
+      const hintH = 42;
       const hintX = W / 2 - hintW / 2;
-      const hintY = H - 54;
+      const hintY = H - 58;
 
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillStyle = "rgba(0,0,0,0.40)";
       ctx.fillRect(hintX, hintY, hintW, hintH);
 
       ctx.textAlign = "center";
@@ -489,30 +530,30 @@ export default function SumoGame({
 
       let line = "Push your opponent out of the ring.";
       if (!state.roundOver) {
-        line += " If time runs out, closest to centre wins.";
+        line += " Closest to centre wins on timeout.";
       } else {
-        line = "Waiting for the next game...";
+        line = "Round complete — waiting for session progress.";
       }
 
-      ctx.fillText(line, W / 2, hintY + 24);
+      ctx.fillText(line, W / 2, hintY + 25);
       ctx.textAlign = "left";
     }
 
     function drawWinnerPanel(state) {
       if (!state.roundOver) return;
 
-      const panelW = 280;
-      const panelH = 84;
+      const panelW = 300;
+      const panelH = 92;
       const panelX = W / 2 - panelW / 2;
       const panelY = H / 2 - panelH / 2;
 
-      ctx.fillStyle = "rgba(0,0,0,0.62)";
+      ctx.fillStyle = "rgba(10,10,16,0.78)";
       ctx.fillRect(panelX, panelY, panelW, panelH);
 
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.95)";
       ctx.font = "bold 20px system-ui, -apple-system, Segoe UI, sans-serif";
-      ctx.fillText("Round Complete", W / 2, panelY + 28);
+      ctx.fillText("Round Complete", W / 2, panelY + 30);
 
       let label = "No winner";
       if (state.winnerKey === active.p1Key) label = "Winner: P1";
@@ -520,8 +561,8 @@ export default function SumoGame({
 
       ctx.font = "14px system-ui, -apple-system, Segoe UI, sans-serif";
       ctx.fillStyle = "rgba(255,255,255,0.82)";
-      ctx.fillText(label, W / 2, panelY + 54);
-      ctx.fillText("Loading next game soon...", W / 2, panelY + 72);
+      ctx.fillText(label, W / 2, panelY + 56);
+      ctx.fillText("Loading next game soon...", W / 2, panelY + 76);
       ctx.textAlign = "left";
     }
 
@@ -574,7 +615,7 @@ export default function SumoGame({
     ws.onopen = () => {
       if (isUnmountingRef.current) return;
 
-      setConnLine("connected ✅");
+      setConnLine("connected");
       wsSend({
         type: "join",
         sessionCode: code,
@@ -582,8 +623,8 @@ export default function SumoGame({
       });
 
       setStatusLine(
-        `Sumo WS: ${isHost ? "HOST" : "CLIENT"} — room=${code} — ` +
-          `P1=${active.p1Key} P2=${active.p2Key} you=${myId || "?"}`
+        `room=${code} • ${isHost ? "host" : "client"} • ` +
+          `P1=${active.p1Key} • P2=${active.p2Key}`
       );
     };
 
@@ -731,7 +772,7 @@ export default function SumoGame({
         if (stalled) {
           setConnLine("waiting for host state…");
         } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-          setConnLine("connected ✅");
+          setConnLine("connected");
         }
       }
 
@@ -803,72 +844,43 @@ export default function SumoGame({
 
   if (!active.hasTwo) {
     return (
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 720,
-          margin: "0 auto",
-          borderRadius: 18,
-          border: "1px solid rgba(255,255,255,0.18)",
-          background: "rgba(0,0,0,0.18)",
-          padding: 14,
-          textAlign: "center",
-          fontSize: 13,
-          opacity: 0.85,
-        }}
-      >
+      <div style={waitingCard}>
         Waiting for 2 players (P1 + P2) to start Sumo…
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      <p
-        style={{
-          fontSize: 14,
-          textAlign: "center",
-          maxWidth: 640,
-          margin: "0 auto 6px",
-          opacity: 0.88,
-        }}
-      >
+    <div style={shell}>
+      <div style={topInfoCard}>
+        <div style={infoBlock}>
+          <div style={infoLabel}>Game</div>
+          <div style={infoValue}>Sumo Showdown</div>
+        </div>
+
+        <div style={infoBlock}>
+          <div style={infoLabel}>Role</div>
+          <div style={infoValue}>{myRoleLabel}</div>
+        </div>
+
+        <div style={infoBlock}>
+          <div style={infoLabel}>Connection</div>
+          <div style={infoValue}>{connLine}</div>
+        </div>
+      </div>
+
+      <p style={instructionText}>
         Push your opponent out of the ring. If the timer reaches zero, the
         wrestler closest to the centre wins.
       </p>
 
-      <div style={{ fontSize: 12, opacity: 0.75, textAlign: "center" }}>
-        {statusLine}
-        <div style={{ opacity: 0.7, marginTop: 4 }}>{connLine}</div>
-      </div>
+      <div style={statusText}>{statusLine}</div>
 
-      <div
-        style={{
-          width: "100%",
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
+      <div style={canvasWrap}>
         <canvas
           ref={canvasRef}
           tabIndex={0}
-          style={{
-            width: "100%",
-            maxWidth: 720,
-            height: "auto",
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.18)",
-            background: "rgba(0,0,0,0.18)",
-            outline: "none",
-            touchAction: "none",
-          }}
+          style={canvasStyle}
         />
       </div>
 
@@ -921,25 +933,113 @@ export default function SumoGame({
               →
             </button>
           </div>
+
+          <div style={mobileHelpText}>
+            Hold a direction to move your wrestler.
+          </div>
         </div>
       )}
 
-      <div
-        style={{
-          fontSize: 14,
-          textAlign: "center",
-          minHeight: 20,
-          opacity: 0.92,
-        }}
-      >
-        {summaryLine}
-      </div>
+      <div style={summaryText}>{summaryLine}</div>
     </div>
   );
 }
 
+/* ---------- shared style direction for future games ---------- */
+
+const shell = {
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+};
+
+const topInfoCard = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  padding: "12px 14px",
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const infoBlock = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  minWidth: 100,
+};
+
+const infoLabel = {
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: 1,
+  opacity: 0.7,
+};
+
+const infoValue = {
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const instructionText = {
+  fontSize: 14,
+  textAlign: "center",
+  maxWidth: 640,
+  margin: "0 auto",
+  opacity: 0.9,
+  lineHeight: 1.6,
+};
+
+const statusText = {
+  fontSize: 12,
+  opacity: 0.72,
+  textAlign: "center",
+  minHeight: 18,
+};
+
+const canvasWrap = {
+  width: "100%",
+  display: "flex",
+  justifyContent: "center",
+};
+
+const canvasStyle = {
+  width: "100%",
+  maxWidth: 720,
+  height: "auto",
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(0,0,0,0.18)",
+  outline: "none",
+  touchAction: "none",
+  boxShadow: "0 16px 40px rgba(0,0,0,0.24)",
+};
+
+const summaryText = {
+  fontSize: 14,
+  textAlign: "center",
+  minHeight: 20,
+  opacity: 0.92,
+};
+
+const waitingCard = {
+  width: "100%",
+  maxWidth: 720,
+  margin: "0 auto",
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(0,0,0,0.18)",
+  padding: 14,
+  textAlign: "center",
+  fontSize: 13,
+  opacity: 0.85,
+};
+
 const mobileControlsWrap = {
-  marginTop: 8,
+  marginTop: 6,
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
@@ -961,11 +1061,12 @@ const mobileMiddleRow = {
 };
 
 const mobileButton = {
-  width: 64,
-  height: 64,
+  width: 66,
+  height: 66,
   borderRadius: 18,
   border: "1px solid rgba(255,255,255,0.14)",
-  background: "rgba(255,255,255,0.08)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))",
   color: "#fff",
   fontSize: 28,
   fontWeight: 800,
@@ -976,10 +1077,16 @@ const mobileButton = {
   WebkitUserSelect: "none",
   touchAction: "none",
   WebkitTapHighlightColor: "transparent",
+  boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
 };
 
 const mobileButtonActive = {
   background: "rgba(244,196,49,0.22)",
   border: "1px solid rgba(244,196,49,0.36)",
   transform: "scale(0.98)",
+};
+
+const mobileHelpText = {
+  fontSize: 12,
+  opacity: 0.74,
 };
