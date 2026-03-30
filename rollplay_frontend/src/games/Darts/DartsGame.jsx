@@ -3,12 +3,11 @@ import "./darts.css";
 
 /**
  * Darts — WebSocket host-authoritative turn-based round
- * - Host runs simulation + broadcasts state
- * - Active player requests FIRE over websocket
- * - Host applies the shot
- * - Clients render host state
- * - Host advances to next player
- * - After all players have taken a turn, round completes
+ * Visual overhaul:
+ * - pub-style responsive background
+ * - cutout / collage inspired target presentation
+ * - avatar-influenced throwing hand + sleeve
+ * - clearer dartboard and stronger visual identity
  */
 
 const defaultWsBase =
@@ -33,6 +32,44 @@ function getPlayerKey(player) {
       player.name ??
       ""
   );
+}
+
+function safeParseAvatar(player) {
+  if (!player) return null;
+
+  const raw = player.avatar_json ?? player.avatarJson ?? null;
+  if (!raw) return null;
+
+  try {
+    if (typeof raw === "string") return JSON.parse(raw);
+    if (typeof raw === "object") return raw;
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getHandVisual(activePlayer) {
+  const avatar = safeParseAvatar(activePlayer);
+
+  const skin = avatar?.skin || "#F2C7A5";
+  const sleeve = avatar?.outfitColor || "#7C5CFF";
+  const accessory = avatar?.accessory || "none";
+  const outfit = avatar?.outfit || "hoodie";
+
+  let variant = "normal";
+
+  if (outfit === "armor") variant = "gauntlet";
+  else if (accessory === "cap") variant = "cartoon";
+  else if (accessory === "earring") variant = "ringed";
+  else if (accessory === "glasses") variant = "cuffed";
+
+  return {
+    skin,
+    sleeve,
+    variant,
+  };
 }
 
 export default function DartsGame({
@@ -87,6 +124,8 @@ export default function DartsGame({
   const myRoleLabel =
     myPlayerIndex === -1 ? "Spectating" : `You are P${myPlayerIndex + 1}`;
 
+  const activePlayer = orderedPlayers[currentPlayerIndex] || null;
+
   const stateRef = useRef({
     score: 0,
     dartsLeft: 5,
@@ -96,8 +135,8 @@ export default function DartsGame({
     msg: "",
     currentPlayerIndex: 0,
     turnScores: [],
-    dart: { x: 200, y: 450, fired: false, speed: 6 },
-    target: { x: 200, y: 120, radius: 60, dir: 1, speed: 1.3 },
+    dart: { x: 220, y: 456, fired: false, speed: 6.8 },
+    target: { x: 220, y: 128, radius: 68, dir: 1, speed: 1.55 },
     particles: [],
     hitFlashTimer: 0,
   });
@@ -166,8 +205,8 @@ export default function DartsGame({
     s.timer = 60;
     s.finished = false;
     s.msg = `${playerNames[s.currentPlayerIndex] || "Next player"}'s turn`;
-    s.dart = { x: 200, y: 450, fired: false, speed: 6 };
-    s.target = { x: 200, y: 120, radius: 60, dir: 1, speed: 1.3 };
+    s.dart = { x: 220, y: 456, fired: false, speed: 6.8 };
+    s.target = { x: 220, y: 128, radius: 68, dir: 1, speed: 1.55 };
     s.particles = [];
     s.hitFlashTimer = 0;
     syncUiFromState();
@@ -309,22 +348,22 @@ export default function DartsGame({
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
-    canvas.width = 400;
-    canvas.height = 500;
+    canvas.width = 440;
+    canvas.height = 560;
 
     const s = stateRef.current;
 
     function resetDart() {
-      s.dart.x = 200;
-      s.dart.y = 450;
+      s.dart.x = 220;
+      s.dart.y = 456;
       s.dart.fired = false;
     }
 
     function updateTarget() {
       s.target.x += s.target.dir * s.target.speed;
       if (
-        s.target.x + s.target.radius >= canvas.width ||
-        s.target.x - s.target.radius <= 0
+        s.target.x + s.target.radius >= canvas.width - 18 ||
+        s.target.x - s.target.radius <= 18
       ) {
         s.target.dir *= -1;
       }
@@ -333,7 +372,7 @@ export default function DartsGame({
     function updateDart() {
       if (!s.dart.fired) return;
       s.dart.y -= s.dart.speed;
-      if (s.dart.y < 0) resetDart();
+      if (s.dart.y < -40) resetDart();
     }
 
     function createHitEffect(x, y) {
@@ -356,8 +395,8 @@ export default function DartsGame({
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       let points = 0;
-      if (dist < s.target.radius * 0.3) points = 50;
-      else if (dist < s.target.radius * 0.6) points = 25;
+      if (dist < s.target.radius * 0.22) points = 50;
+      else if (dist < s.target.radius * 0.48) points = 25;
       else if (dist < s.target.radius) points = 10;
       else return;
 
@@ -377,89 +416,170 @@ export default function DartsGame({
       syncUiFromState();
     }
 
+    function drawBackground() {
+      const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      bg.addColorStop(0, "#2c1d17");
+      bg.addColorStop(0.45, "#211610");
+      bg.addColorStop(1, "#120d0a");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // warm lamp glow
+      const glow = ctx.createRadialGradient(220, 80, 20, 220, 80, 220);
+      glow.addColorStop(0, "rgba(255,208,120,0.20)");
+      glow.addColorStop(1, "rgba(255,208,120,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // framed poster blocks / shelf silhouettes
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(28, 38, 84, 110);
+      ctx.fillRect(330, 52, 74, 96);
+
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.fillRect(46, 54, 48, 78);
+      ctx.fillRect(346, 66, 42, 64);
+
+      // subtle shelf shapes
+      ctx.fillStyle = "rgba(255,255,255,0.035)";
+      ctx.fillRect(40, 210, 360, 10);
+
+      ctx.fillStyle = "rgba(255,220,170,0.06)";
+      ctx.fillRect(54, 186, 20, 24);
+      ctx.fillRect(86, 174, 16, 36);
+      ctx.fillRect(118, 182, 22, 28);
+      ctx.fillRect(302, 178, 18, 32);
+      ctx.fillRect(332, 184, 20, 26);
+      ctx.fillRect(364, 172, 16, 38);
+
+      // lower wall to table / crowd line vibe
+      ctx.fillStyle = "rgba(0,0,0,0.14)";
+      ctx.fillRect(0, 390, canvas.width, 170);
+
+      // paper-cutout vignette
+      const vignette = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      vignette.addColorStop(0, "rgba(0,0,0,0.10)");
+      vignette.addColorStop(0.7, "rgba(0,0,0,0.04)");
+      vignette.addColorStop(1, "rgba(0,0,0,0.28)");
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawBoardHanger(t) {
+      ctx.strokeStyle = "rgba(255,224,180,0.45)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(t.x, 22);
+      ctx.lineTo(t.x, t.y - t.radius - 8);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      ctx.beginPath();
+      ctx.ellipse(t.x, t.y + t.radius + 14, t.radius * 0.92, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     function drawTarget() {
       const t = s.target;
 
+      drawBoardHanger(t);
+
+      // outer cutout shadow
       ctx.beginPath();
-      ctx.arc(t.x, t.y, t.radius + 10, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.36)";
+      ctx.arc(t.x + 4, t.y + 6, t.radius + 8, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.30)";
       ctx.fill();
 
+      // board rim
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius + 6, 0, Math.PI * 2);
+      ctx.fillStyle = "#d6b689";
+      ctx.fill();
+
+      // outer board
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
-      const ring1 = ctx.createRadialGradient(t.x, t.y, 10, t.x, t.y, t.radius);
-      ring1.addColorStop(0, "#ff5d5d");
-      ring1.addColorStop(1, "#8e1212");
-      ctx.fillStyle = ring1;
+      ctx.fillStyle = "#efe7d5";
+      ctx.fill();
+
+      // ring 1
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius * 0.82, 0, Math.PI * 2);
+      ctx.fillStyle = "#1b1f25";
+      ctx.fill();
+
+      // ring 2
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius * 0.68, 0, Math.PI * 2);
+      ctx.fillStyle = "#d8d1c4";
+      ctx.fill();
+
+      // ring 3
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius * 0.48, 0, Math.PI * 2);
+      ctx.fillStyle = "#b11f2e";
+      ctx.fill();
+
+      // ring 4
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius * 0.30, 0, Math.PI * 2);
+      ctx.fillStyle = "#f0eadc";
+      ctx.fill();
+
+      // bull
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius * 0.13, 0, Math.PI * 2);
+      ctx.fillStyle = "#3b7c45";
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(t.x, t.y, t.radius * 0.66, 0, Math.PI * 2);
-      const ring2 = ctx.createRadialGradient(
-        t.x,
-        t.y,
-        4,
-        t.x,
-        t.y,
-        t.radius * 0.66
-      );
-      ring2.addColorStop(0, "#ffffff");
-      ring2.addColorStop(1, "#d8d8d8");
-      ctx.fillStyle = ring2;
+      ctx.arc(t.x, t.y, t.radius * 0.055, 0, Math.PI * 2);
+      ctx.fillStyle = "#c53134";
       ctx.fill();
 
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, t.radius * 0.36, 0, Math.PI * 2);
-      const ring3 = ctx.createRadialGradient(
-        t.x,
-        t.y,
-        2,
-        t.x,
-        t.y,
-        t.radius * 0.36
-      );
-      ring3.addColorStop(0, "#64b5ff");
-      ring3.addColorStop(1, "#134a73");
-      ctx.fillStyle = ring3;
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.fill();
+      // cut lines
+      ctx.strokeStyle = "rgba(50,35,25,0.25)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const ang = (Math.PI * 2 * i) / 8;
+        const x1 = t.x + Math.cos(ang) * (t.radius * 0.14);
+        const y1 = t.y + Math.sin(ang) * (t.radius * 0.14);
+        const x2 = t.x + Math.cos(ang) * (t.radius * 0.98);
+        const y2 = t.y + Math.sin(ang) * (t.radius * 0.98);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
     }
 
     function drawDart() {
       const d = s.dart;
 
-      ctx.fillStyle = "#f2d16b";
-      ctx.fillRect(d.x - 3, d.y - 25, 6, 25);
+      // shaft
+      ctx.fillStyle = "#e3c86d";
+      ctx.fillRect(d.x - 3, d.y - 28, 6, 28);
 
+      // tip
       ctx.beginPath();
-      ctx.moveTo(d.x, d.y - 35);
-      ctx.lineTo(d.x - 5, d.y - 25);
-      ctx.lineTo(d.x + 5, d.y - 25);
-      ctx.fillStyle = "#c0c0c0";
+      ctx.moveTo(d.x, d.y - 40);
+      ctx.lineTo(d.x - 6, d.y - 28);
+      ctx.lineTo(d.x + 6, d.y - 28);
+      ctx.fillStyle = "#d5d7db";
       ctx.fill();
 
-      ctx.fillStyle = "#ff0066";
+      // flights
+      ctx.fillStyle = "#ff5c86";
       ctx.beginPath();
-      ctx.moveTo(d.x - 10, d.y - 5);
-      ctx.lineTo(d.x, d.y - 20);
-      ctx.lineTo(d.x + 10, d.y - 5);
+      ctx.moveTo(d.x - 11, d.y - 8);
+      ctx.lineTo(d.x, d.y - 22);
+      ctx.lineTo(d.x + 11, d.y - 8);
       ctx.closePath();
       ctx.fill();
-    }
 
-    function drawUI() {
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.font = "bold 18px system-ui, -apple-system, Segoe UI, sans-serif";
-      ctx.fillText("Score: " + s.score, 20, 30);
-      ctx.fillText("Darts: " + s.dartsLeft, 270, 30);
-
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.font = "14px system-ui, -apple-system, Segoe UI, sans-serif";
-      ctx.fillText("Time: " + s.timer, 170, 54);
+      ctx.strokeStyle = "rgba(0,0,0,0.22)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
 
     function drawParticles() {
@@ -468,7 +588,7 @@ export default function DartsGame({
         ctx.arc(
           s.target.x,
           s.target.y,
-          s.target.radius + 14,
+          s.target.radius + 16,
           0,
           Math.PI * 2
         );
@@ -479,7 +599,7 @@ export default function DartsGame({
 
       const parts = s.particles;
       for (let p of parts) {
-        ctx.fillStyle = `rgba(255,255,255,${p.life / 18})`;
+        ctx.fillStyle = `rgba(255,240,200,${p.life / 18})`;
         ctx.fillRect(p.x, p.y, 4, 4);
         p.x += p.dx;
         p.y += p.dy;
@@ -488,12 +608,150 @@ export default function DartsGame({
       s.particles = parts.filter((p) => p.life > 0);
     }
 
-    function drawBackground() {
-      const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      bg.addColorStop(0, "#151925");
-      bg.addColorStop(1, "#0c1018");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    function drawCanvasHud() {
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fillRect(18, 18, 126, 40);
+
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "bold 17px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText(`Score ${s.score}`, 30, 44);
+
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fillRect(300, 18, 122, 40);
+
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.fillText(`Darts ${s.dartsLeft}`, 312, 44);
+
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fillRect(163, 18, 114, 40);
+
+      ctx.fillStyle = "rgba(255,240,190,0.96)";
+      ctx.textAlign = "center";
+      ctx.fillText(`${s.timer}s`, 220, 44);
+      ctx.textAlign = "left";
+    }
+
+    function drawPubStage() {
+      // bottom cutout "stage"
+      ctx.fillStyle = "#4b2d20";
+      ctx.fillRect(0, 474, canvas.width, 86);
+
+      ctx.fillStyle = "#6a3e2a";
+      ctx.fillRect(0, 486, canvas.width, 14);
+
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(0, 488, canvas.width, 3);
+    }
+
+    function drawHandLauncher() {
+      const visual = getHandVisual(activePlayer);
+      const handX = 220;
+      const handY = 486;
+
+      // sleeve shadow
+      ctx.beginPath();
+      ctx.ellipse(handX + 10, handY + 18, 94, 34, -0.12, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fill();
+
+      // sleeve / arm
+      ctx.save();
+      ctx.translate(handX - 46, handY - 8);
+      ctx.rotate(-0.1);
+
+      ctx.fillStyle = visual.sleeve;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(78, -12);
+      ctx.lineTo(102, 32);
+      ctx.lineTo(18, 44);
+      ctx.closePath();
+      ctx.fill();
+
+      // cuff
+      if (visual.variant === "cuffed") {
+        ctx.fillStyle = "#f2ede1";
+        ctx.fillRect(68, -6, 18, 38);
+      }
+
+      if (visual.variant === "gauntlet") {
+        ctx.fillStyle = "#9ea4ac";
+        ctx.fillRect(54, -8, 34, 42);
+        ctx.strokeStyle = "rgba(40,40,40,0.35)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(54, -8, 34, 42);
+      }
+
+      ctx.restore();
+
+      // hand / fingers
+      if (visual.variant === "cartoon") {
+        ctx.fillStyle = "#f2f2ed";
+      } else if (visual.variant === "gauntlet") {
+        ctx.fillStyle = "#b2b8bf";
+      } else {
+        ctx.fillStyle = visual.skin;
+      }
+
+      // palm
+      ctx.beginPath();
+      ctx.ellipse(handX, handY, 34, 22, -0.15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // thumb
+      ctx.beginPath();
+      ctx.ellipse(handX - 20, handY + 8, 14, 9, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // fingers
+      const fingerOffsets = [-18, -5, 8, 20];
+      fingerOffsets.forEach((offset, i) => {
+        ctx.beginPath();
+        ctx.ellipse(handX + offset, handY - 18 - i * 1.5, 8, 18, -0.06, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (visual.variant === "ringed") {
+        ctx.strokeStyle = "#f4c431";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(handX + 8, handY - 12, 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // hand outline for cutout feel
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(handX, handY, 34, 22, -0.15, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // small held dart accent when not fired
+      if (!s.dart.fired) {
+        ctx.save();
+        ctx.translate(236, 446);
+        ctx.rotate(-0.22);
+
+        ctx.fillStyle = "#d9c56a";
+        ctx.fillRect(-2, -18, 4, 18);
+
+        ctx.beginPath();
+        ctx.moveTo(0, -28);
+        ctx.lineTo(-4, -18);
+        ctx.lineTo(4, -18);
+        ctx.fillStyle = "#d9dde2";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(-7, -2);
+        ctx.lineTo(0, -12);
+        ctx.lineTo(7, -2);
+        ctx.closePath();
+        ctx.fillStyle = "#ff5c86";
+        ctx.fill();
+
+        ctx.restore();
+      }
     }
 
     let timerInterval = null;
@@ -549,9 +807,11 @@ export default function DartsGame({
       }
 
       drawTarget();
+      drawCanvasHud();
       drawDart();
-      drawUI();
       drawParticles();
+      drawPubStage();
+      drawHandLauncher();
 
       if (isHost && !s.finished && !s.roundFinished) {
         updateTarget();
@@ -569,10 +829,10 @@ export default function DartsGame({
       if (timerInterval) clearInterval(timerInterval);
       if (broadcastInterval) clearInterval(broadcastInterval);
     };
-  }, [code, isHost, playerNames]);
+  }, [code, isHost, playerNames, currentPlayerIndex, activePlayer]);
 
   return (
-    <div className="darts-shell">
+    <div className="darts-shell darts-shell--themed">
       <div className="darts-top-info">
         <div className="darts-info-block">
           <div className="darts-info-label">Game</div>
@@ -593,8 +853,8 @@ export default function DartsGame({
       <h1 className="darts-title">Aim &amp; Fire</h1>
 
       <p className="darts-instruction">
-        Take your turn, fire your darts, and score as highly as possible before
-        the timer expires.
+        A pub-wall target swings above the bar. Wait for your moment and throw
+        for the highest score.
       </p>
 
       <div className="darts-turn-card">
@@ -605,7 +865,7 @@ export default function DartsGame({
       </div>
 
       <div className="darts-canvas-wrap">
-        <canvas ref={canvasRef} id="dartsCanvas" width={400} height={500} />
+        <canvas ref={canvasRef} id="dartsCanvas" width={440} height={560} />
       </div>
 
       <div className="darts-action-wrap">
@@ -616,7 +876,7 @@ export default function DartsGame({
             turnFinished || roundFinished || myPlayerIndex !== currentPlayerIndex
           }
         >
-          {myPlayerIndex === currentPlayerIndex ? "Fire Dart" : "Not your turn"}
+          {myPlayerIndex === currentPlayerIndex ? "Throw Dart" : "Not your turn"}
         </button>
       </div>
 
