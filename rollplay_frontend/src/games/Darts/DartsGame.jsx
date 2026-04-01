@@ -15,6 +15,10 @@ const WS_URL = (
 const HAND_ASSET_BASE = "/darts-assets/hands";
 const DART_ASSET_BASE = "/darts-assets/darts";
 
+const BASE_TARGET_SPEED = 1.55;
+const TARGET_SPEED_STEP = 0.22;
+const MAX_TARGET_SPEED = 3.2;
+
 function getPlayerKey(player) {
   if (!player) return "";
   return String(
@@ -160,7 +164,7 @@ export default function DartsGame({
       angle: -Math.PI / 2,
       style: "classic",
     },
-    target: { x: 220, y: 128, radius: 68, dir: 1, speed: 1.55 },
+    target: { x: 220, y: 128, radius: 68, dir: 1, speed: BASE_TARGET_SPEED },
     particles: [],
     hitFlashTimer: 0,
     stuckDarts: [],
@@ -285,7 +289,13 @@ export default function DartsGame({
       angle: -Math.PI / 2,
       style: currentThrowSet.dartType,
     };
-    s.target = { x: 220, y: 128, radius: 68, dir: 1, speed: 1.55 };
+    s.target = {
+      x: 220,
+      y: 128,
+      radius: 68,
+      dir: 1,
+      speed: BASE_TARGET_SPEED,
+    };
     s.particles = [];
     s.hitFlashTimer = 0;
     s.stuckDarts = [];
@@ -469,14 +479,14 @@ export default function DartsGame({
     }
 
     function addStuckDart(hitX, hitY, style) {
-      const angle = clamp(
-        ((hitX - s.target.x) / s.target.radius) * 0.75,
-        -0.75,
-        0.75
-      );
+      const offsetX = hitX - s.target.x;
+      const offsetY = hitY - s.target.y;
+
+      const angle = clamp((offsetX / s.target.radius) * 0.75, -0.75, 0.75);
+
       s.stuckDarts.push({
-        x: hitX,
-        y: hitY,
+        offsetX,
+        offsetY,
         angle,
         style,
       });
@@ -503,6 +513,11 @@ export default function DartsGame({
           score: s.score,
         };
       }
+
+      s.target.speed = Math.min(
+        MAX_TARGET_SPEED,
+        s.target.speed + TARGET_SPEED_STEP
+      );
 
       s.hitFlashTimer = 14;
       createHitEffect(s.target.x, s.target.y);
@@ -643,6 +658,40 @@ export default function DartsGame({
       }
     }
 
+    function drawGuideLine(now) {
+      if (s.dart.fired) return;
+
+      const pulse = 0.12 + ((Math.sin(now / 220) + 1) / 2) * 0.1;
+
+      const startX = s.dart.x;
+      const startY = s.dart.y - 8;
+      const endY = 118;
+
+      ctx.save();
+
+      ctx.strokeStyle = `rgba(255, 237, 198, ${pulse})`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 10]);
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(startX, endY);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+
+      // faint arrow tip
+      ctx.fillStyle = `rgba(255, 237, 198, ${pulse + 0.06})`;
+      ctx.beginPath();
+      ctx.moveTo(startX, endY - 10);
+      ctx.lineTo(startX - 7, endY + 4);
+      ctx.lineTo(startX + 7, endY + 4);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
     function drawFallbackDart(x, y, rotation = 0, style = "classic") {
       ctx.save();
       ctx.translate(x, y);
@@ -685,6 +734,8 @@ export default function DartsGame({
 
     function drawFlyingDart() {
       const d = s.dart;
+      if (!d.fired) return;
+
       const dartImg = getImageFromCache(
         dartImageCacheRef.current,
         `${DART_ASSET_BASE}/${d.style}_dart.png`
@@ -706,6 +757,9 @@ export default function DartsGame({
 
     function drawStuckDarts() {
       for (const dart of s.stuckDarts) {
+        const drawX = s.target.x + dart.offsetX;
+        const drawY = s.target.y + dart.offsetY + 6;
+
         const dartImg = getImageFromCache(
           dartImageCacheRef.current,
           `${DART_ASSET_BASE}/${dart.style}_dart.png`
@@ -713,15 +767,15 @@ export default function DartsGame({
         const drawn = drawImageCentered(
           ctx,
           dartImg,
-          dart.x,
-          dart.y + 6,
+          drawX,
+          drawY,
           34,
           64,
           dart.angle
         );
 
         if (!drawn) {
-          drawFallbackDart(dart.x, dart.y + 6, dart.angle, dart.style);
+          drawFallbackDart(drawX, drawY, dart.angle, dart.style);
         }
       }
     }
@@ -787,8 +841,8 @@ export default function DartsGame({
     }
 
     function drawFallbackHand(now) {
-      const isClosed = now < throwAnimUntilRef.current;
-      const anticipation = !isClosed && !s.dart.fired;
+      const isOpenRelease = now < throwAnimUntilRef.current;
+      const anticipation = !isOpenRelease && !s.dart.fired;
       const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
       const scale = anticipation ? 0.985 + Math.sin(now / 140) * 0.008 : 1;
 
@@ -804,18 +858,37 @@ export default function DartsGame({
       ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.fill();
 
+      ctx.fillStyle = "#f2c7a5";
+
+      if (isOpenRelease) {
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 34, 22, -0.12, 0, Math.PI * 2);
+        ctx.fill();
+
+        const fingerOffsets = [-18, -5, 8, 20];
+        fingerOffsets.forEach((offset, i) => {
+          ctx.beginPath();
+          ctx.ellipse(offset, -18 - i * 1.5, 8, 18, -0.06, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 36, 24, -0.18, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       ctx.restore();
     }
 
     function drawHandLauncher(now) {
-      const isClosed = now < throwAnimUntilRef.current;
-      const handSrc = isClosed
-        ? activeThrowSet.closedSrc
-        : activeThrowSet.openSrc;
+      const isOpenRelease = now < throwAnimUntilRef.current;
+      const handSrc = isOpenRelease
+        ? activeThrowSet.openSrc
+        : activeThrowSet.closedSrc;
 
       const img = getImageFromCache(handImageCacheRef.current, handSrc);
 
-      const anticipation = !isClosed && !s.dart.fired;
+      const anticipation = !isOpenRelease && !s.dart.fired;
       const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
       const scale = anticipation
         ? 0.985 + Math.sin(now / 140) * 0.008
@@ -892,6 +965,7 @@ export default function DartsGame({
 
       drawTarget();
       drawStuckDarts();
+      drawGuideLine(now);
       drawCanvasHud();
       drawFlyingDart();
       drawParticles();
