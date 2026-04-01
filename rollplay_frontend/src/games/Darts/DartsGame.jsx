@@ -168,12 +168,42 @@ export default function DartsGame({
 
   function getImageFromCache(cache, src) {
     if (!src) return null;
+
     if (!cache[src]) {
       const img = new Image();
+
+      img.onload = () => {
+        img.dataset.loaded = "true";
+      };
+
+      img.onerror = () => {
+        img.dataset.failed = "true";
+      };
+
       img.src = src;
       cache[src] = img;
     }
+
     return cache[src];
+  }
+
+  function drawImageCentered(ctx, img, x, y, w, h, rotation = 0, scale = 1) {
+    if (!img) return false;
+    if (img.dataset?.failed === "true") return false;
+    if (!img.complete) return false;
+    if (!img.naturalWidth || !img.naturalHeight) return false;
+
+    try {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rotation);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function wsSend(obj) {
@@ -613,17 +643,6 @@ export default function DartsGame({
       }
     }
 
-    function drawImageCentered(img, x, y, w, h, rotation = 0, scale = 1) {
-      if (!img || !img.complete) return false;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rotation);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-      return true;
-    }
-
     function drawFallbackDart(x, y, rotation = 0, style = "classic") {
       ctx.save();
       ctx.translate(x, y);
@@ -670,7 +689,16 @@ export default function DartsGame({
         dartImageCacheRef.current,
         `${DART_ASSET_BASE}/${d.style}_dart.png`
       );
-      const drawn = drawImageCentered(dartImg, d.x, d.y - 14, 42, 74, d.angle);
+      const drawn = drawImageCentered(
+        ctx,
+        dartImg,
+        d.x,
+        d.y - 14,
+        42,
+        74,
+        d.angle
+      );
+
       if (!drawn) {
         drawFallbackDart(d.x, d.y, d.angle, d.style);
       }
@@ -683,6 +711,7 @@ export default function DartsGame({
           `${DART_ASSET_BASE}/${dart.style}_dart.png`
         );
         const drawn = drawImageCentered(
+          ctx,
           dartImg,
           dart.x,
           dart.y + 6,
@@ -690,6 +719,7 @@ export default function DartsGame({
           64,
           dart.angle
         );
+
         if (!drawn) {
           drawFallbackDart(dart.x, dart.y + 6, dart.angle, dart.style);
         }
@@ -779,14 +809,20 @@ export default function DartsGame({
 
     function drawHandLauncher(now) {
       const isClosed = now < throwAnimUntilRef.current;
-      const handSrc = isClosed ? activeThrowSet.closedSrc : activeThrowSet.openSrc;
+      const handSrc = isClosed
+        ? activeThrowSet.closedSrc
+        : activeThrowSet.openSrc;
+
       const img = getImageFromCache(handImageCacheRef.current, handSrc);
 
       const anticipation = !isClosed && !s.dart.fired;
       const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
-      const scale = anticipation ? 0.985 + Math.sin(now / 140) * 0.008 : 1;
+      const scale = anticipation
+        ? 0.985 + Math.sin(now / 140) * 0.008
+        : 1;
 
       const drawn = drawImageCentered(
+        ctx,
         img,
         336,
         468 + bob,
@@ -878,7 +914,15 @@ export default function DartsGame({
       if (timerInterval) clearInterval(timerInterval);
       if (broadcastInterval) clearInterval(broadcastInterval);
     };
-  }, [code, isHost, playerNames, currentPlayerIndex, activePlayer, activeThrowSet, orderedPlayers]);
+  }, [
+    code,
+    isHost,
+    playerNames,
+    currentPlayerIndex,
+    activePlayer,
+    activeThrowSet,
+    orderedPlayers,
+  ]);
 
   return (
     <div className="darts-shell darts-shell--themed">
