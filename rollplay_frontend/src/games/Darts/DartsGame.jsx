@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./darts.css";
 
-/**
- * Darts — WebSocket host-authoritative turn-based round
- * Visual overhaul:
- * - pub-style responsive background
- * - cutout / collage inspired target presentation
- * - avatar-influenced throwing hand + sleeve
- * - clearer dartboard and stronger visual identity
- */
-
 const defaultWsBase =
   typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "ws://localhost:3000/ws"
@@ -20,6 +11,9 @@ const WS_URL = (
   import.meta.env.VITE_BACKEND_WS_URL ||
   defaultWsBase
 ).replace(/\/$/, "");
+
+const HAND_ASSET_BASE = "/darts-assets/hands";
+const DART_ASSET_BASE = "/darts-assets/darts";
 
 function getPlayerKey(player) {
   if (!player) return "";
@@ -50,26 +44,44 @@ function safeParseAvatar(player) {
   return null;
 }
 
-function getHandVisual(activePlayer) {
+function getThrowSet(activePlayer) {
   const avatar = safeParseAvatar(activePlayer);
 
-  const skin = avatar?.skin || "#F2C7A5";
-  const sleeve = avatar?.outfitColor || "#7C5CFF";
   const accessory = avatar?.accessory || "none";
   const outfit = avatar?.outfit || "hoodie";
+  const bodyShape = avatar?.bodyShape || "round";
 
-  let variant = "normal";
+  let handType = "strong";
+  let dartType = "classic";
 
-  if (outfit === "armor") variant = "gauntlet";
-  else if (accessory === "cap") variant = "cartoon";
-  else if (accessory === "earring") variant = "ringed";
-  else if (accessory === "glasses") variant = "cuffed";
+  if (outfit === "armor") {
+    handType = "robot";
+    dartType = "robot";
+  } else if (accessory === "earring") {
+    handType = "lion";
+    dartType = "lion";
+  } else if (accessory === "cap") {
+    handType = "skinny";
+    dartType = "classic";
+  } else if (bodyShape === "bean") {
+    handType = "skinny";
+    dartType = "classic";
+  } else {
+    handType = "strong";
+    dartType = "heavy";
+  }
 
   return {
-    skin,
-    sleeve,
-    variant,
+    handType,
+    dartType,
+    openSrc: `${HAND_ASSET_BASE}/${handType}_open.png`,
+    closedSrc: `${HAND_ASSET_BASE}/${handType}_closed.png`,
+    dartSrc: `${DART_ASSET_BASE}/${dartType}_dart.png`,
   };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 export default function DartsGame({
@@ -84,6 +96,10 @@ export default function DartsGame({
   const runningRef = useRef(false);
   const onRoundCompleteRef = useRef(onRoundComplete);
   const announcedRef = useRef(false);
+
+  const handImageCacheRef = useRef({});
+  const dartImageCacheRef = useRef({});
+  const throwAnimUntilRef = useRef(0);
 
   useEffect(() => {
     onRoundCompleteRef.current = onRoundComplete;
@@ -125,6 +141,7 @@ export default function DartsGame({
     myPlayerIndex === -1 ? "Spectating" : `You are P${myPlayerIndex + 1}`;
 
   const activePlayer = orderedPlayers[currentPlayerIndex] || null;
+  const activeThrowSet = useMemo(() => getThrowSet(activePlayer), [activePlayer]);
 
   const stateRef = useRef({
     score: 0,
@@ -135,11 +152,29 @@ export default function DartsGame({
     msg: "",
     currentPlayerIndex: 0,
     turnScores: [],
-    dart: { x: 220, y: 456, fired: false, speed: 6.8 },
+    dart: {
+      x: 220,
+      y: 456,
+      fired: false,
+      speed: 7,
+      angle: -Math.PI / 2,
+      style: "classic",
+    },
     target: { x: 220, y: 128, radius: 68, dir: 1, speed: 1.55 },
     particles: [],
     hitFlashTimer: 0,
+    stuckDarts: [],
   });
+
+  function getImageFromCache(cache, src) {
+    if (!src) return null;
+    if (!cache[src]) {
+      const img = new Image();
+      img.src = src;
+      cache[src] = img;
+    }
+    return cache[src];
+  }
 
   function wsSend(obj) {
     const ws = wsRef.current;
@@ -167,9 +202,14 @@ export default function DartsGame({
     if (s.dart.fired) return;
     if (s.dartsLeft <= 0) return;
 
+    const currentThrowSet = getThrowSet(orderedPlayers[s.currentPlayerIndex]);
+
     s.dart.fired = true;
+    s.dart.style = currentThrowSet.dartType;
     s.dartsLeft -= 1;
     s.msg = `🎯 ${playerNames[s.currentPlayerIndex] || "Player"} fires!`;
+
+    throwAnimUntilRef.current = performance.now() + 170;
 
     syncUiFromState();
   }
@@ -200,15 +240,25 @@ export default function DartsGame({
 
   function resetTurnStateForCurrentPlayer() {
     const s = stateRef.current;
+    const currentThrowSet = getThrowSet(orderedPlayers[s.currentPlayerIndex]);
+
     s.score = 0;
     s.dartsLeft = 5;
     s.timer = 60;
     s.finished = false;
     s.msg = `${playerNames[s.currentPlayerIndex] || "Next player"}'s turn`;
-    s.dart = { x: 220, y: 456, fired: false, speed: 6.8 };
+    s.dart = {
+      x: 220,
+      y: 456,
+      fired: false,
+      speed: 7,
+      angle: -Math.PI / 2,
+      style: currentThrowSet.dartType,
+    };
     s.target = { x: 220, y: 128, radius: 68, dir: 1, speed: 1.55 };
     s.particles = [];
     s.hitFlashTimer = 0;
+    s.stuckDarts = [];
     syncUiFromState();
   }
 
@@ -296,6 +346,7 @@ export default function DartsGame({
           dart: payload.dart || stateRef.current.dart,
           target: payload.target || stateRef.current.target,
           particles: payload.particles || stateRef.current.particles,
+          stuckDarts: payload.stuckDarts || stateRef.current.stuckDarts,
           hitFlashTimer:
             typeof payload.hitFlashTimer === "number"
               ? payload.hitFlashTimer
@@ -325,7 +376,7 @@ export default function DartsGame({
       wsRef.current = null;
       runningRef.current = false;
     };
-  }, [code, isHost, myPlayerIndex, myUserId, playerNames]);
+  }, [code, isHost, myPlayerIndex, myUserId, playerNames, orderedPlayers]);
 
   useEffect(() => {
     if (!playerNames.length) return;
@@ -387,6 +438,20 @@ export default function DartsGame({
       }
     }
 
+    function addStuckDart(hitX, hitY, style) {
+      const angle = clamp(
+        ((hitX - s.target.x) / s.target.radius) * 0.75,
+        -0.75,
+        0.75
+      );
+      s.stuckDarts.push({
+        x: hitX,
+        y: hitY,
+        angle,
+        style,
+      });
+    }
+
     function checkHit() {
       if (!s.dart.fired) return;
 
@@ -411,6 +476,7 @@ export default function DartsGame({
 
       s.hitFlashTimer = 14;
       createHitEffect(s.target.x, s.target.y);
+      addStuckDart(s.dart.x, s.dart.y, s.dart.style);
       resetDart();
 
       syncUiFromState();
@@ -424,14 +490,12 @@ export default function DartsGame({
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // warm lamp glow
       const glow = ctx.createRadialGradient(220, 80, 20, 220, 80, 220);
       glow.addColorStop(0, "rgba(255,208,120,0.20)");
       glow.addColorStop(1, "rgba(255,208,120,0)");
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // framed poster blocks / shelf silhouettes
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       ctx.fillRect(28, 38, 84, 110);
       ctx.fillRect(330, 52, 74, 96);
@@ -440,7 +504,6 @@ export default function DartsGame({
       ctx.fillRect(46, 54, 48, 78);
       ctx.fillRect(346, 66, 42, 64);
 
-      // subtle shelf shapes
       ctx.fillStyle = "rgba(255,255,255,0.035)";
       ctx.fillRect(40, 210, 360, 10);
 
@@ -452,11 +515,9 @@ export default function DartsGame({
       ctx.fillRect(332, 184, 20, 26);
       ctx.fillRect(364, 172, 16, 38);
 
-      // lower wall to table / crowd line vibe
       ctx.fillStyle = "rgba(0,0,0,0.14)";
       ctx.fillRect(0, 390, canvas.width, 170);
 
-      // paper-cutout vignette
       const vignette = ctx.createLinearGradient(0, 0, 0, canvas.height);
       vignette.addColorStop(0, "rgba(0,0,0,0.10)");
       vignette.addColorStop(0.7, "rgba(0,0,0,0.04)");
@@ -475,7 +536,15 @@ export default function DartsGame({
 
       ctx.fillStyle = "rgba(0,0,0,0.22)";
       ctx.beginPath();
-      ctx.ellipse(t.x, t.y + t.radius + 14, t.radius * 0.92, 14, 0, 0, Math.PI * 2);
+      ctx.ellipse(
+        t.x,
+        t.y + t.radius + 14,
+        t.radius * 0.92,
+        14,
+        0,
+        0,
+        Math.PI * 2
+      );
       ctx.fill();
     }
 
@@ -484,49 +553,41 @@ export default function DartsGame({
 
       drawBoardHanger(t);
 
-      // outer cutout shadow
       ctx.beginPath();
       ctx.arc(t.x + 4, t.y + 6, t.radius + 8, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(0,0,0,0.30)";
       ctx.fill();
 
-      // board rim
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius + 6, 0, Math.PI * 2);
       ctx.fillStyle = "#d6b689";
       ctx.fill();
 
-      // outer board
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
       ctx.fillStyle = "#efe7d5";
       ctx.fill();
 
-      // ring 1
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius * 0.82, 0, Math.PI * 2);
       ctx.fillStyle = "#1b1f25";
       ctx.fill();
 
-      // ring 2
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius * 0.68, 0, Math.PI * 2);
       ctx.fillStyle = "#d8d1c4";
       ctx.fill();
 
-      // ring 3
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius * 0.48, 0, Math.PI * 2);
       ctx.fillStyle = "#b11f2e";
       ctx.fill();
 
-      // ring 4
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius * 0.30, 0, Math.PI * 2);
       ctx.fillStyle = "#f0eadc";
       ctx.fill();
 
-      // bull
       ctx.beginPath();
       ctx.arc(t.x, t.y, t.radius * 0.13, 0, Math.PI * 2);
       ctx.fillStyle = "#3b7c45";
@@ -537,7 +598,6 @@ export default function DartsGame({
       ctx.fillStyle = "#c53134";
       ctx.fill();
 
-      // cut lines
       ctx.strokeStyle = "rgba(50,35,25,0.25)";
       ctx.lineWidth = 2;
       for (let i = 0; i < 8; i++) {
@@ -553,33 +613,87 @@ export default function DartsGame({
       }
     }
 
-    function drawDart() {
-      const d = s.dart;
+    function drawImageCentered(img, x, y, w, h, rotation = 0, scale = 1) {
+      if (!img || !img.complete) return false;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rotation);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      return true;
+    }
 
-      // shaft
-      ctx.fillStyle = "#e3c86d";
-      ctx.fillRect(d.x - 3, d.y - 28, 6, 28);
+    function drawFallbackDart(x, y, rotation = 0, style = "classic") {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rotation);
 
-      // tip
+      let body = "#e3c86d";
+      let flights = "#ff5c86";
+
+      if (style === "lion") {
+        body = "#c8963e";
+        flights = "#c73d1f";
+      } else if (style === "robot") {
+        body = "#9ed7ff";
+        flights = "#4dd0ff";
+      } else if (style === "heavy") {
+        body = "#b9bfc7";
+        flights = "#6f7883";
+      }
+
+      ctx.fillStyle = body;
+      ctx.fillRect(-3, -28, 6, 28);
+
       ctx.beginPath();
-      ctx.moveTo(d.x, d.y - 40);
-      ctx.lineTo(d.x - 6, d.y - 28);
-      ctx.lineTo(d.x + 6, d.y - 28);
-      ctx.fillStyle = "#d5d7db";
+      ctx.moveTo(0, -40);
+      ctx.lineTo(-6, -28);
+      ctx.lineTo(6, -28);
+      ctx.fillStyle = "#d9dde2";
       ctx.fill();
 
-      // flights
-      ctx.fillStyle = "#ff5c86";
+      ctx.fillStyle = flights;
       ctx.beginPath();
-      ctx.moveTo(d.x - 11, d.y - 8);
-      ctx.lineTo(d.x, d.y - 22);
-      ctx.lineTo(d.x + 11, d.y - 8);
+      ctx.moveTo(-11, -8);
+      ctx.lineTo(0, -22);
+      ctx.lineTo(11, -8);
       ctx.closePath();
       ctx.fill();
 
-      ctx.strokeStyle = "rgba(0,0,0,0.22)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawFlyingDart() {
+      const d = s.dart;
+      const dartImg = getImageFromCache(
+        dartImageCacheRef.current,
+        `${DART_ASSET_BASE}/${d.style}_dart.png`
+      );
+      const drawn = drawImageCentered(dartImg, d.x, d.y - 14, 42, 74, d.angle);
+      if (!drawn) {
+        drawFallbackDart(d.x, d.y, d.angle, d.style);
+      }
+    }
+
+    function drawStuckDarts() {
+      for (const dart of s.stuckDarts) {
+        const dartImg = getImageFromCache(
+          dartImageCacheRef.current,
+          `${DART_ASSET_BASE}/${dart.style}_dart.png`
+        );
+        const drawn = drawImageCentered(
+          dartImg,
+          dart.x,
+          dart.y + 6,
+          34,
+          64,
+          dart.angle
+        );
+        if (!drawn) {
+          drawFallbackDart(dart.x, dart.y + 6, dart.angle, dart.style);
+        }
+      }
     }
 
     function drawParticles() {
@@ -632,7 +746,6 @@ export default function DartsGame({
     }
 
     function drawPubStage() {
-      // bottom cutout "stage"
       ctx.fillStyle = "#4b2d20";
       ctx.fillRect(0, 474, canvas.width, 86);
 
@@ -643,114 +756,48 @@ export default function DartsGame({
       ctx.fillRect(0, 488, canvas.width, 3);
     }
 
-    function drawHandLauncher() {
-      const visual = getHandVisual(activePlayer);
-      const handX = 220;
-      const handY = 486;
+    function drawFallbackHand(now) {
+      const isClosed = now < throwAnimUntilRef.current;
+      const anticipation = !isClosed && !s.dart.fired;
+      const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
+      const scale = anticipation ? 0.985 + Math.sin(now / 140) * 0.008 : 1;
 
-      // sleeve shadow
+      const handX = 338;
+      const handY = 472 + bob;
+
+      ctx.save();
+      ctx.translate(handX, handY);
+      ctx.scale(scale, scale);
+
       ctx.beginPath();
-      ctx.ellipse(handX + 10, handY + 18, 94, 34, -0.12, 0, Math.PI * 2);
+      ctx.ellipse(10, 18, 104, 36, -0.14, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.fill();
 
-      // sleeve / arm
-      ctx.save();
-      ctx.translate(handX - 46, handY - 8);
-      ctx.rotate(-0.1);
-
-      ctx.fillStyle = visual.sleeve;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(78, -12);
-      ctx.lineTo(102, 32);
-      ctx.lineTo(18, 44);
-      ctx.closePath();
-      ctx.fill();
-
-      // cuff
-      if (visual.variant === "cuffed") {
-        ctx.fillStyle = "#f2ede1";
-        ctx.fillRect(68, -6, 18, 38);
-      }
-
-      if (visual.variant === "gauntlet") {
-        ctx.fillStyle = "#9ea4ac";
-        ctx.fillRect(54, -8, 34, 42);
-        ctx.strokeStyle = "rgba(40,40,40,0.35)";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(54, -8, 34, 42);
-      }
-
       ctx.restore();
+    }
 
-      // hand / fingers
-      if (visual.variant === "cartoon") {
-        ctx.fillStyle = "#f2f2ed";
-      } else if (visual.variant === "gauntlet") {
-        ctx.fillStyle = "#b2b8bf";
-      } else {
-        ctx.fillStyle = visual.skin;
-      }
+    function drawHandLauncher(now) {
+      const isClosed = now < throwAnimUntilRef.current;
+      const handSrc = isClosed ? activeThrowSet.closedSrc : activeThrowSet.openSrc;
+      const img = getImageFromCache(handImageCacheRef.current, handSrc);
 
-      // palm
-      ctx.beginPath();
-      ctx.ellipse(handX, handY, 34, 22, -0.15, 0, Math.PI * 2);
-      ctx.fill();
+      const anticipation = !isClosed && !s.dart.fired;
+      const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
+      const scale = anticipation ? 0.985 + Math.sin(now / 140) * 0.008 : 1;
 
-      // thumb
-      ctx.beginPath();
-      ctx.ellipse(handX - 20, handY + 8, 14, 9, 0.5, 0, Math.PI * 2);
-      ctx.fill();
+      const drawn = drawImageCentered(
+        img,
+        336,
+        468 + bob,
+        250,
+        206,
+        0,
+        scale
+      );
 
-      // fingers
-      const fingerOffsets = [-18, -5, 8, 20];
-      fingerOffsets.forEach((offset, i) => {
-        ctx.beginPath();
-        ctx.ellipse(handX + offset, handY - 18 - i * 1.5, 8, 18, -0.06, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      if (visual.variant === "ringed") {
-        ctx.strokeStyle = "#f4c431";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(handX + 8, handY - 12, 5, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // hand outline for cutout feel
-      ctx.strokeStyle = "rgba(0,0,0,0.18)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(handX, handY, 34, 22, -0.15, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // small held dart accent when not fired
-      if (!s.dart.fired) {
-        ctx.save();
-        ctx.translate(236, 446);
-        ctx.rotate(-0.22);
-
-        ctx.fillStyle = "#d9c56a";
-        ctx.fillRect(-2, -18, 4, 18);
-
-        ctx.beginPath();
-        ctx.moveTo(0, -28);
-        ctx.lineTo(-4, -18);
-        ctx.lineTo(4, -18);
-        ctx.fillStyle = "#d9dde2";
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(-7, -2);
-        ctx.lineTo(0, -12);
-        ctx.lineTo(7, -2);
-        ctx.closePath();
-        ctx.fillStyle = "#ff5c86";
-        ctx.fill();
-
-        ctx.restore();
+      if (!drawn) {
+        drawFallbackHand(now);
       }
     }
 
@@ -784,13 +831,14 @@ export default function DartsGame({
             dart: s.dart,
             target: s.target,
             particles: s.particles,
+            stuckDarts: s.stuckDarts,
             hitFlashTimer: s.hitFlashTimer,
           },
         });
       }, 100);
     }
 
-    function loop() {
+    function loop(now) {
       drawBackground();
 
       if (
@@ -807,11 +855,12 @@ export default function DartsGame({
       }
 
       drawTarget();
+      drawStuckDarts();
       drawCanvasHud();
-      drawDart();
+      drawFlyingDart();
       drawParticles();
       drawPubStage();
-      drawHandLauncher();
+      drawHandLauncher(now);
 
       if (isHost && !s.finished && !s.roundFinished) {
         updateTarget();
@@ -829,7 +878,7 @@ export default function DartsGame({
       if (timerInterval) clearInterval(timerInterval);
       if (broadcastInterval) clearInterval(broadcastInterval);
     };
-  }, [code, isHost, playerNames, currentPlayerIndex, activePlayer]);
+  }, [code, isHost, playerNames, currentPlayerIndex, activePlayer, activeThrowSet, orderedPlayers]);
 
   return (
     <div className="darts-shell darts-shell--themed">
