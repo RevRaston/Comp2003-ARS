@@ -73,6 +73,10 @@ function parseAvatarModel(player) {
   return merged;
 }
 
+function cloneAvatarModel(avatar) {
+  return { ...DEFAULT_AVATAR, ...(avatar || {}) };
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -338,7 +342,7 @@ export default function SumoGame({
           bodyTilt: 0,
           spin: 0,
           ringOutT: 0,
-          avatar: active.p1Avatar,
+          avatar: cloneAvatarModel(active.p1Avatar),
         },
         {
           key: active.p2Key,
@@ -352,7 +356,7 @@ export default function SumoGame({
           bodyTilt: 0,
           spin: 0,
           ringOutT: 0,
-          avatar: active.p2Avatar,
+          avatar: cloneAvatarModel(active.p2Avatar),
         },
       ],
     };
@@ -401,7 +405,6 @@ export default function SumoGame({
     function applyInput(p, ax, ay) {
       if (!p.alive) return;
 
-      // Drunk movement: slightly unstable and overcommitted
       const wobblePush = Math.sin(p.wobblePhase) * DRUNK_SWAY;
       p.vx += ax * ACCEL + wobblePush * 0.08;
       p.vy += ay * ACCEL;
@@ -553,20 +556,17 @@ export default function SumoGame({
       ctx.fillStyle = warmGlow;
       ctx.fillRect(0, 0, W, H);
 
-      // Bar counter top
       ctx.fillStyle = "#5a3a28";
       ctx.fillRect(0, 0, W, 54);
       ctx.fillStyle = "#7a5236";
       ctx.fillRect(0, 42, W, 12);
 
-      // Back bar silhouettes
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       ctx.fillRect(30, 10, 62, 18);
       ctx.fillRect(110, 8, 40, 20);
       ctx.fillRect(520, 10, 74, 16);
       ctx.fillRect(604, 7, 36, 21);
 
-      // Tables / stools around edges, kept subtle
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       ctx.beginPath();
       ctx.arc(76, 110, 24, 0, Math.PI * 2);
@@ -595,7 +595,6 @@ export default function SumoGame({
       ctx.arc(610, 338, 14, 0, Math.PI * 2);
       ctx.fill();
 
-      // Floor seams
       ctx.strokeStyle = "rgba(255,255,255,0.03)";
       ctx.lineWidth = 2;
       for (let y = 68; y < H; y += 42) {
@@ -605,7 +604,6 @@ export default function SumoGame({
         ctx.stroke();
       }
 
-      // Sticky floor vibe / spills
       ctx.fillStyle = "rgba(255,220,170,0.035)";
       ctx.beginPath();
       ctx.ellipse(150, 92, 18, 10, 0.2, 0, Math.PI * 2);
@@ -638,33 +636,28 @@ export default function SumoGame({
       ctx.fillStyle = ringGlow;
       ctx.fill();
 
-      // Main pub wrestling mat
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius, 0, Math.PI * 2);
       ctx.fillStyle = "#5b3b2a";
       ctx.fill();
 
-      // Inner wear pattern
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius - 18, 0, Math.PI * 2);
       ctx.fillStyle = "#4a3023";
       ctx.fill();
 
-      // Border
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(244,196,49,0.42)";
       ctx.lineWidth = 8;
       ctx.stroke();
 
-      // Inner guide ring
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius - 28, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Center marker
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, 18, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(244,196,49,0.16)";
@@ -687,9 +680,9 @@ export default function SumoGame({
     }
 
     function drawHairPatch(avatar) {
-      ctx.beginPath();
-
       if (avatar.hairStyle === "none") return;
+
+      ctx.beginPath();
 
       if (avatar.hairStyle === "puff") {
         ctx.arc(-8, -4, 7, 0, Math.PI * 2);
@@ -712,7 +705,6 @@ export default function SumoGame({
         return;
       }
 
-      // short
       ctx.ellipse(0, -7, 16, 11, 0, Math.PI, Math.PI * 2);
       ctx.fillStyle = avatar.hair;
       ctx.fill();
@@ -819,13 +811,11 @@ export default function SumoGame({
       ctx.rotate(p.spin + wobble + p.bodyTilt * 0.6);
       ctx.globalAlpha = fade;
 
-      // shadow
       ctx.beginPath();
       ctx.ellipse(0, 26, 34, 12, 0, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(0,0,0,0.28)";
       ctx.fill();
 
-      // body
       ctx.save();
       ctx.scale(squash, stretch);
 
@@ -834,34 +824,29 @@ export default function SumoGame({
       ctx.fillStyle = avatar.skin || DEFAULT_AVATAR.skin;
       ctx.fill();
 
-      // lower trunks / shorts
       ctx.beginPath();
       ctx.ellipse(0, 12, 29, 16, 0, 0, Math.PI * 2);
       ctx.fillStyle = avatar.outfitColor || DEFAULT_AVATAR.outfitColor;
       ctx.fill();
 
-      // butt shading / back view comedy
       ctx.beginPath();
       ctx.ellipse(-9, 10, 9, 7, -0.18, 0, Math.PI * 2);
       ctx.ellipse(9, 10, 9, 7, 0.18, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(0,0,0,0.08)";
       ctx.fill();
 
-      // belt seam
       ctx.beginPath();
       ctx.ellipse(0, 3, 24, 9, 0, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,255,255,0.12)";
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // arms
       ctx.beginPath();
       ctx.ellipse(-28, 1, 8, 14, -0.4, 0, Math.PI * 2);
       ctx.ellipse(28, 1, 8, 14, 0.4, 0, Math.PI * 2);
       ctx.fillStyle = avatar.skin || DEFAULT_AVATAR.skin;
       ctx.fill();
 
-      // feet
       ctx.beginPath();
       ctx.ellipse(-11, 28, 8, 6, 0.12, 0, Math.PI * 2);
       ctx.ellipse(11, 28, 8, 6, -0.12, 0, Math.PI * 2);
@@ -870,7 +855,6 @@ export default function SumoGame({
 
       ctx.restore();
 
-      // head
       ctx.save();
       ctx.translate(0, -18);
 
@@ -886,7 +870,6 @@ export default function SumoGame({
 
       ctx.restore();
 
-      // team ring
       ctx.beginPath();
       ctx.arc(0, 0, 38, 0, Math.PI * 2);
       ctx.strokeStyle = ringColor;
@@ -918,7 +901,11 @@ export default function SumoGame({
 
       ctx.fillStyle = "rgba(255,255,255,0.95)";
       ctx.font = "bold 13px system-ui, -apple-system, Segoe UI, sans-serif";
-      ctx.fillText(isHost ? "HOST VIEW" : "PLAYER VIEW", leftCardX + 12, leftCardY + 18);
+      ctx.fillText(
+        isHost ? "HOST VIEW" : "PLAYER VIEW",
+        leftCardX + 12,
+        leftCardY + 18
+      );
 
       ctx.fillStyle = "rgba(255,255,255,0.74)";
       ctx.font = "12px system-ui, -apple-system, Segoe UI, sans-serif";
@@ -1283,8 +1270,6 @@ export default function SumoGame({
     active.hasTwo,
     active.p1Key,
     active.p2Key,
-    active.p1Avatar,
-    active.p2Avatar,
     code,
     isHost,
     myControlIndex,
