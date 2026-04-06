@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Sumo — WebSocket multiplayer simulation with win conditions.
+ * Drunk Wrestling — host authoritative websocket mini-game
+ * Top-down pub wrestling with avatar-inspired wrestler bodies.
  * Desktop: keyboard controls
  * Phone: on-screen touch controls
  */
@@ -19,6 +20,24 @@ const WS_URL = (
 ).replace(/\/$/, "");
 
 const ROUND_TIME = 20;
+const BASE_TARGET_W = 680;
+const BASE_TARGET_H = 420;
+
+const DEFAULT_AVATAR = {
+  displayName: "Player",
+  bodyShape: "round",
+  skin: "#F2C7A5",
+  hairStyle: "short",
+  hair: "#2C1E1A",
+  eyeStyle: "dots",
+  eye: "#1A2433",
+  mouthStyle: "smile",
+  accessory: "none",
+  outfit: "hoodie",
+  outfitColor: "#7C5CFF",
+  bg: "nebula",
+  tilt: 0,
+};
 
 function getUserKey(p) {
   if (!p) return "";
@@ -32,6 +51,57 @@ function getUserKey(p) {
     p.ownerId ??
     p.id;
   return k ? String(k) : "";
+}
+
+function parseAvatarModel(player) {
+  const raw = player?.avatar_json ?? player?.avatarJson ?? null;
+  let merged = { ...DEFAULT_AVATAR };
+
+  if (raw) {
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : { ...raw };
+      merged = { ...DEFAULT_AVATAR, ...parsed };
+    } catch {
+      // ignore parse error
+    }
+  }
+
+  if (player?.display_name || player?.name) {
+    merged.displayName = player.display_name || player.name;
+  }
+
+  return merged;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function normalize(x, y) {
+  const d = Math.hypot(x, y) || 1;
+  return [x / d, y / d];
+}
+
+function makeParticles(x, y, count, colorA, colorB) {
+  const parts = [];
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.6;
+    const speed = 0.8 + Math.random() * 2.3;
+    parts.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 22 + Math.floor(Math.random() * 8),
+      size: 3 + Math.random() * 4,
+      color: Math.random() > 0.5 ? colorA : colorB,
+    });
+  }
+  return parts;
 }
 
 export default function SumoGame({
@@ -109,7 +179,15 @@ export default function SumoGame({
     const p1Key = getUserKey(p1);
     const p2Key = getUserKey(p2);
 
-    return { p1, p2, p1Key, p2Key, hasTwo: Boolean(p1Key && p2Key) };
+    return {
+      p1,
+      p2,
+      p1Key,
+      p2Key,
+      p1Avatar: parseAvatarModel(p1),
+      p2Avatar: parseAvatarModel(p2),
+      hasTwo: Boolean(p1Key && p2Key),
+    };
   }, [players]);
 
   const myId = myUserId ? String(myUserId) : "";
@@ -221,9 +299,13 @@ export default function SumoGame({
     }
 
     const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      runningRef.current = false;
+      return;
+    }
 
-    const W = 680;
-    const H = 420;
+    const W = BASE_TARGET_W;
+    const H = BASE_TARGET_H;
     canvas.width = W;
     canvas.height = H;
 
@@ -233,32 +315,44 @@ export default function SumoGame({
     }
     canvas.addEventListener("pointerdown", onCanvasPointerDown);
 
-    const arena = { x: W / 2, y: H / 2, radius: Math.min(W, H) * 0.4 };
-    const P_RADIUS = 18;
+    const arena = { x: W / 2, y: H / 2, radius: Math.min(W, H) * 0.36 };
+    const P_RADIUS = 28;
 
     const worldRef = {
       tick: 0,
       timeLeft: ROUND_TIME,
       roundOver: false,
       winnerKey: null,
+      impactFlash: 0,
+      particles: [],
       players: [
         {
           key: active.p1Key,
-          x: arena.x - 70,
+          x: arena.x - 86,
           y: arena.y,
           r: P_RADIUS,
           vx: 0,
           vy: 0,
           alive: true,
+          wobblePhase: Math.random() * Math.PI * 2,
+          bodyTilt: 0,
+          spin: 0,
+          ringOutT: 0,
+          avatar: active.p1Avatar,
         },
         {
           key: active.p2Key,
-          x: arena.x + 70,
+          x: arena.x + 86,
           y: arena.y,
           r: P_RADIUS,
           vx: 0,
           vy: 0,
           alive: true,
+          wobblePhase: Math.random() * Math.PI * 2,
+          bodyTilt: 0,
+          spin: 0,
+          ringOutT: 0,
+          avatar: active.p2Avatar,
         },
       ],
     };
@@ -294,22 +388,22 @@ export default function SumoGame({
         ax /= d;
         ay /= d;
       }
+
       return { ax, ay };
     }
 
-    const ACCEL = 0.55;
-    const MAX_SPEED = 6.2;
-    const FRICTION = 0.88;
-    const PUSH = 0.9;
-
-    function normalize(x, y) {
-      const d = Math.hypot(x, y) || 1;
-      return [x / d, y / d];
-    }
+    const ACCEL = 0.52;
+    const MAX_SPEED = 5.5;
+    const FRICTION = 0.905;
+    const PUSH = 1.08;
+    const DRUNK_SWAY = 0.16;
 
     function applyInput(p, ax, ay) {
       if (!p.alive) return;
-      p.vx += ax * ACCEL;
+
+      // Drunk movement: slightly unstable and overcommitted
+      const wobblePush = Math.sin(p.wobblePhase) * DRUNK_SWAY;
+      p.vx += ax * ACCEL + wobblePush * 0.08;
       p.vy += ay * ACCEL;
 
       const sp = Math.hypot(p.vx, p.vy);
@@ -318,16 +412,35 @@ export default function SumoGame({
         p.vx = nx * MAX_SPEED;
         p.vy = ny * MAX_SPEED;
       }
+
+      p.bodyTilt = clamp(p.bodyTilt + ax * 0.045, -0.3, 0.3);
     }
 
     function integrate(p) {
-      if (!p.alive) return;
+      p.wobblePhase += p.alive ? 0.18 + Math.hypot(p.vx, p.vy) * 0.03 : 0.12;
+
+      if (!p.alive) {
+        p.ringOutT += 1;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.97;
+        p.vy *= 0.97;
+        p.spin *= 0.96;
+        p.bodyTilt *= 0.96;
+        return;
+      }
+
       p.x += p.vx;
       p.y += p.vy;
       p.vx *= FRICTION;
       p.vy *= FRICTION;
+
       if (Math.abs(p.vx) < 0.01) p.vx = 0;
       if (Math.abs(p.vy) < 0.01) p.vy = 0;
+
+      const desiredSpin = clamp(p.vx * 0.028, -0.12, 0.12);
+      p.spin = lerp(p.spin, desiredSpin, 0.2);
+      p.bodyTilt = lerp(p.bodyTilt, 0, 0.08);
     }
 
     function checkRingOut(p) {
@@ -335,10 +448,22 @@ export default function SumoGame({
       const dx = p.x - arena.x;
       const dy = p.y - arena.y;
       const dist = Math.hypot(dx, dy);
-      const limit = arena.radius - p.r * 0.1;
+      const limit = arena.radius - p.r * 0.2;
 
       if (dist > limit) {
         p.alive = false;
+        p.vx *= 1.12;
+        p.vy *= 1.12;
+        p.spin += (Math.random() - 0.5) * 0.4;
+        worldRef.particles.push(
+          ...makeParticles(
+            p.x,
+            p.y,
+            10,
+            "rgba(255,230,170,0.95)",
+            "rgba(244,196,49,0.9)"
+          )
+        );
       }
     }
 
@@ -348,7 +473,7 @@ export default function SumoGame({
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const minDist = a.r + b.r;
+      const minDist = a.r + b.r - 4;
 
       if (dist < minDist) {
         const overlap = minDist - dist;
@@ -372,18 +497,131 @@ export default function SumoGame({
           a.vy -= iy;
           b.vx += ix;
           b.vy += iy;
+
+          a.spin -= j * 0.02;
+          b.spin += j * 0.02;
+
+          worldRef.impactFlash = 10;
+          worldRef.particles.push(
+            ...makeParticles(
+              (a.x + b.x) / 2,
+              (a.y + b.y) / 2,
+              7,
+              "rgba(255,255,255,0.8)",
+              "rgba(244,196,49,0.9)"
+            )
+          );
         }
       }
+    }
+
+    function updateParticles() {
+      worldRef.particles = worldRef.particles
+        .map((p) => ({
+          ...p,
+          x: p.x + p.vx,
+          y: p.y + p.vy,
+          vx: p.vx * 0.96,
+          vy: p.vy * 0.96,
+          life: p.life - 1,
+        }))
+        .filter((p) => p.life > 0);
+
+      if (worldRef.impactFlash > 0) {
+        worldRef.impactFlash -= 1;
+      }
+    }
+
+    function drawPubBackground() {
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, "#2f1f18");
+      bg.addColorStop(0.48, "#1f1611");
+      bg.addColorStop(1, "#140f0c");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      const warmGlow = ctx.createRadialGradient(
+        W / 2,
+        110,
+        20,
+        W / 2,
+        110,
+        280
+      );
+      warmGlow.addColorStop(0, "rgba(255,190,120,0.16)");
+      warmGlow.addColorStop(1, "rgba(255,190,120,0)");
+      ctx.fillStyle = warmGlow;
+      ctx.fillRect(0, 0, W, H);
+
+      // Bar counter top
+      ctx.fillStyle = "#5a3a28";
+      ctx.fillRect(0, 0, W, 54);
+      ctx.fillStyle = "#7a5236";
+      ctx.fillRect(0, 42, W, 12);
+
+      // Back bar silhouettes
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(30, 10, 62, 18);
+      ctx.fillRect(110, 8, 40, 20);
+      ctx.fillRect(520, 10, 74, 16);
+      ctx.fillRect(604, 7, 36, 21);
+
+      // Tables / stools around edges, kept subtle
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.beginPath();
+      ctx.arc(76, 110, 24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(612, 110, 24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(70, 338, 26, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(610, 338, 26, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(0,0,0,0.14)";
+      ctx.beginPath();
+      ctx.arc(76, 110, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(612, 110, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(70, 338, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(610, 338, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Floor seams
+      ctx.strokeStyle = "rgba(255,255,255,0.03)";
+      ctx.lineWidth = 2;
+      for (let y = 68; y < H; y += 42) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+
+      // Sticky floor vibe / spills
+      ctx.fillStyle = "rgba(255,220,170,0.035)";
+      ctx.beginPath();
+      ctx.ellipse(150, 92, 18, 10, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(540, 286, 20, 11, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(330, 372, 16, 9, 0.1, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     function drawArena() {
       ctx.clearRect(0, 0, W, H);
 
-      const bg = ctx.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, "#1b1f2a");
-      bg.addColorStop(1, "#0d1018");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, W, H);
+      drawPubBackground();
 
       const ringGlow = ctx.createRadialGradient(
         arena.x,
@@ -391,118 +629,312 @@ export default function SumoGame({
         10,
         arena.x,
         arena.y,
-        arena.radius + 40
+        arena.radius + 48
       );
-      ringGlow.addColorStop(0, "rgba(244,196,49,0.10)");
+      ringGlow.addColorStop(0, "rgba(244,196,49,0.12)");
       ringGlow.addColorStop(1, "rgba(0,0,0,0)");
       ctx.beginPath();
-      ctx.arc(arena.x, arena.y, arena.radius + 26, 0, Math.PI * 2);
+      ctx.arc(arena.x, arena.y, arena.radius + 28, 0, Math.PI * 2);
       ctx.fillStyle = ringGlow;
       ctx.fill();
 
-      const grd = ctx.createRadialGradient(
-        arena.x,
-        arena.y,
-        10,
-        arena.x,
-        arena.y,
-        arena.radius
-      );
-      grd.addColorStop(0, "rgba(255,255,255,0.08)");
-      grd.addColorStop(1, "rgba(0,0,0,0.72)");
-
+      // Main pub wrestling mat
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius, 0, Math.PI * 2);
-      ctx.fillStyle = grd;
+      ctx.fillStyle = "#5b3b2a";
       ctx.fill();
 
+      // Inner wear pattern
+      ctx.beginPath();
+      ctx.arc(arena.x, arena.y, arena.radius - 18, 0, Math.PI * 2);
+      ctx.fillStyle = "#4a3023";
+      ctx.fill();
+
+      // Border
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, arena.radius, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(244,196,49,0.35)";
-      ctx.lineWidth = 7;
+      ctx.strokeStyle = "rgba(244,196,49,0.42)";
+      ctx.lineWidth = 8;
       ctx.stroke();
 
+      // Inner guide ring
       ctx.beginPath();
-      ctx.arc(arena.x, arena.y, arena.radius - 20, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.arc(arena.x, arena.y, arena.radius - 28, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.lineWidth = 2;
       ctx.stroke();
 
+      // Center marker
       ctx.beginPath();
       ctx.arc(arena.x, arena.y, 18, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(244,196,49,0.16)";
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(arena.x, arena.y, 4, 0, Math.PI * 2);
+      ctx.arc(arena.x, arena.y, 5, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fill();
+
+      if (worldRef.impactFlash > 0) {
+        ctx.beginPath();
+        ctx.arc(arena.x, arena.y, arena.radius + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,255,255,${
+          worldRef.impactFlash / 28
+        })`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+    }
+
+    function drawHairPatch(avatar) {
+      ctx.beginPath();
+
+      if (avatar.hairStyle === "none") return;
+
+      if (avatar.hairStyle === "puff") {
+        ctx.arc(-8, -4, 7, 0, Math.PI * 2);
+        ctx.arc(0, -8, 8, 0, Math.PI * 2);
+        ctx.arc(9, -4, 7, 0, Math.PI * 2);
+        ctx.fillStyle = avatar.hair;
+        ctx.fill();
+        return;
+      }
+
+      if (avatar.hairStyle === "long") {
+        ctx.ellipse(0, -5, 17, 12, 0, Math.PI, Math.PI * 2);
+        ctx.fillStyle = avatar.hair;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.ellipse(-11, 4, 4, 10, 0.3, 0, Math.PI * 2);
+        ctx.ellipse(11, 4, 4, 10, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+
+      // short
+      ctx.ellipse(0, -7, 16, 11, 0, Math.PI, Math.PI * 2);
+      ctx.fillStyle = avatar.hair;
       ctx.fill();
     }
 
-    function drawPlayer(p, color) {
-      if (!p.alive) return;
+    function drawEyes(avatar) {
+      ctx.strokeStyle = "#0B1020";
+      ctx.fillStyle = avatar.eye;
+      ctx.lineWidth = 2.1;
+
+      if (avatar.eyeStyle === "happy") {
+        ctx.beginPath();
+        ctx.arc(-7, -1, 3.5, Math.PI * 0.1, Math.PI * 0.9);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(7, -1, 3.5, Math.PI * 0.1, Math.PI * 0.9);
+        ctx.stroke();
+        return;
+      }
+
+      if (avatar.eyeStyle === "sleepy") {
+        ctx.beginPath();
+        ctx.moveTo(-10, -1);
+        ctx.lineTo(-4, 1);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(4, 1);
+        ctx.lineTo(10, -1);
+        ctx.stroke();
+        return;
+      }
 
       ctx.beginPath();
-      ctx.ellipse(
-        p.x,
-        p.y + p.r + 6,
-        p.r * 1.1,
-        p.r * 0.5,
-        0,
-        0,
-        Math.PI * 2
-      );
+      ctx.arc(-7, 0, 2.8, 0, Math.PI * 2);
+      ctx.arc(7, 0, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawMouth(avatar) {
+      ctx.strokeStyle = "#0B1020";
+      ctx.lineWidth = 2.1;
+      ctx.lineCap = "round";
+
+      if (avatar.mouthStyle === "neutral") {
+        ctx.beginPath();
+        ctx.moveTo(-5, 8);
+        ctx.lineTo(5, 8);
+        ctx.stroke();
+        return;
+      }
+
+      if (avatar.mouthStyle === "open") {
+        ctx.beginPath();
+        ctx.ellipse(0, 9, 4.4, 5.6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#0B1020";
+        ctx.fill();
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.arc(0, 7, 6, 0.1, Math.PI - 0.1);
+      ctx.stroke();
+    }
+
+    function drawAccessory(avatar) {
+      if (avatar.accessory === "cap") {
+        ctx.fillStyle = "#111827";
+        ctx.beginPath();
+        ctx.ellipse(0, -12, 14, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(6, -12, 10, 3);
+      }
+
+      if (avatar.accessory === "glasses") {
+        ctx.strokeStyle = "#0B1020";
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(-11, -3, 8, 5);
+        ctx.strokeRect(3, -3, 8, 5);
+        ctx.beginPath();
+        ctx.moveTo(-3, -0.5);
+        ctx.lineTo(3, -0.5);
+        ctx.stroke();
+      }
+
+      if (avatar.accessory === "earring") {
+        ctx.strokeStyle = "#FFD166";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(-15, 9, 2.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    function drawWrestler(p, ringColor) {
+      const avatar = p.avatar || DEFAULT_AVATAR;
+      const speed = Math.hypot(p.vx, p.vy);
+      const wobble = Math.sin(p.wobblePhase) * 0.08;
+      const squash = p.alive ? 1 + Math.min(speed, 4) * 0.02 : 0.96;
+      const stretch = p.alive ? 1 - Math.min(speed, 4) * 0.025 : 1.03;
+      const fade = p.alive ? 1 : clamp(1 - p.ringOutT / 30, 0.2, 1);
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.spin + wobble + p.bodyTilt * 0.6);
+      ctx.globalAlpha = fade;
+
+      // shadow
+      ctx.beginPath();
+      ctx.ellipse(0, 26, 34, 12, 0, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(0,0,0,0.28)";
       ctx.fill();
 
-      const g = ctx.createRadialGradient(
-        p.x - p.r * 0.45,
-        p.y - p.r * 0.45,
-        4,
-        p.x,
-        p.y,
-        p.r
-      );
-      g.addColorStop(0, "rgba(255,255,255,0.6)");
-      g.addColorStop(1, color);
+      // body
+      ctx.save();
+      ctx.scale(squash, stretch);
 
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = g;
+      ctx.ellipse(0, 2, 33, 28, 0, 0, Math.PI * 2);
+      ctx.fillStyle = avatar.skin || DEFAULT_AVATAR.skin;
       ctx.fill();
 
+      // lower trunks / shorts
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.ellipse(0, 12, 29, 16, 0, 0, Math.PI * 2);
+      ctx.fillStyle = avatar.outfitColor || DEFAULT_AVATAR.outfitColor;
+      ctx.fill();
+
+      // butt shading / back view comedy
+      ctx.beginPath();
+      ctx.ellipse(-9, 10, 9, 7, -0.18, 0, Math.PI * 2);
+      ctx.ellipse(9, 10, 9, 7, 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fill();
+
+      // belt seam
+      ctx.beginPath();
+      ctx.ellipse(0, 3, 24, 9, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
       ctx.lineWidth = 2;
       ctx.stroke();
+
+      // arms
+      ctx.beginPath();
+      ctx.ellipse(-28, 1, 8, 14, -0.4, 0, Math.PI * 2);
+      ctx.ellipse(28, 1, 8, 14, 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = avatar.skin || DEFAULT_AVATAR.skin;
+      ctx.fill();
+
+      // feet
+      ctx.beginPath();
+      ctx.ellipse(-11, 28, 8, 6, 0.12, 0, Math.PI * 2);
+      ctx.ellipse(11, 28, 8, 6, -0.12, 0, Math.PI * 2);
+      ctx.fillStyle = "#2c1f1a";
+      ctx.fill();
+
+      ctx.restore();
+
+      // head
+      ctx.save();
+      ctx.translate(0, -18);
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 16, 0, Math.PI * 2);
+      ctx.fillStyle = avatar.skin || DEFAULT_AVATAR.skin;
+      ctx.fill();
+
+      drawHairPatch(avatar);
+      drawEyes(avatar);
+      drawMouth(avatar);
+      drawAccessory(avatar);
+
+      ctx.restore();
+
+      // team ring
+      ctx.beginPath();
+      ctx.arc(0, 0, 38, 0, Math.PI * 2);
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawParticles() {
+      for (const p of worldRef.particles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = clamp(p.life / 28, 0, 1);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
 
     function drawTopBar(state) {
       const leftCardX = 16;
       const leftCardY = 14;
-      const leftCardW = 184;
-      const leftCardH = 52;
+      const leftCardW = 204;
+      const leftCardH = 56;
 
-      ctx.fillStyle = "rgba(0,0,0,0.44)";
+      ctx.fillStyle = "rgba(0,0,0,0.46)";
       ctx.fillRect(leftCardX, leftCardY, leftCardW, leftCardH);
 
-      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
       ctx.font = "bold 13px system-ui, -apple-system, Segoe UI, sans-serif";
       ctx.fillText(isHost ? "HOST VIEW" : "PLAYER VIEW", leftCardX + 12, leftCardY + 18);
 
       ctx.fillStyle = "rgba(255,255,255,0.74)";
       ctx.font = "12px system-ui, -apple-system, Segoe UI, sans-serif";
       const roleLine =
-        myControlIndex === -1 ? "Spectating this round" : `Control: P${myControlIndex + 1}`;
+        myControlIndex === -1
+          ? "Spectating this round"
+          : `Control: P${myControlIndex + 1}`;
       ctx.fillText(roleLine, leftCardX + 12, leftCardY + 36);
+      ctx.fillText("Drunk Wrestling", leftCardX + 12, leftCardY + 52);
 
-      const timerW = 148;
+      const timerW = 154;
       const timerX = W / 2 - timerW / 2;
       const timerY = 14;
 
-      ctx.fillStyle = "rgba(0,0,0,0.48)";
-      ctx.fillRect(timerX, timerY, timerW, 50);
+      ctx.fillStyle = "rgba(0,0,0,0.50)";
+      ctx.fillRect(timerX, timerY, timerW, 52);
 
       ctx.textAlign = "center";
       ctx.fillStyle = state.roundOver
@@ -510,25 +942,27 @@ export default function SumoGame({
         : "rgba(255,255,255,0.96)";
       ctx.font = "bold 23px system-ui, -apple-system, Segoe UI, sans-serif";
 
-      const timerText = state.roundOver ? "ROUND OVER" : `${Math.ceil(state.timeLeft)}`;
-      ctx.fillText(timerText, W / 2, timerY + 31);
+      const timerText = state.roundOver
+        ? "ROUND OVER"
+        : `${Math.ceil(state.timeLeft)}`;
+      ctx.fillText(timerText, W / 2, timerY + 32);
       ctx.textAlign = "left";
     }
 
     function drawBottomHint(state) {
-      const hintW = 448;
+      const hintW = 468;
       const hintH = 42;
       const hintX = W / 2 - hintW / 2;
       const hintY = H - 58;
 
-      ctx.fillStyle = "rgba(0,0,0,0.40)";
+      ctx.fillStyle = "rgba(0,0,0,0.42)";
       ctx.fillRect(hintX, hintY, hintW, hintH);
 
       ctx.textAlign = "center";
       ctx.font = "13px system-ui, -apple-system, Segoe UI, sans-serif";
       ctx.fillStyle = "rgba(255,255,255,0.88)";
 
-      let line = "Push your opponent out of the ring.";
+      let line = "Shove your mate off the pub mat.";
       if (!state.roundOver) {
         line += " Closest to centre wins on timeout.";
       } else {
@@ -542,17 +976,17 @@ export default function SumoGame({
     function drawWinnerPanel(state) {
       if (!state.roundOver) return;
 
-      const panelW = 300;
-      const panelH = 92;
+      const panelW = 316;
+      const panelH = 96;
       const panelX = W / 2 - panelW / 2;
       const panelY = H / 2 - panelH / 2;
 
-      ctx.fillStyle = "rgba(10,10,16,0.78)";
+      ctx.fillStyle = "rgba(10,10,16,0.80)";
       ctx.fillRect(panelX, panelY, panelW, panelH);
 
       ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.font = "bold 20px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = "bold 21px system-ui, -apple-system, Segoe UI, sans-serif";
       ctx.fillText("Round Complete", W / 2, panelY + 30);
 
       let label = "No winner";
@@ -560,9 +994,9 @@ export default function SumoGame({
       if (state.winnerKey === active.p2Key) label = "Winner: P2";
 
       ctx.font = "14px system-ui, -apple-system, Segoe UI, sans-serif";
-      ctx.fillStyle = "rgba(255,255,255,0.82)";
-      ctx.fillText(label, W / 2, panelY + 56);
-      ctx.fillText("Loading next game soon...", W / 2, panelY + 76);
+      ctx.fillStyle = "rgba(255,255,255,0.84)";
+      ctx.fillText(label, W / 2, panelY + 58);
+      ctx.fillText("Loading next game soon...", W / 2, panelY + 78);
       ctx.textAlign = "left";
     }
 
@@ -577,9 +1011,10 @@ export default function SumoGame({
       const pBlue = state.players[blueIndex];
       const pRed = state.players[redIndex];
 
-      if (pBlue) drawPlayer(pBlue, "#4DD0FF");
-      if (pRed) drawPlayer(pRed, "#FF5C86");
+      if (pBlue) drawWrestler(pBlue, "rgba(77,208,255,0.95)");
+      if (pRed) drawWrestler(pRed, "rgba(255,92,134,0.95)");
 
+      drawParticles();
       drawTopBar(state);
       drawBottomHint(state);
       drawWinnerPanel(state);
@@ -623,8 +1058,7 @@ export default function SumoGame({
       });
 
       setStatusLine(
-        `room=${code} • ${isHost ? "host" : "client"} • ` +
-          `P1=${active.p1Key} • P2=${active.p2Key}`
+        `room=${code} • ${isHost ? "host" : "client"} • P1=${active.p1Key} • P2=${active.p2Key}`
       );
     };
 
@@ -734,6 +1168,7 @@ export default function SumoGame({
               resolveCollision(w.players[0], w.players[1]);
             }
             w.players.forEach(checkRingOut);
+            updateParticles();
 
             const alive = w.players.filter((p) => p.alive);
             if (alive.length === 1) {
@@ -761,6 +1196,9 @@ export default function SumoGame({
             }
 
             w.tick += 1;
+          } else {
+            updateParticles();
+            w.players.forEach(integrate);
           }
         }
 
@@ -784,12 +1222,21 @@ export default function SumoGame({
           timeLeft: w.timeLeft,
           roundOver: w.roundOver,
           winnerKey: w.winnerKey,
+          impactFlash: w.impactFlash,
+          particles: w.particles,
           players: w.players.map((p) => ({
             key: p.key,
             x: p.x,
             y: p.y,
             r: p.r,
+            vx: p.vx,
+            vy: p.vy,
             alive: p.alive,
+            wobblePhase: p.wobblePhase,
+            bodyTilt: p.bodyTilt,
+            spin: p.spin,
+            ringOutT: p.ringOutT,
+            avatar: p.avatar,
           })),
         };
         wsSend({
@@ -836,6 +1283,8 @@ export default function SumoGame({
     active.hasTwo,
     active.p1Key,
     active.p2Key,
+    active.p1Avatar,
+    active.p2Avatar,
     code,
     isHost,
     myControlIndex,
@@ -845,7 +1294,7 @@ export default function SumoGame({
   if (!active.hasTwo) {
     return (
       <div style={waitingCard}>
-        Waiting for 2 players (P1 + P2) to start Sumo…
+        Waiting for 2 players (P1 + P2) to start Drunk Wrestling…
       </div>
     );
   }
@@ -855,7 +1304,7 @@ export default function SumoGame({
       <div style={topInfoCard}>
         <div style={infoBlock}>
           <div style={infoLabel}>Game</div>
-          <div style={infoValue}>Sumo Showdown</div>
+          <div style={infoValue}>Drunk Wrestling</div>
         </div>
 
         <div style={infoBlock}>
@@ -870,18 +1319,14 @@ export default function SumoGame({
       </div>
 
       <p style={instructionText}>
-        Push your opponent out of the ring. If the timer reaches zero, the
-        wrestler closest to the centre wins.
+        Shove your mate off the pub mat. If time runs out, the wrestler closest
+        to the centre wins.
       </p>
 
       <div style={statusText}>{statusLine}</div>
 
       <div style={canvasWrap}>
-        <canvas
-          ref={canvasRef}
-          tabIndex={0}
-          style={canvasStyle}
-        />
+        <canvas ref={canvasRef} tabIndex={0} style={canvasStyle} />
       </div>
 
       {isPhoneLike && myControlIndex !== -1 && (
@@ -935,7 +1380,7 @@ export default function SumoGame({
           </div>
 
           <div style={mobileHelpText}>
-            Hold a direction to move your wrestler.
+            Hold a direction to wobble-shove your wrestler.
           </div>
         </div>
       )}

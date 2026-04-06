@@ -169,18 +169,17 @@ export default function Arena() {
         return;
       }
 
-      const everyoneHasAvatar = players.every(
-        (p) => p.avatar_json || p.avatarJson
-      );
-
-      if (everyoneHasAvatar) {
-        setEnrichedPlayers(players);
-        return;
-      }
-
       const ids = players
-        .map((p) => p.user_id || p.id)
+        .map(
+          (p) =>
+            p.user_id ??
+            p.userId ??
+            p.profile_id ??
+            p.profileId ??
+            null
+        )
         .filter(Boolean)
+        .map(String)
         .filter((v, i, arr) => arr.indexOf(v) === i);
 
       if (ids.length === 0) {
@@ -199,20 +198,37 @@ export default function Arena() {
         return;
       }
 
-      const byId = new Map(profs.map((p) => [p.id, p]));
+      const byId = new Map((profs || []).map((p) => [String(p.id), p]));
 
       const merged = players.map((p) => {
-        const prof = byId.get(p.user_id || p.id);
-        if (!prof) return p;
+        const key = String(
+          p.user_id ??
+            p.userId ??
+            p.profile_id ??
+            p.profileId ??
+            ""
+        );
+
+        const prof = byId.get(key);
+
+        if (!prof) {
+          return {
+            ...p,
+            avatar_json: p.avatar_json ?? p.avatarJson ?? null,
+            avatarJson: p.avatarJson ?? p.avatar_json ?? null,
+          };
+        }
+
         return {
           ...p,
           name: p.name || prof.display_name,
-          display_name: prof.display_name,
-          avatar_json: prof.avatar_json,
-          avatarJson: prof.avatar_json,
+          display_name: prof.display_name || p.display_name || p.name,
+          avatar_json: prof.avatar_json ?? p.avatar_json ?? p.avatarJson ?? null,
+          avatarJson: prof.avatar_json ?? p.avatarJson ?? p.avatar_json ?? null,
         };
       });
 
+      console.log("ARENA merged players:", merged);
       setEnrichedPlayers(merged);
     }
 
@@ -238,7 +254,12 @@ export default function Arena() {
 
     for (let i = 0; i < slotPlayers.length; i++) {
       const p = slotPlayers[i];
-      const key = p?.user_id ?? p?.userId ?? p?.id;
+      const key =
+        p?.user_id ??
+        p?.userId ??
+        p?.profile_id ??
+        p?.profileId ??
+        p?.id;
       if (key && String(key) === uid) return i;
     }
     return -1;
@@ -314,13 +335,6 @@ export default function Arena() {
     }
   }
 
-  const topStripPlayers = isTablet
-    ? [slotPlayers[0], slotPlayers[1]].filter(Boolean)
-    : [];
-  const bottomStripPlayers = isTablet
-    ? [slotPlayers[2], slotPlayers[3]].filter(Boolean)
-    : [];
-
   return (
     <div style={page}>
       <div style={topGlow} />
@@ -389,9 +403,15 @@ export default function Arena() {
             }}
           >
             <div style={legendTitle}>Quick notes</div>
-            <div style={legendText}>Your dot is <strong>blue</strong> on your screen.</div>
-            <div style={legendText}>Opponents appear <strong>red</strong>.</div>
-            <div style={legendText}>Click the game area first if controls need focus.</div>
+            <div style={legendText}>
+              Your dot is <strong>blue</strong> on your screen.
+            </div>
+            <div style={legendText}>
+              Opponents appear <strong>red</strong>.
+            </div>
+            <div style={legendText}>
+              Click the game area first if controls need focus.
+            </div>
           </div>
         </section>
 
@@ -401,8 +421,9 @@ export default function Arena() {
             <div
               style={{
                 ...mobilePlayersGrid,
-                gridTemplateColumns:
-                  isPhone ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))",
+                gridTemplateColumns: isPhone
+                  ? "repeat(2, minmax(0, 1fr))"
+                  : "repeat(4, minmax(0, 1fr))",
               }}
             >
               {slotPlayers.map((player, index) => (

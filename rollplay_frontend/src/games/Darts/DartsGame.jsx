@@ -18,6 +18,14 @@ const DART_ASSET_BASE = "/darts-assets/darts";
 const BASE_TARGET_SPEED = 1.55;
 const TARGET_SPEED_STEP = 0.22;
 const MAX_TARGET_SPEED = 3.2;
+const CONFETTI_COLOURS = [
+  "#f4c431",
+  "#ff5c86",
+  "#4dd0ff",
+  "#20d48a",
+  "#ffffff",
+  "#ff9d2f",
+];
 
 function getPlayerKey(player) {
   if (!player) return "";
@@ -50,42 +58,55 @@ function safeParseAvatar(player) {
 
 function getThrowSet(activePlayer) {
   const avatar = safeParseAvatar(activePlayer);
+  const throwStyle = String(avatar?.throwStyle || "strong")
+    .trim()
+    .toLowerCase();
 
-  const accessory = avatar?.accessory || "none";
-  const outfit = avatar?.outfit || "hoodie";
-  const bodyShape = avatar?.bodyShape || "round";
+  if (throwStyle === "robot") {
+    return {
+      handType: "robot",
+      dartType: "robot",
+      openSrc: `${HAND_ASSET_BASE}/robot_open.png`,
+      closedSrc: `${HAND_ASSET_BASE}/robot_closed.png`,
+      dartSrc: `${DART_ASSET_BASE}/robot_dart.png`,
+    };
+  }
 
-  let handType = "strong";
-  let dartType = "classic";
+  if (throwStyle === "lion") {
+    return {
+      handType: "lion",
+      dartType: "lion",
+      openSrc: `${HAND_ASSET_BASE}/lion_open.png`,
+      closedSrc: `${HAND_ASSET_BASE}/lion_closed.png`,
+      dartSrc: `${DART_ASSET_BASE}/lion_dart.png`,
+    };
+  }
 
-  if (outfit === "armor") {
-    handType = "robot";
-    dartType = "robot";
-  } else if (accessory === "earring") {
-    handType = "lion";
-    dartType = "lion";
-  } else if (accessory === "cap") {
-    handType = "skinny";
-    dartType = "classic";
-  } else if (bodyShape === "bean") {
-    handType = "skinny";
-    dartType = "classic";
-  } else {
-    handType = "strong";
-    dartType = "heavy";
+  if (throwStyle === "skinny") {
+    return {
+      handType: "skinny",
+      dartType: "classic",
+      openSrc: `${HAND_ASSET_BASE}/skinny_open.png`,
+      closedSrc: `${HAND_ASSET_BASE}/skinny_closed.png`,
+      dartSrc: `${DART_ASSET_BASE}/classic_dart.png`,
+    };
   }
 
   return {
-    handType,
-    dartType,
-    openSrc: `${HAND_ASSET_BASE}/${handType}_open.png`,
-    closedSrc: `${HAND_ASSET_BASE}/${handType}_closed.png`,
-    dartSrc: `${DART_ASSET_BASE}/${dartType}_dart.png`,
+    handType: "strong",
+    dartType: "heavy",
+    openSrc: `${HAND_ASSET_BASE}/strong_open.png`,
+    closedSrc: `${HAND_ASSET_BASE}/strong_closed.png`,
+    dartSrc: `${DART_ASSET_BASE}/heavy_dart.png`,
   };
 }
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function randPick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 export default function DartsGame({
@@ -145,7 +166,13 @@ export default function DartsGame({
     myPlayerIndex === -1 ? "Spectating" : `You are P${myPlayerIndex + 1}`;
 
   const activePlayer = orderedPlayers[currentPlayerIndex] || null;
-  const activeThrowSet = useMemo(() => getThrowSet(activePlayer), [activePlayer]);
+  const activeThrowSet = getThrowSet(activePlayer);
+
+  console.log(
+    "throwStyle in use:",
+    safeParseAvatar(activePlayer)?.throwStyle,
+    activeThrowSet
+  );
 
   const stateRef = useRef({
     score: 0,
@@ -166,6 +193,7 @@ export default function DartsGame({
     },
     target: { x: 220, y: 128, radius: 68, dir: 1, speed: BASE_TARGET_SPEED },
     particles: [],
+    confetti: [],
     hitFlashTimer: 0,
     stuckDarts: [],
   });
@@ -297,6 +325,7 @@ export default function DartsGame({
       speed: BASE_TARGET_SPEED,
     };
     s.particles = [];
+    s.confetti = [];
     s.hitFlashTimer = 0;
     s.stuckDarts = [];
     syncUiFromState();
@@ -386,6 +415,7 @@ export default function DartsGame({
           dart: payload.dart || stateRef.current.dart,
           target: payload.target || stateRef.current.target,
           particles: payload.particles || stateRef.current.particles,
+          confetti: payload.confetti || stateRef.current.confetti,
           stuckDarts: payload.stuckDarts || stateRef.current.stuckDarts,
           hitFlashTimer:
             typeof payload.hitFlashTimer === "number"
@@ -478,6 +508,23 @@ export default function DartsGame({
       }
     }
 
+    function createConfetti(x, y) {
+      for (let i = 0; i < 34; i++) {
+        s.confetti.push({
+          x,
+          y,
+          dx: (Math.random() - 0.5) * 7,
+          dy: -Math.random() * 3.8 - 0.5,
+          gravity: 0.12 + Math.random() * 0.06,
+          size: 4 + Math.random() * 5,
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: (Math.random() - 0.5) * 0.28,
+          color: randPick(CONFETTI_COLOURS),
+          life: 28 + Math.floor(Math.random() * 10),
+        });
+      }
+    }
+
     function addStuckDart(hitX, hitY, style) {
       const offsetX = hitX - s.target.x;
       const offsetY = hitY - s.target.y;
@@ -521,6 +568,7 @@ export default function DartsGame({
 
       s.hitFlashTimer = 14;
       createHitEffect(s.target.x, s.target.y);
+      createConfetti(s.target.x, s.target.y);
       addStuckDart(s.dart.x, s.dart.y, s.dart.style);
       resetDart();
 
@@ -680,7 +728,6 @@ export default function DartsGame({
 
       ctx.setLineDash([]);
 
-      // faint arrow tip
       ctx.fillStyle = `rgba(255, 237, 198, ${pulse + 0.06})`;
       ctx.beginPath();
       ctx.moveTo(startX, endY - 10);
@@ -806,6 +853,30 @@ export default function DartsGame({
       s.particles = parts.filter((p) => p.life > 0);
     }
 
+    function drawConfetti() {
+      const pieces = s.confetti;
+      for (const piece of pieces) {
+        ctx.save();
+        ctx.translate(piece.x, piece.y);
+        ctx.rotate(piece.rotation);
+        ctx.fillStyle = piece.color;
+        ctx.fillRect(
+          -piece.size / 2,
+          -piece.size / 2,
+          piece.size,
+          piece.size * 0.7
+        );
+        ctx.restore();
+
+        piece.x += piece.dx;
+        piece.y += piece.dy;
+        piece.dy += piece.gravity;
+        piece.rotation += piece.rotationSpeed;
+        piece.life -= 1;
+      }
+      s.confetti = pieces.filter((piece) => piece.life > 0);
+    }
+
     function drawCanvasHud() {
       ctx.fillStyle = "rgba(0,0,0,0.28)";
       ctx.fillRect(18, 18, 126, 40);
@@ -905,9 +976,17 @@ export default function DartsGame({
         scale
       );
 
+      //if (!drawn) {
+      //  drawFallbackHand(now);
+      //}
       if (!drawn) {
-        drawFallbackHand(now);
+        ctx.save();
+        ctx.fillStyle = "rgba(255, 80, 80, 0.95)";
+        ctx.font = "bold 18px system-ui, sans-serif";
+        ctx.fillText(`HAND LOAD FAIL: ${activeThrowSet.handType}`, 120, 520);
+        ctx.restore();
       }
+
     }
 
     let timerInterval = null;
@@ -940,6 +1019,7 @@ export default function DartsGame({
             dart: s.dart,
             target: s.target,
             particles: s.particles,
+            confetti: s.confetti,
             stuckDarts: s.stuckDarts,
             hitFlashTimer: s.hitFlashTimer,
           },
@@ -969,6 +1049,7 @@ export default function DartsGame({
       drawCanvasHud();
       drawFlyingDart();
       drawParticles();
+      drawConfetti();
       drawPubStage();
       drawHandLauncher(now);
 

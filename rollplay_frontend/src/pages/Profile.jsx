@@ -1,4 +1,3 @@
-// src/pages/Profile.jsx
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
@@ -17,7 +16,6 @@ export default function Profile() {
     profile?.displayName || profile?.display_name || ""
   );
 
-  // avatarJson is ALWAYS a string in React state
   const [avatarJson, setAvatarJson] = useState(() => {
     if (!profile) return null;
     if (profile.avatarJson) return profile.avatarJson;
@@ -309,7 +307,6 @@ export default function Profile() {
 
   return (
     <div style={page}>
-      {/* TOP BAR */}
       <header
         style={{
           ...topBar,
@@ -367,7 +364,6 @@ export default function Profile() {
             gap: isPhone ? 18 : 24,
           }}
         >
-          {/* LEFT SIDE */}
           <div style={sideCard}>
             <p style={sectionEyebrow}>Profile overview</p>
             <h1
@@ -415,16 +411,15 @@ export default function Profile() {
               <ul style={tipsList}>
                 <li>Your public display name in sessions</li>
                 <li>Your avatar and appearance</li>
+                <li>Your darts throw style</li>
                 <li>Your demo card and host upgrade status</li>
               </ul>
             </div>
           </div>
 
-          {/* RIGHT SIDE */}
           <div style={mainColumn}>
             {error && <p style={errorText}>{error}</p>}
 
-            {/* BASIC DETAILS */}
             <div style={contentCard}>
               <p style={sectionEyebrow}>Profile details</p>
               <h2 style={cardHeading}>Basic information</h2>
@@ -443,7 +438,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* AVATAR */}
             <div style={contentCard}>
               <p style={sectionEyebrow}>Avatar</p>
               <h2 style={cardHeading}>Appearance</h2>
@@ -517,7 +511,6 @@ export default function Profile() {
               )}
             </div>
 
-            {/* HOSTING / CARD */}
             <div style={contentCard}>
               <p style={sectionEyebrow}>Hosting</p>
               <h2 style={cardHeading}>Demo card & upgrade</h2>
@@ -575,7 +568,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* ACTIONS */}
             <div style={contentCard}>
               <p style={sectionEyebrow}>Actions</p>
               <h2 style={cardHeading}>Save or leave</h2>
@@ -612,8 +604,6 @@ export default function Profile() {
     </div>
   );
 }
-
-/* --- styles --- */
 
 const page = {
   minHeight: "100vh",

@@ -1,4 +1,3 @@
-// src/components/AvatarBuilder.jsx
 import { useState, useMemo, useEffect } from "react";
 
 /**
@@ -8,26 +7,28 @@ import { useState, useMemo, useEffect } from "react";
 
 const DEFAULT_AVATAR = {
   displayName: "Player",
-  badge: "common", // common | rare | epic (for future use)
+  badge: "common",
 
-  bodyShape: "round", // round | square | bean
+  bodyShape: "round",
   skin: "#F2C7A5",
 
-  hairStyle: "short", // short | puff | long | none
+  hairStyle: "short",
   hair: "#2C1E1A",
 
-  eyeStyle: "dots", // dots | happy | sleepy
+  eyeStyle: "dots",
   eye: "#1A2433",
 
-  mouthStyle: "smile", // smile | neutral | open
+  mouthStyle: "smile",
 
-  accessory: "none", // none | glasses | earring | cap
+  accessory: "none",
 
-  outfit: "hoodie", // hoodie | tee | armor
+  outfit: "hoodie",
   outfitColor: "#7C5CFF",
 
-  bg: "nebula", // nebula | sunset | mint | none
+  bg: "nebula",
   tilt: 0,
+
+  throwStyle: "strong", // strong | skinny | lion | robot
 };
 
 const BODY_SHAPES = [
@@ -75,7 +76,13 @@ const BACKGROUNDS = [
   { value: "none", label: "None" },
 ];
 
-// Simple palettes for randomize
+const THROW_STYLES = [
+  { value: "strong", label: "Strong Arm" },
+  { value: "skinny", label: "Skinny Arm" },
+  { value: "lion", label: "Lion Paw" },
+  { value: "robot", label: "Robot Arm" },
+];
+
 const PALETTES = {
   skins: [
     "#F7D4B5",
@@ -103,8 +110,6 @@ function randPick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/* --- SVG helpers --- */
-
 function bodyPath(shape) {
   if (shape === "square") {
     return `<rect x="110" y="95" rx="54" ry="54" width="180" height="200" />`;
@@ -112,7 +117,6 @@ function bodyPath(shape) {
   if (shape === "bean") {
     return `<path d="M135 110 C155 85 205 78 232 98 C260 118 285 140 278 175 C272 210 294 232 274 258 C254 284 215 302 182 292 C150 282 120 258 118 225 C116 192 115 135 135 110 Z" />`;
   }
-  // round
   return `<path d="M200 92 c70 0 105 58 105 128 c0 70 -35 118 -105 118 c-70 0 -105 -48 -105 -118 c0 -70 35 -128 105 -128 z" />`;
 }
 
@@ -153,7 +157,6 @@ function layerBackground(model) {
       <rect x="0" y="0" width="400" height="400" fill="url(#bgSun)"/>
     `;
   }
-  // mint
   return `
     <defs>
       <radialGradient id="bgMint" cx="50%" cy="35%" r="75%">
@@ -194,7 +197,6 @@ function layerOutfit(model) {
   } else if (t === "armor") {
     path = `M128 294 C152 268 174 258 200 258 C226 258 248 268 272 294 L260 346 C236 366 220 372 200 372 C180 372 164 366 140 346 Z`;
   } else {
-    // hoodie
     path = `M120 294 C140 266 165 252 200 252 C235 252 260 266 280 294 L270 346 C248 366 226 374 200 374 C174 374 152 366 130 346 Z`;
   }
   return `
@@ -222,7 +224,6 @@ function layerHair(model) {
       </g>
     `;
   } else {
-    // long
     path = `M122 178 C120 130 155 92 205 92 C252 92 285 125 288 175 C290 220 276 270 268 298 C246 318 218 328 184 326 C154 322 132 308 118 288 C112 250 120 205 122 178 Z`;
   }
   return `
@@ -257,7 +258,6 @@ function layerEyes(model) {
     `;
   }
 
-  // sleepy
   return `
     <g aria-label="Eyes">
       <path d="M152 186 Q168 198 184 186" fill="none" stroke="#0B1020" stroke-width="6" stroke-linecap="round"/>
@@ -300,7 +300,6 @@ function layerAccessory(model) {
       </g>
     `;
   }
-  // cap
   return `
     <g>
       <path d="M120 160 C130 120 160 98 200 98 C250 98 280 130 282 162 C255 140 230 130 200 130 C170 130 145 140 120 160 Z" fill="#0B1020" />
@@ -338,7 +337,7 @@ function renderAvatarSVG(model) {
 
   const layers = [
     layerBackground(model),
-    `<ellipse cx="200" cy="380" rx="110" ry="16" fill="rgba(0,0,0,.35)" />`, // ground shadow
+    `<ellipse cx="200" cy="380" rx="110" ry="16" fill="rgba(0,0,0,.35)" />`,
     `<g transform="rotate(${tilt} 200 220)">`,
     layerOutfit(model),
     layerBody(model),
@@ -360,10 +359,7 @@ function renderAvatarSVG(model) {
   `;
 }
 
-/* --- React component --- */
-
 export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
-  // handle both string and object for initialAvatar
   const [avatar, setAvatar] = useState(() => {
     if (initialAvatar) {
       try {
@@ -373,14 +369,11 @@ export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
         if (typeof initialAvatar === "object") {
           return { ...DEFAULT_AVATAR, ...initialAvatar };
         }
-      } catch {
-        // ignore and fall back to default
-      }
+      } catch {}
     }
     return { ...DEFAULT_AVATAR };
   });
 
-  // resync local state when parent passes a NEW initialAvatar
   useEffect(() => {
     if (!initialAvatar) return;
     try {
@@ -393,12 +386,9 @@ export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
         return;
       }
       setAvatar({ ...DEFAULT_AVATAR, ...base });
-    } catch {
-      // keep existing avatar if parse fails
-    }
+    } catch {}
   }, [initialAvatar]);
 
-  // push changes up if parent wants them
   useEffect(() => {
     if (onAvatarChange) {
       onAvatarChange(avatar);
@@ -426,6 +416,7 @@ export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
       outfit: randPick(OUTFITS).value,
       bg: randPick(BACKGROUNDS).value,
       tilt: Math.floor(Math.random() * 21) - 10,
+      throwStyle: randPick(THROW_STYLES).value,
     }));
   }
 
@@ -612,6 +603,21 @@ export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
           </div>
         </div>
 
+        <div style={fieldGroup}>
+          <label style={labelStyle}>Darts Throw Style</label>
+          <select
+            style={selectStyle}
+            value={avatar.throwStyle}
+            onChange={(e) => update("throwStyle", e.target.value)}
+          >
+            {THROW_STYLES.map((style) => (
+              <option key={style.value} value={style.value}>
+                {style.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <button type="button" style={randomBtn} onClick={randomize}>
           Randomise Avatar
         </button>
@@ -619,8 +625,6 @@ export default function AvatarBuilder({ initialAvatar, onAvatarChange }) {
     </div>
   );
 }
-
-/* --- Styles (inline) --- */
 
 const wrapperStyle = {
   display: "flex",
