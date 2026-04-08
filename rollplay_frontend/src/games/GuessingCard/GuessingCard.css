@@ -1,68 +1,576 @@
-.guessing-card-page {
+.gc-shell {
   width: 100%;
-  max-width: 720px;
+  max-width: 980px;
   margin: 0 auto;
   color: white;
-  text-align: center;
-}
-
-.guessing-card-page .title {
-  margin-bottom: 4px;
-}
-
-.guessing-card-page .subtitle {
-  margin-top: 0;
-  font-size: 16px;
-  opacity: 0.8;
-}
-
-.card-row {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 16px;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.card {
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 16px;
-  padding: 12px 16px;
+.gc-top-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gc-info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 100px;
 }
 
-.card-face {
-  margin-top: 8px;
-  font-size: 32px;
+.gc-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+}
+
+.gc-info-value {
+  font-size: 14px;
   font-weight: 700;
 }
 
-.distance {
+.gc-title {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  line-height: 1;
+  font-weight: 900;
+}
+
+.gc-instruction {
+  margin: 0 auto;
+  max-width: 720px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.gc-phase-card {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.gc-phase-main {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.gc-phase-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.gc-table-wrap {
+  position: relative;
+  width: 100%;
+  padding: 10px 0 0;
+}
+
+.gc-table-outer-glow {
+  position: absolute;
+  inset: 24px 8% 8px 8%;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 191, 73, 0.12),
+    rgba(255, 191, 73, 0.03) 45%,
+    transparent 70%
+  );
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.gc-table {
+  position: relative;
+  width: 100%;
+  min-height: 560px;
+  border-radius: 220px 220px 42px 42px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 220, 120, 0.08), transparent 30%),
+    radial-gradient(circle at 50% 100%, rgba(0, 0, 0, 0.18), transparent 55%),
+    linear-gradient(180deg, #14553d 0%, #0f3e2d 55%, #0c3225 100%);
+  border: 10px solid #5a3a28;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 230, 180, 0.16),
+    inset 0 -40px 80px rgba(0, 0, 0, 0.18),
+    0 22px 48px rgba(0, 0, 0, 0.32);
+}
+
+.gc-table-wood {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0%, transparent 86%, rgba(0, 0, 0, 0.14) 100%);
+}
+
+.gc-dealer-area {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(320px, 90%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+}
+
+.gc-dealer-badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f6cf64, #d9a928);
+  color: #21150b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
+.gc-dealer-label {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.gc-dealer-status {
+  font-size: 13px;
+  opacity: 0.82;
+}
+
+.gc-felt-center-mark {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  transform: translate(-50%, -50%);
+  width: min(420px, 84%);
+  height: 120px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.gc-felt-center-mark span {
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.12);
+  text-transform: uppercase;
+}
+
+.gc-seat-row {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gc-seat {
+  position: absolute;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  transition: transform 180ms ease, filter 180ms ease;
+}
+
+.gc-seat:hover {
+  transform: translateY(-2px);
+}
+
+.gc-seat-name {
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  max-width: 130px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gc-seat-status {
   font-size: 12px;
+  opacity: 0.82;
+  text-align: center;
+}
+
+.gc-seat.is-locked .gc-seat-status {
+  color: #f6cf64;
+}
+
+.gc-seat.is-winner .gc-seat-status {
+  color: #ffd978;
+  font-weight: 800;
+}
+
+.seat-far-left {
+  left: 5%;
+  bottom: 28px;
+}
+
+.seat-left {
+  left: 19%;
+  bottom: 58px;
+}
+
+.seat-center {
+  left: 50%;
+  bottom: 36px;
+  transform: translateX(-50%);
+}
+
+.seat-right {
+  right: 19%;
+  bottom: 58px;
+}
+
+.seat-far-right {
+  right: 5%;
+  bottom: 28px;
+}
+
+.gc-playing-card {
+  position: relative;
+  width: 92px;
+  height: 128px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, #fffef9 0%, #f6f1e6 100%);
+  border: 2px solid rgba(20, 20, 20, 0.08);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  color: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gc-ai-card {
+  width: 104px;
+  height: 144px;
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+}
+
+.gc-card-center {
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.gc-card-corner {
+  position: absolute;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.gc-card-corner.top-left {
+  top: 10px;
+  left: 10px;
+}
+
+.gc-card-corner.bottom-right {
+  right: 10px;
+  bottom: 10px;
+  transform: rotate(180deg);
+}
+
+.winner-card {
+  transform: translateY(-4px) scale(1.04);
+  box-shadow:
+    0 0 0 2px rgba(246, 207, 100, 0.7),
+    0 18px 34px rgba(0, 0, 0, 0.28);
+}
+
+.gc-controls-card,
+.gc-outcome-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gc-controls-title,
+.gc-outcome-title {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #f6cf64;
+  font-weight: 800;
+}
+
+.gc-controls-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.gc-controls-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gc-player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gc-player-name {
+  font-weight: 700;
+}
+
+.gc-select {
+  min-width: 84px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.22);
+  color: white;
+  outline: none;
+}
+
+.gc-lock-btn,
+.gc-replay-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.gc-lock-btn {
+  background: linear-gradient(180deg, #f6cf64, #d9a928);
+  color: #1d140a;
+}
+
+.gc-replay-btn {
+  background: linear-gradient(180deg, #ffffff, #e7e7e7);
+  color: #111827;
+}
+
+.gc-lock-btn:hover,
+.gc-replay-btn:hover {
+  transform: translateY(-1px);
+}
+
+.gc-lock-btn:disabled,
+.gc-replay-btn:disabled,
+.gc-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gc-outcome-text {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 1.6;
+  opacity: 0.94;
+}
+
+.gc-finish-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.gc-waiting {
+  font-size: 14px;
   opacity: 0.8;
 }
 
-.controls {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
+@media (max-width: 900px) {
+  .gc-table {
+    min-height: 600px;
+  }
+
+  .seat-far-left {
+    left: 2%;
+    bottom: 20px;
+  }
+
+  .seat-left {
+    left: 12%;
+    bottom: 54px;
+  }
+
+  .seat-right {
+    right: 12%;
+    bottom: 54px;
+  }
+
+  .seat-far-right {
+    right: 2%;
+    bottom: 20px;
+  }
 }
 
-.player-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+@media (max-width: 700px) {
+  .gc-table {
+    min-height: 720px;
+    border-radius: 44px;
+  }
+
+  .gc-felt-center-mark {
+    top: 48%;
+    width: 82%;
+    height: 88px;
+  }
+
+  .gc-seat {
+    width: 132px;
+  }
+
+  .gc-playing-card {
+    width: 82px;
+    height: 114px;
+  }
+
+  .gc-ai-card {
+    width: 92px;
+    height: 128px;
+  }
+
+  .gc-card-center {
+    font-size: 34px;
+  }
+
+  .seat-far-left,
+  .seat-left,
+  .seat-center,
+  .seat-right,
+  .seat-far-right {
+    transform: none !important;
+  }
+
+  .seat-far-left {
+    left: 8%;
+    bottom: 196px;
+  }
+
+  .seat-left {
+    left: 54%;
+    bottom: 196px;
+  }
+
+  .seat-center {
+    left: 50%;
+    bottom: 84px;
+    transform: translateX(-50%) !important;
+  }
+
+  .seat-right {
+    right: 8%;
+    bottom: 196px;
+  }
+
+  .seat-far-right {
+    right: 54%;
+    bottom: 196px;
+  }
 }
 
-.player-controls select {
-  padding: 4px 6px;
-}
+@media (max-width: 560px) {
+  .gc-top-info {
+    gap: 10px;
+  }
 
-.player-controls button {
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
+  .gc-table {
+    min-height: 760px;
+    padding-top: 8px;
+  }
+
+  .gc-dealer-area {
+    top: 22px;
+  }
+
+  .gc-seat {
+    width: 122px;
+  }
+
+  .gc-seat-name {
+    max-width: 112px;
+    font-size: 12px;
+  }
+
+  .gc-seat-status {
+    font-size: 11px;
+  }
+
+  .gc-playing-card {
+    width: 74px;
+    height: 104px;
+    border-radius: 14px;
+  }
+
+  .gc-ai-card {
+    width: 84px;
+    height: 116px;
+  }
+
+  .gc-card-center {
+    font-size: 30px;
+  }
+
+  .gc-card-corner {
+    font-size: 14px;
+  }
+
+  .seat-far-left {
+    left: 6%;
+    bottom: 210px;
+  }
+
+  .seat-left {
+    left: 52%;
+    bottom: 210px;
+  }
+
+  .seat-center {
+    bottom: 92px;
+  }
+
+  .seat-right {
+    right: 6%;
+    bottom: 210px;
+  }
+
+  .seat-far-right {
+    right: 52%;
+    bottom: 210px;
+  }
 }

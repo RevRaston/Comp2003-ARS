@@ -23,6 +23,23 @@ function getUserKey(p) {
   return k ? String(k) : "";
 }
 
+function getSeatClass(index, total) {
+  if (total <= 1) return "seat-center";
+
+  if (total === 2) {
+    return index === 0 ? "seat-left" : "seat-right";
+  }
+
+  if (total === 3) {
+    return ["seat-left", "seat-center", "seat-right"][index] || "seat-center";
+  }
+
+  return (
+    ["seat-far-left", "seat-left", "seat-right", "seat-far-right"][index] ||
+    "seat-center"
+  );
+}
+
 export default function GuessingCardGame({
   sessionCode,
   players = [],
@@ -55,6 +72,7 @@ export default function GuessingCardGame({
     aiCard: null,
     players: [],
     outcome: "",
+    winnerIds: [],
     tick: 0,
   });
 
@@ -64,6 +82,7 @@ export default function GuessingCardGame({
     aiCard: null,
     players: [],
     outcome: "",
+    winnerIds: [],
   });
 
   function syncUiFromState() {
@@ -74,6 +93,7 @@ export default function GuessingCardGame({
       aiCard: s.aiCard,
       players: s.players,
       outcome: s.outcome,
+      winnerIds: s.winnerIds || [],
     });
   }
 
@@ -151,7 +171,10 @@ export default function GuessingCardGame({
         ) {
           announcedRef.current = true;
           onRoundCompleteRef.current({
-            winnerKey: null,
+            winnerKey:
+              stateRef.current.winnerIds?.length === 1
+                ? stateRef.current.winnerIds[0]
+                : null,
             outcome: stateRef.current.outcome,
           });
         }
@@ -172,7 +195,6 @@ export default function GuessingCardGame({
     if (!isHost) return;
 
     const s = stateRef.current;
-
     if (!s.players.length) return;
 
     const interval = setInterval(() => {
@@ -212,14 +234,16 @@ export default function GuessingCardGame({
             };
           });
 
+          s.winnerIds = winners;
+
           if (winners.length === 1) {
             const winner = s.players.find((p) => p.id === winners[0]);
-            s.outcome = `${winner?.name || "Player"} wins 🎉`;
+            s.outcome = `${winner?.name || "Player"} wins the hand`;
           } else {
             const names = winners
               .map((id) => s.players.find((p) => p.id === id)?.name)
               .filter(Boolean);
-            s.outcome = `It's a tie between ${names.join(", ")}!`;
+            s.outcome = `Split hand: ${names.join(", ")}`;
           }
 
           s.phase = "reveal";
@@ -239,6 +263,7 @@ export default function GuessingCardGame({
           aiCard: s.aiCard,
           players: s.players,
           outcome: s.outcome,
+          winnerIds: s.winnerIds,
           tick: s.tick,
         },
       });
@@ -250,7 +275,7 @@ export default function GuessingCardGame({
       ) {
         announcedRef.current = true;
         onRoundCompleteRef.current({
-          winnerKey: null,
+          winnerKey: s.winnerIds?.length === 1 ? s.winnerIds[0] : null,
           outcome: s.outcome,
         });
       }
@@ -259,7 +284,6 @@ export default function GuessingCardGame({
     return () => clearInterval(interval);
   }, [isHost, code, playerList.length]);
 
-  // Host controls only (for MVP)
   function updatePlayerValue(id, value) {
     if (!isHost) return;
 
@@ -296,6 +320,7 @@ export default function GuessingCardGame({
     s.timer = 3;
     s.aiCard = null;
     s.outcome = "";
+    s.winnerIds = [];
     s.tick = 0;
     s.players = s.players.map((p) => ({
       ...p,
@@ -305,20 +330,34 @@ export default function GuessingCardGame({
     }));
 
     syncUiFromState();
+
+    wsSend({
+      type: "guessing_card_state",
+      sessionCode: code,
+      payload: {
+        phase: s.phase,
+        timer: s.timer,
+        aiCard: s.aiCard,
+        players: s.players,
+        outcome: s.outcome,
+        winnerIds: s.winnerIds,
+        tick: s.tick,
+      },
+    });
   }
 
   let heading = "";
   let subheading = "";
 
   if (ui.phase === "countdown") {
-    heading = ui.timer > 0 ? `${ui.timer}…` : "Go!";
-    subheading = "Get ready to lock in your guesses.";
+    heading = ui.timer > 0 ? `${ui.timer}…` : "Deal!";
+    subheading = "Dealer is preparing the next hand.";
   } else if (ui.phase === "picking") {
-    heading = `Pick your cards`;
+    heading = "Place your guess";
     subheading = `${ui.timer}s remaining`;
   } else {
-    heading = "Results";
-    subheading = "The AI card has been revealed.";
+    heading = "Showdown";
+    subheading = "Dealer card revealed.";
   }
 
   return (
@@ -326,13 +365,13 @@ export default function GuessingCardGame({
       <div className="gc-top-info">
         <div className="gc-info-block">
           <div className="gc-info-label">Game</div>
-          <div className="gc-info-value">Guessing Card</div>
+          <div className="gc-info-value">Dealer Guess</div>
         </div>
 
         <div className="gc-info-block">
           <div className="gc-info-label">Role</div>
           <div className="gc-info-value">
-            {isHost ? "Host controls MVP picks" : "Watching synced round"}
+            {isHost ? "Dealer / Host" : "Player Table View"}
           </div>
         </div>
 
@@ -342,11 +381,11 @@ export default function GuessingCardGame({
         </div>
       </div>
 
-      <h1 className="gc-title">Guessing Card</h1>
+      <h1 className="gc-title">Dealer Guess</h1>
 
       <p className="gc-instruction">
-        Choose the card value closest to the hidden AI card. The smallest
-        distance wins the round.
+        Pick the card value closest to the dealer’s hidden card. Closest guess
+        wins the hand.
       </p>
 
       <div className="gc-phase-card">
@@ -354,36 +393,94 @@ export default function GuessingCardGame({
         <div className="gc-phase-sub">{subheading}</div>
       </div>
 
-      <div className="gc-card-row">
-        {ui.players.map((player) => (
-          <div className={`gc-card ${player.locked ? "is-locked" : ""}`} key={player.id}>
-            <p className="gc-card-name">{player.name}</p>
+      <div className="gc-table-wrap">
+        <div className="gc-table-outer-glow" />
 
-            <div className="gc-card-face">{labelForValue(player.value)}</div>
+        <div className="gc-table">
+          <div className="gc-table-wood" />
 
-            <div className="gc-card-meta">
-              {player.locked ? "Locked in" : ui.phase === "picking" ? "Choosing" : "Waiting"}
+          <div className="gc-dealer-area">
+            <div className="gc-dealer-badge">
+              {isHost ? "YOU ARE THE DEALER" : "DEALER"}
             </div>
 
-            {ui.phase === "reveal" && (
-              <p className="gc-card-distance">Δ {player.distance}</p>
-            )}
-          </div>
-        ))}
+            <div className="gc-dealer-label">House Card</div>
 
-        <div className="gc-card gc-ai-card">
-          <p className="gc-card-name">AI Card</p>
-          <div className="gc-card-face">
-            {ui.phase === "reveal" && ui.aiCard ? labelForValue(ui.aiCard) : "?"}
+            <div className={`gc-playing-card gc-ai-card`}>
+              <div className="gc-card-corner top-left">
+                {ui.phase === "reveal" && ui.aiCard ? labelForValue(ui.aiCard) : "?"}
+              </div>
+
+              <div className="gc-card-center">
+                {ui.phase === "reveal" && ui.aiCard ? labelForValue(ui.aiCard) : "?"}
+              </div>
+
+              <div className="gc-card-corner bottom-right">
+                {ui.phase === "reveal" && ui.aiCard ? labelForValue(ui.aiCard) : "?"}
+              </div>
+            </div>
+
+            <div className="gc-dealer-status">
+              {ui.phase === "reveal" ? "Dealer reveals the card" : "Card hidden"}
+            </div>
           </div>
-          <div className="gc-card-meta">
-            {ui.phase === "reveal" ? "Revealed" : "Hidden"}
+
+          <div className="gc-felt-center-mark">
+            <span>BLACKJACK TABLE</span>
+          </div>
+
+          <div className={`gc-seat-row gc-seat-count-${ui.players.length || 1}`}>
+            {ui.players.map((player, index) => {
+              const isWinner = ui.winnerIds?.includes(player.id);
+              const seatClass = getSeatClass(index, ui.players.length);
+
+              return (
+                <div
+                  key={player.id}
+                  className={`gc-seat ${seatClass} ${player.locked ? "is-locked" : ""} ${
+                    isWinner ? "is-winner" : ""
+                  }`}
+                >
+                  <div className="gc-seat-name">{player.name}</div>
+
+                  <div className={`gc-playing-card ${isWinner ? "winner-card" : ""}`}>
+                    <div className="gc-card-corner top-left">
+                      {labelForValue(player.value)}
+                    </div>
+
+                    <div className="gc-card-center">
+                      {labelForValue(player.value)}
+                    </div>
+
+                    <div className="gc-card-corner bottom-right">
+                      {labelForValue(player.value)}
+                    </div>
+                  </div>
+
+                  <div className="gc-seat-status">
+                    {ui.phase === "countdown" && "Waiting for deal"}
+                    {ui.phase === "picking" &&
+                      (player.locked ? "Bet placed" : "Choosing")}
+                    {ui.phase === "reveal" &&
+                      (isWinner
+                        ? "Winning hand"
+                        : `Off by ${player.distance ?? "?"}`)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
       <div className="gc-controls-card">
-        <div className="gc-controls-title">Player controls</div>
+        <div className="gc-controls-title">Dealer controls</div>
+
+        <div className="gc-controls-sub">
+          {isHost
+            ? "As host, you control and lock each player's card for now."
+            : "Waiting for the dealer to run the hand."}
+        </div>
 
         <div className="gc-controls-list">
           {ui.players.map((player) => (
@@ -419,9 +516,9 @@ export default function GuessingCardGame({
       </div>
 
       <div className="gc-outcome-card">
-        <div className="gc-outcome-title">Round outcome</div>
+        <div className="gc-outcome-title">Table result</div>
         <div className="gc-outcome-text">
-          {ui.outcome || "Results will appear here once all guesses are locked."}
+          {ui.outcome || "The result of the hand will appear here."}
         </div>
       </div>
 
@@ -429,10 +526,10 @@ export default function GuessingCardGame({
         <div className="gc-finish-panel">
           {isHost ? (
             <button className="gc-replay-btn" onClick={handleReplay}>
-              Replay (host)
+              Deal another hand
             </button>
           ) : (
-            <p className="gc-waiting">Waiting for host…</p>
+            <p className="gc-waiting">Waiting for dealer…</p>
           )}
         </div>
       )}
