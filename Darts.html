@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aim and Fire!</title>
+<style>
+  body {
+    margin: 0;
+    background: #222;
+    color: white;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  .container { text-align: center; }
+  #gameCanvas {
+    background: #111;
+    border: 3px solid #555;
+    display: block;
+    margin: 0 auto;
+  }
+  #fireBtn {
+    margin-top: 20px;
+    padding: 15px 40px;
+    background: #e63946;
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+  }
+  #gptMessage {
+    margin-top: 15px;
+    font-size: 18px;
+    color: #aee1ff;
+    height: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Aim and Fire!</h1>
+  <canvas id="gameCanvas" width="400" height="500"></canvas>
+  <button id="fireBtn">FIRE</button>
+  <div id="gptMessage"></div>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+let gptMsgBox = document.getElementById("gptMessage");
+
+let dart = { x: 200, y: 450, fired: false, speed: 6 };
+let target = { x: 200, y: 120, radius: 60, dir: 1, speed: 2 };
+
+let hand = { x: 200, y: 430, angle: -Math.PI/4, state: "idle", frame: 0 };
+
+let score = 0;
+let dartsLeft = 5;
+
+function drawTarget() {
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
+  ctx.fillStyle = "#b30000";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = "#ccc";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.radius * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = "#3399ff";
+  ctx.fill();
+}
+
+function drawHand() {
+  ctx.save();
+  ctx.translate(hand.x, hand.y);
+  ctx.rotate(hand.angle);
+
+  ctx.fillStyle = "#f2c7a5";
+
+  // Forearm
+  ctx.beginPath();
+  ctx.roundRect(-8, 0, 16, 50, 8);
+  ctx.fill();
+
+  // Palm
+  ctx.beginPath();
+  ctx.ellipse(0, -10, 14, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Thumb
+  ctx.beginPath();
+  ctx.ellipse(-14, -8, 6, 12, Math.PI / 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  function drawFinger(baseX, baseY, length, bend, releaseOffset=0) {
+    let seg = length / 3;
+
+    ctx.strokeStyle = "#f2c7a5";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+
+    let x1 = baseX + bend + releaseOffset;
+    let y1 = baseY - seg;
+
+    let x2 = x1 + bend * 0.5 + releaseOffset;
+    let y2 = y1 - seg;
+
+    let x3 = x2 + bend * 0.3 + releaseOffset;
+    let y3 = y2 - seg;
+
+    ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
+
+    ctx.stroke();
+  }
+
+  let release = (hand.state === "release") ? hand.frame * 1.5 : 0;
+
+  drawFinger(-6, -20, 30, -6, release);
+  drawFinger(-2, -22, 32, -4, release);
+  drawFinger(2, -20, 28, -2, release);
+  drawFinger(6, -18, 24, 0, release);
+
+  ctx.restore();
+}
+
+function updateHand() {
+  if (hand.state === "pull") {
+    hand.frame++;
+    hand.angle = -Math.PI/4 - hand.frame * 0.05;
+    if (hand.frame > 10) {
+      hand.state = "throw";
+      hand.frame = 0;
+    }
+  } else if (hand.state === "throw") {
+    hand.frame++;
+    hand.angle = -Math.PI/2 + hand.frame * 0.15;
+    if (hand.frame > 8) {
+      hand.state = "release";
+      hand.frame = 0;
+      dart.fired = true;
+    }
+  } else if (hand.state === "release") {
+    hand.frame++;
+    hand.angle += 0.02;
+    if (hand.frame > 6) {
+      hand.state = "idle";
+      hand.frame = 0;
+      hand.angle = -Math.PI/4;
+    }
+  }
+}
+
+function drawDart() {
+  if (!dart.fired) {
+    dart.x = hand.x + Math.sin(hand.angle) * -40;
+    dart.y = hand.y + Math.cos(hand.angle) * -40;
+  }
+
+  ctx.fillStyle = "#f2d16b";
+  ctx.fillRect(dart.x - 3, dart.y - 25, 6, 25);
+
+  ctx.beginPath();
+  ctx.moveTo(dart.x, dart.y - 35);
+  ctx.lineTo(dart.x - 5, dart.y - 25);
+  ctx.lineTo(dart.x + 5, dart.y - 25);
+  ctx.fillStyle = "#c0c0c0";
+  ctx.fill();
+}
+
+function updateTarget() {
+  target.x += target.dir * target.speed;
+  if (target.x + target.radius >= canvas.width || target.x - target.radius <= 0) target.dir *= -1;
+}
+
+function updateDart() {
+  if (!dart.fired) return;
+  dart.y -= dart.speed;
+  if (dart.y < 0) resetDart();
+}
+
+function resetDart() {
+  dart.x = 200;
+  dart.y = 450;
+  dart.fired = false;
+}
+
+function fireDart() {
+  if (!dart.fired && dartsLeft > 0 && hand.state === "idle") {
+    dartsLeft--;
+    hand.state = "pull";
+    gptMsgBox.textContent = "Throwing...";
+  }
+}
+
+document.getElementById("fireBtn").onclick = fireDart;
+
+function checkHit() {
+  if (!dart.fired) return;
+  const dx = dart.x - target.x;
+  const dy = dart.y - target.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist < target.radius) {
+    score += 10;
+    resetDart();
+  }
+}
+
+function drawUI() {
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+  ctx.fillText("Score: " + score, 20, 30);
+  ctx.fillText("Darts: " + dartsLeft, 280, 30);
+}
+
+function gameLoop() {
+  ctx.fillStyle = "#222";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawTarget();
+  updateHand();
+  drawHand();
+  drawDart();
+  updateTarget();
+  updateDart();
+  checkHit();
+  drawUI();
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
