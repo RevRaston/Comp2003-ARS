@@ -31,6 +31,7 @@ export default function Login() {
   const [mode, setMode] = useState(searchParams.get("mode") || "host");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [oauthHandling, setOauthHandling] = useState(false);
 
   useEffect(() => {
     setMode(searchParams.get("mode") || "host");
@@ -67,7 +68,11 @@ export default function Login() {
     }
 
     if (!data) {
-      const baseName = user.email?.split("@")[0] || "Player";
+      const baseName =
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.email?.split("@")[0] ||
+        "Player";
 
       const { data: inserted, error: insertError } = await supabase
         .from("profiles")
@@ -92,17 +97,51 @@ export default function Login() {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session?.user) return;
+    let active = true;
 
+    async function hydrateSessionAndRoute() {
       try {
-        const profile = await loadOrCreateProfile(data.session.user);
+        setOauthHandling(true);
+
+        const { data } = await supabase.auth.getSession();
+        const session = data.session;
+
+        if (!session?.user) return;
+        if (!active) return;
+
+        const user = session.user;
+        const accessToken = session.access_token;
+
+        localStorage.setItem("user_id", user.id);
+        localStorage.setItem("access_token", accessToken);
+
+        const profile = await loadOrCreateProfile(user);
+        if (!active) return;
+
         setProfile(profile);
+
+        const currentMode = searchParams.get("mode") || "host";
+
+        if (currentMode === "player") {
+          navigate("/join-session", { replace: true });
+        } else {
+          navigate("/host-session", { replace: true });
+        }
       } catch (err) {
         console.error("Error loading profile on refresh:", err);
+      } finally {
+        if (active) {
+          setOauthHandling(false);
+        }
       }
-    });
-  }, [setProfile]);
+    }
+
+    hydrateSessionAndRoute();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate, searchParams, setProfile]);
 
   async function handleAuth(type) {
     setError("");
@@ -162,7 +201,7 @@ export default function Login() {
     try {
       setLoading(true);
 
-      const redirectTo = `${window.location.origin}/login/callback?mode=${mode}`;
+      const redirectTo = `${window.location.origin}/login?mode=${mode}`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -241,10 +280,10 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => handleAuth("signin")}
-                disabled={loading}
+                disabled={loading || oauthHandling}
                 style={primaryButton}
               >
-                {loading
+                {loading || oauthHandling
                   ? "Working..."
                   : mode === "host"
                   ? "Sign in to Host"
@@ -254,7 +293,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={handleGoogleAuth}
-                disabled={loading}
+                disabled={loading || oauthHandling}
                 style={secondaryButton}
               >
                 Continue with Google
@@ -263,10 +302,10 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => handleAuth("signup")}
-                disabled={loading}
+                disabled={loading || oauthHandling}
                 style={ghostButton}
               >
-                {loading ? "Working..." : "Create Account"}
+                {loading || oauthHandling ? "Working..." : "Create Account"}
               </button>
             </div>
 
