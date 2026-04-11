@@ -284,10 +284,61 @@ export default function Arena() {
     currentRound < maxRounds &&
     selectedLevels.some((entry) => entry.round === currentRound + 1);
 
-  function handleRoundComplete() {
-    setRoundComplete(true);
-    setRoundActionError("");
+  async function handleRoundComplete(payload = {}) {
+  setRoundComplete(true);
+  setRoundActionError("");
+
+  if (!code) return;
+
+  try {
+    const roundResult = {
+      round: currentRound,
+      gameId: currentLevelId,
+      winnerKey:
+        payload?.winnerKey === undefined ? null : payload.winnerKey,
+      winnerName:
+        enrichedPlayers.find((p) => {
+          const key =
+            p?.user_id ??
+            p?.userId ??
+            p?.id ??
+            p?.profile_id ??
+            p?.profileId ??
+            null;
+          return String(key || "") === String(payload?.winnerKey || "");
+        })?.display_name ||
+        enrichedPlayers.find((p) => {
+          const key =
+            p?.user_id ??
+            p?.userId ??
+            p?.id ??
+            p?.profile_id ??
+            p?.profileId ??
+            null;
+          return String(key || "") === String(payload?.winnerKey || "");
+        })?.name ||
+        null,
+      scores: Array.isArray(payload?.scores) ? payload.scores : [],
+      createdAt: new Date().toISOString(),
+    };
+
+    const res = await fetch(`${API_BASE}/sessions/${code}/round-result`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ roundResult }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to save round result");
+    }
+  } catch (err) {
+    console.error("Failed to save round result:", err);
   }
+}
 
   async function handleAdvanceRound() {
     if (!isHost || !code || advancingRound) return;

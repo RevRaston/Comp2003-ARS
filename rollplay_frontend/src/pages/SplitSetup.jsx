@@ -1,7 +1,17 @@
-// src/pages/SplitSetup.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
+
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  defaultBase
+).replace(/\/$/, "");
 
 export default function SplitSetup() {
   const navigate = useNavigate();
@@ -27,6 +37,11 @@ export default function SplitSetup() {
   const [itemName, setItemName] = useState("");
   const [itemCost, setItemCost] = useState("");
   const [localItems, setLocalItems] = useState(sessionItems || []);
+
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [scanInfo, setScanInfo] = useState("");
 
   useEffect(() => {
     function handleResize() {
@@ -72,23 +87,104 @@ export default function SplitSetup() {
     setLocalItems((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function handleContinue() {
+  function updateItemName(id, value) {
+    setLocalItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, name: value } : item))
+    );
+  }
+
+  function updateItemCost(id, value) {
+    setLocalItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, cost: Number(value) || 0 } : item
+      )
+    );
+  }
+
+  async function handleScanReceipt() {
+    if (!receiptFile) {
+      setScanError("Please choose a receipt image first.");
+      return;
+    }
+
+    try {
+      setScanLoading(true);
+      setScanError("");
+      setScanInfo("");
+
+      const formData = new FormData();
+      formData.append("receipt", receiptFile);
+
+      const res = await fetch(`${API_BASE}/scan-receipt`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to scan receipt");
+      }
+
+      const parsedItems = Array.isArray(data?.items) ? data.items : [];
+
+      if (!parsedItems.length) {
+        setScanInfo(data?.warning || "No receipt items were detected.");
+        return;
+      }
+
+      setLocalItems((prev) => {
+        const existing = [...prev];
+        const incoming = parsedItems.map((item) => ({
+          id: item.id || crypto.randomUUID(),
+          name: item.name || "Receipt item",
+          cost: Number(item.cost || 0),
+        }));
+        return [...existing, ...incoming];
+      });
+
+      setScanInfo(
+        `Added ${parsedItems.length} item${
+          parsedItems.length === 1 ? "" : "s"
+        } from receipt.`
+      );
+      setReceiptFile(null);
+    } catch (err) {
+      console.error(err);
+      setScanError(err.message || "Receipt scan failed");
+    } finally {
+      setScanLoading(false);
+    }
+  }
+
+  function saveDraftLocally() {
     setSplitMode(localMode);
 
     if (localMode === "items") {
-      const total = localItems.reduce(
+      const cleanedItems = localItems
+        .map((item) => ({
+          ...item,
+          name: String(item.name || "").trim(),
+          cost: Number(item.cost || 0),
+        }))
+        .filter((item) => item.name && item.cost > 0);
+
+      const total = cleanedItems.reduce(
         (sum, item) => sum + Number(item.cost || 0),
         0
       );
-      setSessionItems(localItems);
+
+      setSessionItems(cleanedItems);
       setSessionPot(total);
       setPaymentRequired(true);
+      return;
     }
 
     if (localMode === "pot") {
       setSessionItems([]);
       setSessionPot(Number(potInput) || 0);
       setPaymentRequired(true);
+      return;
     }
 
     if (localMode === "pseudo") {
@@ -96,13 +192,19 @@ export default function SplitSetup() {
       setSessionPot(Number(potInput) || 0);
       setPaymentRequired(false);
     }
+  }
 
+  function handleContinue() {
+    saveDraftLocally();
+    navigate("/choose-game");
+  }
+
+  function handleSkip() {
     navigate("/choose-game");
   }
 
   return (
     <div style={page}>
-      {/* TOP BAR */}
       <header
         style={{
           ...topBar,
@@ -139,7 +241,6 @@ export default function SplitSetup() {
         </nav>
       </header>
 
-      {/* PAGE BODY */}
       <section
         style={{
           ...heroSection,
@@ -161,21 +262,21 @@ export default function SplitSetup() {
             gap: isPhone ? 18 : 24,
           }}
         >
-          {/* LEFT INFO PANEL */}
           <div style={sideCard}>
-            <p style={sectionEyebrow}>Split setup</p>
+            <p style={sectionEyebrow}>Optional setup</p>
             <h1
               style={{
                 ...pageTitle,
                 fontSize: isPhone ? 40 : isLaptop ? 52 : 64,
               }}
             >
-              Session payment setup
+              Payment draft
             </h1>
 
             <p style={introText}>
-              Choose how this session should handle the bill before the games
-              begin.
+              You no longer need to set up splitting before the games begin.
+              This page is optional and can be used to prepare a bill draft in
+              advance.
             </p>
 
             <div style={profileCard}>
@@ -193,17 +294,17 @@ export default function SplitSetup() {
             </div>
 
             <div style={tipsCard}>
-              <h3 style={smallCardTitle}>What this step does</h3>
+              <h3 style={smallCardTitle}>How this works now</h3>
               <ul style={tipsList}>
-                <li>Sets how payment is handled for the session</li>
-                <li>Decides whether players split items or one total bill</li>
-                <li>Controls whether payment is real or just for demo use</li>
+                <li>Games can start without payment setup</li>
+                <li>Final splitting happens on the Results page</li>
+                <li>You can scan a receipt now or later</li>
               </ul>
             </div>
 
             <div style={summaryPanel}>
               <div style={summaryRow}>
-                <span style={summaryLabel}>Selected mode</span>
+                <span style={summaryLabel}>Selected draft mode</span>
                 <strong style={summaryValue}>
                   {localMode === "items"
                     ? "Specific Items"
@@ -221,7 +322,7 @@ export default function SplitSetup() {
               </div>
 
               <div style={summaryRow}>
-                <span style={summaryLabel}>Current total</span>
+                <span style={summaryLabel}>Current draft total</span>
                 <strong style={summaryValue}>
                   £
                   {localMode === "items"
@@ -232,22 +333,16 @@ export default function SplitSetup() {
             </div>
           </div>
 
-          {/* RIGHT MAIN PANEL */}
           <div style={mainColumn}>
             <div style={contentCard}>
-              <p style={sectionEyebrow}>Mode selection</p>
-              <h2 style={cardHeading}>Choose a split mode</h2>
+              <p style={sectionEyebrow}>Draft mode</p>
+              <h2 style={cardHeading}>Choose a draft type</h2>
               <p style={helperIntro}>
-                Pick the format that best matches how you want this session to
-                handle the bill.
+                This does not lock the session into one split method anymore.
+                It just saves a starting point that can be edited later.
               </p>
 
-              <div
-                style={{
-                  ...modeGrid,
-                  gridTemplateColumns: isPhone ? "1fr" : "1fr",
-                }}
-              >
+              <div style={modeGrid}>
                 <button
                   style={{
                     ...modeCard,
@@ -257,8 +352,8 @@ export default function SplitSetup() {
                 >
                   <h3 style={modeTitle}>Specific Items / Receipt</h3>
                   <p style={modeText}>
-                    Add each food and drink item now. After the games, RollPlay
-                    will suggest who should pay for which items.
+                    Add or scan food and drink items now if you already have the
+                    bill.
                   </p>
                 </button>
 
@@ -271,8 +366,7 @@ export default function SplitSetup() {
                 >
                   <h3 style={modeTitle}>Total Pot</h3>
                   <p style={modeText}>
-                    Enter one overall bill total. After the games, players will
-                    be assigned contributions toward that total.
+                    Enter one rough total and finalise the details later.
                   </p>
                 </button>
 
@@ -285,160 +379,183 @@ export default function SplitSetup() {
                 >
                   <h3 style={modeTitle}>Pseudo Tab / No Payment</h3>
                   <p style={modeText}>
-                    Use the games and rankings without needing real payment
-                    processing. Good for demos and low-stakes sessions.
+                    Keep the session lightweight and non-payment based.
                   </p>
                 </button>
               </div>
             </div>
 
             {localMode === "items" && (
-              <div style={contentCard}>
-                <p style={sectionEyebrow}>Receipt items</p>
-                <h2 style={cardHeading}>Add session items</h2>
-                <p style={helperIntro}>
-                  Add the items that make up the session bill.
-                </p>
+              <>
+                <div style={contentCard}>
+                  <p style={sectionEyebrow}>Receipt scan</p>
+                  <h2 style={cardHeading}>Scan a receipt draft</h2>
+                  <p style={helperIntro}>
+                    Upload a photo of the receipt and RollPlay will try to pull
+                    out item names and prices for you.
+                  </p>
 
-                <div
-                  style={{
-                    ...itemInputRow,
-                    flexDirection: isPhone ? "column" : "row",
-                  }}
-                >
-                  <input
-                    type="text"
-                    placeholder="Item name"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
+                  <div
                     style={{
-                      ...inputStyle,
-                      width: isPhone ? "100%" : "100%",
-                    }}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Cost"
-                    value={itemCost}
-                    onChange={(e) => setItemCost(e.target.value)}
-                    style={{
-                      ...inputStyle,
-                      width: isPhone ? "100%" : 180,
-                    }}
-                  />
-                  <button
-                    onClick={addItem}
-                    style={{
-                      ...primaryButton,
-                      width: isPhone ? "100%" : "auto",
+                      ...uploadRow,
+                      flexDirection: isPhone ? "column" : "row",
                     }}
                   >
-                    Add Item
-                  </button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        setReceiptFile(e.target.files?.[0] || null);
+                        setScanError("");
+                        setScanInfo("");
+                      }}
+                      style={fileInputStyle}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleScanReceipt}
+                      disabled={scanLoading}
+                      style={{
+                        ...primaryButton,
+                        width: isPhone ? "100%" : "auto",
+                      }}
+                    >
+                      {scanLoading ? "Scanning..." : "Scan Receipt"}
+                    </button>
+                  </div>
+
+                  {receiptFile && (
+                    <p style={mutedInfoText}>
+                      Selected file: {receiptFile.name}
+                    </p>
+                  )}
+
+                  {scanInfo ? (
+                    <p style={successText}>{scanInfo}</p>
+                  ) : null}
+
+                  {scanError ? (
+                    <p style={errorText}>{scanError}</p>
+                  ) : null}
                 </div>
 
-                {localItems.length === 0 ? (
-                  <p style={emptyText}>No items added yet.</p>
-                ) : (
-                  <>
-                    {!isPhone ? (
-                      <table style={table}>
-                        <thead>
-                          <tr>
-                            <th style={th}>Item</th>
-                            <th style={th}>Cost</th>
-                            <th style={th}>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {localItems.map((item) => (
-                            <tr key={item.id}>
-                              <td style={td}>{item.name}</td>
-                              <td style={td}>£{Number(item.cost).toFixed(2)}</td>
-                              <td style={td}>
-                                <button
-                                  onClick={() => removeItem(item.id)}
-                                  style={smallGhostButton}
-                                >
-                                  Remove
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <div style={mobileItemList}>
-                        {localItems.map((item) => (
-                          <div key={item.id} style={mobileItemCard}>
-                            <div>
-                              <div style={mobileItemName}>{item.name}</div>
-                              <div style={mobileItemCost}>
-                                £{Number(item.cost).toFixed(2)}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => removeItem(item.id)}
-                              style={smallGhostButton}
-                            >
-                              Remove
-                            </button>
+                <div style={contentCard}>
+                  <p style={sectionEyebrow}>Draft items</p>
+                  <h2 style={cardHeading}>Add or edit items</h2>
+                  <p style={helperIntro}>
+                    You can manually add items, edit scanned ones, or leave the
+                    full adjustment for the Results page.
+                  </p>
+
+                  <div
+                    style={{
+                      ...itemInputRow,
+                      flexDirection: isPhone ? "column" : "row",
+                    }}
+                  >
+                    <input
+                      type="text"
+                      placeholder="Item name"
+                      value={itemName}
+                      onChange={(e) => setItemName(e.target.value)}
+                      style={inputStyle}
+                    />
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Cost"
+                      value={itemCost}
+                      onChange={(e) => setItemCost(e.target.value)}
+                      style={{
+                        ...inputStyle,
+                        width: isPhone ? "100%" : 180,
+                      }}
+                    />
+
+                    <button
+                      onClick={addItem}
+                      style={{
+                        ...primaryButton,
+                        width: isPhone ? "100%" : "auto",
+                      }}
+                    >
+                      Add Item
+                    </button>
+                  </div>
+
+                  {localItems.length === 0 ? (
+                    <p style={emptyText}>No draft items added yet.</p>
+                  ) : (
+                    <div style={editableItemList}>
+                      {localItems.map((item) => (
+                        <div key={item.id} style={editableItemCard}>
+                          <div style={editableItemFields}>
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={(e) =>
+                                updateItemName(item.id, e.target.value)
+                              }
+                              style={miniInput}
+                            />
+
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.cost}
+                              onChange={(e) =>
+                                updateItemCost(item.id, e.target.value)
+                              }
+                              style={miniCostInput}
+                            />
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
 
-                <div style={summaryPanel}>
-                  <div style={summaryRow}>
-                    <span style={summaryLabel}>Items added</span>
-                    <strong style={summaryValue}>{localItems.length}</strong>
-                  </div>
-                  <div style={summaryRow}>
-                    <span style={summaryLabel}>Item total</span>
-                    <strong style={summaryValue}>£{itemTotal.toFixed(2)}</strong>
+                          <button
+                            onClick={() => removeItem(item.id)}
+                            style={smallGhostButton}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={summaryPanel}>
+                    <div style={summaryRow}>
+                      <span style={summaryLabel}>Items added</span>
+                      <strong style={summaryValue}>{localItems.length}</strong>
+                    </div>
+                    <div style={summaryRow}>
+                      <span style={summaryLabel}>Draft total</span>
+                      <strong style={summaryValue}>£{itemTotal.toFixed(2)}</strong>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </>
             )}
 
-            {localMode === "pot" && (
+            {(localMode === "pot" || localMode === "pseudo") && (
               <div style={contentCard}>
-                <p style={sectionEyebrow}>Pot setup</p>
-                <h2 style={cardHeading}>Set the overall bill</h2>
+                <p style={sectionEyebrow}>Draft total</p>
+                <h2 style={cardHeading}>
+                  {localMode === "pot"
+                    ? "Set the rough overall total"
+                    : "Optional pretend total"}
+                </h2>
                 <p style={helperIntro}>
-                  Enter the full session total to be covered by the players.
+                  This value can always be edited later on the Results page.
                 </p>
 
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="Total pot"
-                  value={potInput}
-                  onChange={(e) => setPotInput(e.target.value)}
-                  style={inputStyle}
-                />
-              </div>
-            )}
-
-            {localMode === "pseudo" && (
-              <div style={contentCard}>
-                <p style={sectionEyebrow}>Pseudo setup</p>
-                <h2 style={cardHeading}>Optional pretend total</h2>
-                <p style={helperIntro}>
-                  This mode keeps the competitive flow, but no real payment is
-                  required. You can still enter a notional total if you want.
-                </p>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Optional pretend total"
+                  placeholder="Enter total"
                   value={potInput}
                   onChange={(e) => setPotInput(e.target.value)}
                   style={inputStyle}
@@ -449,6 +566,10 @@ export default function SplitSetup() {
             <div style={contentCard}>
               <p style={sectionEyebrow}>Next step</p>
               <h2 style={cardHeading}>Continue to game order</h2>
+              <p style={helperIntro}>
+                Save this as a draft or skip it entirely and configure the final
+                split after the session.
+              </p>
 
               <div
                 style={{
@@ -467,13 +588,23 @@ export default function SplitSetup() {
                 </button>
 
                 <button
+                  onClick={handleSkip}
+                  style={{
+                    ...ghostButton,
+                    width: isPhone ? "100%" : "auto",
+                  }}
+                >
+                  Skip for Now
+                </button>
+
+                <button
                   onClick={handleContinue}
                   style={{
                     ...primaryButton,
                     width: isPhone ? "100%" : "auto",
                   }}
                 >
-                  Continue to Game Order
+                  Save Draft & Continue
                 </button>
               </div>
             </div>
@@ -483,8 +614,6 @@ export default function SplitSetup() {
     </div>
   );
 }
-
-/* styles */
 
 const page = {
   minHeight: "100vh",
@@ -787,6 +916,12 @@ const modeText = {
   fontSize: 15,
 };
 
+const uploadRow = {
+  display: "flex",
+  gap: 12,
+  alignItems: "stretch",
+};
+
 const itemInputRow = {
   display: "flex",
   gap: 12,
@@ -805,34 +940,25 @@ const inputStyle = {
   boxSizing: "border-box",
 };
 
-const table = {
+const fileInputStyle = {
   width: "100%",
-  marginTop: 12,
-  borderCollapse: "collapse",
-};
-
-const th = {
-  textAlign: "left",
-  borderBottom: "1px solid rgba(255,255,255,0.2)",
-  padding: 10,
-  fontSize: 14,
-  opacity: 0.82,
-};
-
-const td = {
-  borderBottom: "1px solid rgba(255,255,255,0.12)",
-  padding: 10,
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
   fontSize: 15,
+  boxSizing: "border-box",
 };
 
-const mobileItemList = {
+const editableItemList = {
   display: "flex",
   flexDirection: "column",
   gap: 10,
   marginTop: 10,
 };
 
-const mobileItemCard = {
+const editableItemCard = {
   padding: 14,
   borderRadius: 18,
   display: "flex",
@@ -843,20 +969,63 @@ const mobileItemCard = {
   border: "1px solid rgba(255,255,255,0.1)",
 };
 
-const mobileItemName = {
-  fontSize: 16,
-  fontWeight: 700,
-  marginBottom: 4,
+const editableItemFields = {
+  display: "flex",
+  gap: 10,
+  flex: 1,
+  minWidth: 0,
+  flexWrap: "wrap",
 };
 
-const mobileItemCost = {
-  opacity: 0.8,
-  fontSize: 14,
+const miniInput = {
+  flex: 1,
+  minWidth: 180,
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 15,
+  boxSizing: "border-box",
+};
+
+const miniCostInput = {
+  width: 120,
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 15,
+  boxSizing: "border-box",
 };
 
 const emptyText = {
   opacity: 0.72,
   marginTop: 10,
+};
+
+const mutedInfoText = {
+  marginTop: 12,
+  marginBottom: 0,
+  fontSize: 14,
+  opacity: 0.78,
+};
+
+const successText = {
+  marginTop: 12,
+  marginBottom: 0,
+  fontSize: 14,
+  color: "#9BE39B",
+  fontWeight: 700,
+};
+
+const errorText = {
+  marginTop: 12,
+  marginBottom: 0,
+  fontSize: 14,
+  color: "#FF9A9A",
+  fontWeight: 700,
 };
 
 const actionRow = {
@@ -883,6 +1052,18 @@ const secondaryButton = {
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,0.14)",
   background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 16,
+  fontWeight: 700,
+  cursor: "pointer",
+  minWidth: 170,
+};
+
+const ghostButton = {
+  padding: "14px 22px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "transparent",
   color: "white",
   fontSize: 16,
   fontWeight: 700,

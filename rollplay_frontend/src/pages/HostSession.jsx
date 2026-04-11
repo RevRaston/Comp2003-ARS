@@ -1,4 +1,3 @@
-// src/pages/HostSession.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
@@ -20,18 +19,17 @@ export default function HostSession({ token }) {
   const {
     profile,
     setSessionInfo,
-    setTotalCost,
-    setRule,
     setPlayers,
     clearConfirmedSplit,
+    clearSplitSetup,
+    setTotalCost,
+    setRule,
   } = useGame();
 
   const [screenWidth, setScreenWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1280
   );
 
-  const [totalCost, setTotalCostLocal] = useState("50");
-  const [ruleValue, setRuleValue] = useState("winner_free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -48,7 +46,11 @@ export default function HostSession({ token }) {
   const isLaptop = screenWidth <= 1100;
 
   const displayName =
-    profile?.display_name || profile?.username || profile?.email || "Host";
+    profile?.displayName ||
+    profile?.display_name ||
+    profile?.username ||
+    profile?.email ||
+    "Host";
 
   const initials = useMemo(() => {
     const parts = String(displayName).trim().split(" ").filter(Boolean);
@@ -65,12 +67,6 @@ export default function HostSession({ token }) {
       return;
     }
 
-    const parsedCost = Number(totalCost);
-    if (Number.isNaN(parsedCost) || parsedCost <= 0) {
-      setError("Enter a valid total cost greater than 0.");
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -81,9 +77,9 @@ export default function HostSession({ token }) {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          total_cost: parsedCost,
-          rule: ruleValue,
           host_name: displayName,
+          total_cost: 1,
+          rule: "winner_free",
         }),
       });
 
@@ -93,10 +89,12 @@ export default function HostSession({ token }) {
         throw new Error(data?.error || "Failed to create session");
       }
 
-      setTotalCost(parsedCost);
-      setRule(ruleValue);
       setPlayers([]);
       clearConfirmedSplit?.();
+      clearSplitSetup?.();
+
+      setTotalCost?.(0);
+      setRule?.("winner_free");
 
       setSessionInfo({
         sessionId: data.session_id,
@@ -115,7 +113,6 @@ export default function HostSession({ token }) {
 
   return (
     <div style={page}>
-      {/* TOP BAR */}
       <header
         style={{
           ...topBar,
@@ -155,7 +152,6 @@ export default function HostSession({ token }) {
         </nav>
       </header>
 
-      {/* PAGE HERO / FORM */}
       <section
         style={{
           ...heroSection,
@@ -178,7 +174,6 @@ export default function HostSession({ token }) {
             gap: isPhone ? 18 : 24,
           }}
         >
-          {/* LEFT INFO CARD */}
           <div style={sideCard}>
             <p style={sectionEyebrow}>Host dashboard</p>
             <h1
@@ -191,8 +186,8 @@ export default function HostSession({ token }) {
             </h1>
 
             <p style={introText}>
-              Start a new RollPlay session, set the bill total, and invite
-              players to join using a session code.
+              Start a new RollPlay session and invite players to join using a
+              session code. Split details are handled in the next step.
             </p>
 
             <div style={profileCard}>
@@ -209,13 +204,12 @@ export default function HostSession({ token }) {
               <h3 style={smallCardTitle}>Before you start</h3>
               <ul style={tipsList}>
                 <li>Make sure everyone has their own device.</li>
-                <li>Set the shared bill total for the session.</li>
-                <li>Players will join with a room code in the lobby.</li>
+                <li>Create the room and share the session code.</li>
+                <li>Set up the split details on the next page.</li>
               </ul>
             </div>
           </div>
 
-          {/* RIGHT FORM CARD */}
           <div
             style={{
               ...formCard,
@@ -225,62 +219,19 @@ export default function HostSession({ token }) {
             <p style={sectionEyebrow}>Session setup</p>
             <h2 style={formTitle}>Create a new session</h2>
             <p style={formIntro}>
-              Set the total bill and choose the session rule before creating the
-              room.
+              Create the room first, then continue to Split Setup to manage the
+              payment draft, receipt items, or total pot.
             </p>
-
-            <div style={fieldBlock}>
-              <label style={labelStyle} htmlFor="total-cost">
-                Total cost (£)
-              </label>
-              <p style={helperText}>
-                Enter the total amount for the session bill.
-              </p>
-              <input
-                id="total-cost"
-                type="number"
-                min="1"
-                step="0.01"
-                value={totalCost}
-                onChange={(e) => setTotalCostLocal(e.target.value)}
-                placeholder="50.00"
-                style={inputStyle}
-              />
-            </div>
-
-            <div style={fieldBlock}>
-              <label style={labelStyle} htmlFor="rule">
-                Rule
-              </label>
-              <p style={helperText}>
-                Choose how the game outcome should affect who pays.
-              </p>
-              <select
-                id="rule"
-                value={ruleValue}
-                onChange={(e) => setRuleValue(e.target.value)}
-                style={selectStyle}
-              >
-                <option value="winner_free">Winner Drinks Free</option>
-                <option value="even_split">Even Split</option>
-              </select>
-            </div>
 
             <div style={summaryPanel}>
               <div style={summaryRow}>
-                <span style={summaryLabel}>Session total</span>
-                <strong style={summaryValue}>
-                  £{Number(totalCost || 0).toFixed(2)}
-                </strong>
+                <span style={summaryLabel}>Host</span>
+                <strong style={summaryValue}>{displayName}</strong>
               </div>
 
               <div style={summaryRow}>
-                <span style={summaryLabel}>Rule</span>
-                <strong style={summaryValue}>
-                  {ruleValue === "winner_free"
-                    ? "Winner Drinks Free"
-                    : "Even Split"}
-                </strong>
+                <span style={summaryLabel}>Next step</span>
+                <strong style={summaryValue}>Split Setup</strong>
               </div>
             </div>
 
@@ -298,6 +249,7 @@ export default function HostSession({ token }) {
                 style={{
                   ...primaryButton,
                   width: isPhone ? "100%" : "auto",
+                  ...(loading ? disabledButton : null),
                 }}
               >
                 {loading ? "Creating..." : "Create Session"}
@@ -565,46 +517,6 @@ const formIntro = {
   opacity: 0.86,
 };
 
-const fieldBlock = {
-  marginBottom: 22,
-};
-
-const labelStyle = {
-  display: "block",
-  marginBottom: 8,
-  fontSize: 16,
-  fontWeight: 700,
-};
-
-const helperText = {
-  margin: "0 0 10px",
-  fontSize: 14,
-  lineHeight: 1.5,
-  opacity: 0.76,
-};
-
-const inputStyle = {
-  width: "100%",
-  padding: "14px 16px",
-  borderRadius: 16,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.06)",
-  color: "white",
-  fontSize: 17,
-  boxSizing: "border-box",
-};
-
-const selectStyle = {
-  width: "100%",
-  padding: "14px 16px",
-  borderRadius: 16,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.06)",
-  color: "white",
-  fontSize: 17,
-  boxSizing: "border-box",
-};
-
 const summaryPanel = {
   marginTop: 8,
   marginBottom: 22,
@@ -666,4 +578,9 @@ const secondaryButton = {
   fontWeight: 700,
   cursor: "pointer",
   minWidth: 170,
+};
+
+const disabledButton = {
+  opacity: 0.65,
+  cursor: "not-allowed",
 };

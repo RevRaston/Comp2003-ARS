@@ -1,4 +1,3 @@
-// src/pages/Results.jsx
 import { useGame } from "../GameContext";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
@@ -19,26 +18,109 @@ export default function Results() {
 
   const {
     results,
-    splitMode,
-    sessionPot,
     sessionItems,
-    paymentRequired,
+    sessionPot,
     confirmedSplit,
     saveConfirmedSplit,
     clearConfirmedSplit,
     sessionCode,
-    rule,
+    profile,
   } = useGame();
 
   const code = sessionCode || localStorage.getItem("session_code");
 
+  const [screenWidth, setScreenWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
   const [sessionData, setSessionData] = useState(null);
   const [loadingSession, setLoadingSession] = useState(true);
 
+  const [localSplitMode, setLocalSplitMode] = useState("items");
   const [itemAssignments, setItemAssignments] = useState([]);
   const [manualTotals, setManualTotals] = useState([]);
   const [isConfirmed, setIsConfirmed] = useState(Boolean(confirmedSplit));
-  const [confirmError, setConfirmError] = useState("");
+
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanMessage, setScanMessage] = useState("");
+  const [scanError, setScanError] = useState("");
+
+  const [saveError, setSaveError] = useState("");
+  const [saveLoading, setSaveLoading] = useState(false);
+
+  const [newItemName, setNewItemName] = useState("");
+  const [newItemCost, setNewItemCost] = useState("");
+
+  useEffect(() => {
+    function handleResize() {
+      setScreenWidth(window.innerWidth);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isPhone = screenWidth <= 640;
+  const isLaptop = screenWidth <= 1100;
+
+  const activeMode = confirmedSplit?.mode || localSplitMode;
+
+  const finalResults = useMemo(() => {
+    if (
+      Array.isArray(sessionData?.finalResults) &&
+      sessionData.finalResults.length > 0
+    ) {
+      return sessionData.finalResults;
+    }
+
+    if (
+      Array.isArray(sessionData?.session?.final_results) &&
+      sessionData.session.final_results.length > 0
+    ) {
+      return sessionData.session.final_results;
+    }
+
+    return Array.isArray(results) ? results : [];
+  }, [results, sessionData]);
+
+  const winner = finalResults[0] || null;
+
+  const totalFromDraftItems = useMemo(() => {
+    return (sessionItems || []).reduce(
+      (sum, item) => sum + Number(item.cost || 0),
+      0
+    );
+  }, [sessionItems]);
+
+  const itemsDraftOrLiveTotal = useMemo(() => {
+    return itemAssignments.reduce((sum, item) => sum + Number(item.cost || 0), 0);
+  }, [itemAssignments]);
+
+  const effectiveSessionTotal =
+    activeMode === "items"
+      ? totalFromDraftItems || itemsDraftOrLiveTotal
+      : Number(sessionPot || 0);
+
+  const sessionPlayers = useMemo(() => {
+    const backendPlayers = sessionData?.players || [];
+
+    if (finalResults.length > 0) {
+      return finalResults.map((p, index) => ({
+        name: p.name || `Player ${index + 1}`,
+        rank: p.rank || index + 1,
+      }));
+    }
+
+    return backendPlayers.map((p, index) => ({
+      name: p.name || p.display_name || `Player ${index + 1}`,
+      rank: index + 1,
+    }));
+  }, [finalResults, sessionData]);
+
+  const nonWinnerPlayers = useMemo(() => {
+    if (sessionPlayers.length <= 1) return sessionPlayers;
+    return sessionPlayers.slice(1);
+  }, [sessionPlayers]);
 
   useEffect(() => {
     async function loadSession() {
@@ -48,216 +130,293 @@ export default function Results() {
       }
 
       try {
-        const token = localStorage.getItem("token");
-        const headers = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-
-        const res = await fetch(`${API_BASE}/sessions/${code}`, { headers });
+        const res = await fetch(`${API_BASE}/sessions/${code}`);
         const data = await res.json().catch(() => null);
 
-        if (res.ok && data?.session) {
+        if (res.ok && data) {
           setSessionData(data);
+
+          if (data?.session?.confirmed_split) {
+            saveConfirmedSplit(data.session.confirmed_split);
+            setIsConfirmed(true);
+          }
         }
       } catch (err) {
-        console.error("Failed to load session for results:", err);
+        console.error("Failed to load session:", err);
       } finally {
         setLoadingSession(false);
       }
     }
 
     loadSession();
-  }, [code]);
-
-  const backendSession = sessionData?.session || null;
-  const backendPlayers = sessionData?.players || [];
-
-  const hasRealResults = Array.isArray(results) && results.length > 0;
-
-  const itemsTotal = useMemo(() => {
-    return (sessionItems || []).reduce(
-      (sum, item) => sum + Number(item.cost || 0),
-      0
-    );
-  }, [sessionItems]);
-
-  const backendTotal = Number(backendSession?.total_cost || 0);
-
-  const effectiveTotal =
-    splitMode === "items"
-      ? itemsTotal
-      : Number(sessionPot || backendTotal || 0);
-
-  const effectiveRule = backendSession?.rule || rule || "winner_free";
-
-  const fallbackResults = useMemo(() => {
-    if (!backendPlayers.length) return [];
-
-    const total = Number(backendSession?.total_cost || sessionPot || 0);
-    const playerCount = backendPlayers.length;
-
-    const safePlayers = backendPlayers.map((p, index) => ({
-      name: p.name || p.display_name || `Player ${index + 1}`,
-      rank: index + 1,
-    }));
-
-    if (effectiveRule === "even_split") {
-      const share = playerCount > 0 ? total / playerCount : 0;
-      return safePlayers.map((p) => ({
-        ...p,
-        recommended: Number(share.toFixed(2)),
-      }));
-    }
-
-    const loserCount = Math.max(playerCount - 1, 0);
-    const loserShare = loserCount > 0 ? total / loserCount : 0;
-
-    return safePlayers.map((p, index) => ({
-      ...p,
-      recommended: Number((index === 0 ? 0 : loserShare).toFixed(2)),
-    }));
-  }, [backendPlayers, backendSession, sessionPot, effectiveRule]);
-
-  const finalResults = hasRealResults ? results : fallbackResults;
-  const hasAnyResults = Array.isArray(finalResults) && finalResults.length > 0;
-  const winner = hasAnyResults ? finalResults[0] : null;
-
-  const modeLabel =
-    splitMode === "items"
-      ? "Specific Items / Receipt"
-      : splitMode === "pot"
-      ? "Total Pot"
-      : splitMode === "pseudo"
-      ? "Pseudo Tab / No Payment"
-      : "Session Summary";
-
-  const recommendedAllocation = useMemo(() => {
-    if (!hasAnyResults) return [];
-
-    const base = finalResults.map((p) => ({
-      name: p.name,
-      rank: p.rank,
-      items: [],
-      total: 0,
-    }));
-
-    if (splitMode === "items") {
-      const items = [...(sessionItems || [])];
-      if (base.length <= 1) return base;
-
-      let playerIndex = 1;
-
-      for (const item of items) {
-        if (!base[playerIndex]) break;
-
-        base[playerIndex].items.push(item);
-        base[playerIndex].total += Number(item.cost || 0);
-
-        playerIndex += 1;
-        if (playerIndex >= base.length) playerIndex = 1;
-      }
-
-      return base;
-    }
-
-    if (splitMode === "pot") {
-      const loserCount = Math.max(base.length - 1, 0);
-      if (loserCount === 0) return base;
-
-      const share = Number(sessionPot || backendTotal || 0) / loserCount;
-
-      return base.map((p, index) => ({
-        ...p,
-        total: index === 0 ? 0 : share,
-      }));
-    }
-
-    if (splitMode === "pseudo") {
-      return base.map((p) => ({
-        ...p,
-        total: 0,
-      }));
-    }
-
-    const loserCount = Math.max(base.length - 1, 0);
-    if (loserCount === 0) return base;
-
-    const share = Number(backendTotal || 0) / loserCount;
-
-    return base.map((p, index) => ({
-      ...p,
-      total: index === 0 ? 0 : share,
-    }));
-  }, [
-    hasAnyResults,
-    finalResults,
-    splitMode,
-    sessionItems,
-    sessionPot,
-    backendTotal,
-  ]);
+  }, [code, saveConfirmedSplit]);
 
   useEffect(() => {
-    if (!hasAnyResults && !confirmedSplit) return;
+    if (!code) return;
 
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/sessions/${code}`);
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok || !data?.session) return;
+
+        setSessionData(data);
+
+        if (data.session.confirmed_split) {
+          saveConfirmedSplit(data.session.confirmed_split);
+          setIsConfirmed(true);
+        } else {
+          setIsConfirmed(false);
+        }
+      } catch {
+        // silent polling fail
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [code, saveConfirmedSplit]);
+
+  useEffect(() => {
     if (confirmedSplit) {
       setIsConfirmed(true);
 
-      if (confirmedSplit.mode === "items") {
-        setItemAssignments(confirmedSplit.itemAssignments || []);
-        setManualTotals([]);
-      } else {
-        setManualTotals(confirmedSplit.manualTotals || []);
-        setItemAssignments([]);
+      if (confirmedSplit.mode) {
+        setLocalSplitMode(confirmedSplit.mode);
       }
+
+      if (confirmedSplit.mode === "items") {
+        const confirmedItems = Array.isArray(confirmedSplit.itemAssignments)
+          ? confirmedSplit.itemAssignments
+          : [];
+        setItemAssignments(confirmedItems);
+        setManualTotals([]);
+      } else if (confirmedSplit.mode === "pot") {
+        const confirmedManual = Array.isArray(confirmedSplit.manualTotals)
+          ? confirmedSplit.manualTotals
+          : [];
+        setManualTotals(confirmedManual);
+        setItemAssignments([]);
+      } else {
+        setManualTotals([]);
+      }
+
       return;
     }
 
-    if (splitMode === "items") {
-      const assignments = (sessionItems || []).map((item) => {
-        const recommendedOwner =
-          recommendedAllocation.find((player) =>
-            player.items.some((i) => i.id === item.id)
-          )?.name || finalResults[0]?.name || "";
+    setIsConfirmed(false);
+  }, [confirmedSplit]);
+
+  useEffect(() => {
+    if (confirmedSplit) return;
+
+    if (activeMode === "items") {
+      if (itemAssignments.length > 0) return;
+
+      const seededItems = (sessionItems || []).map((item) => ({
+        id: item.id || crypto.randomUUID(),
+        name: item.name || "Item",
+        cost: Number(item.cost || 0),
+        assignedTo: [],
+      }));
+
+      setItemAssignments(seededItems);
+    }
+  }, [activeMode, sessionItems, itemAssignments.length, confirmedSplit]);
+
+  useEffect(() => {
+    if (confirmedSplit) return;
+
+    if (activeMode === "pot") {
+      setManualTotals((prev) => {
+        if (prev.length === sessionPlayers.length && prev.length > 0) return prev;
+
+        const nonWinnerCount = Math.max(sessionPlayers.length - 1, 0);
+        const splitTotal = Number(sessionPot || 0);
+        const loserShare =
+          nonWinnerCount > 0 ? splitTotal / nonWinnerCount : 0;
+
+        return sessionPlayers.map((player, index) => ({
+          name: player.name,
+          rank: player.rank,
+          total: index === 0 ? 0 : Number(loserShare.toFixed(2)),
+        }));
+      });
+    }
+  }, [activeMode, sessionPlayers, sessionPot, confirmedSplit]);
+
+  function toggleItem(itemId, playerName) {
+    if (isConfirmed) return;
+
+    setItemAssignments((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+
+        const alreadyAssigned = item.assignedTo.includes(playerName);
 
         return {
           ...item,
-          assignedTo: recommendedOwner ? [recommendedOwner] : [],
+          assignedTo: alreadyAssigned
+            ? item.assignedTo.filter((p) => p !== playerName)
+            : [...item.assignedTo, playerName],
         };
+      })
+    );
+  }
+
+  function updateManual(playerName, value) {
+    if (isConfirmed) return;
+
+    setManualTotals((prev) =>
+      prev.map((player) =>
+        player.name === playerName
+          ? { ...player, total: Number(value) || 0 }
+          : player
+      )
+    );
+  }
+
+  function addManualItem() {
+    if (isConfirmed) return;
+    if (!newItemName.trim()) return;
+    if (!newItemCost || Number(newItemCost) <= 0) return;
+
+    const item = {
+      id: crypto.randomUUID(),
+      name: newItemName.trim(),
+      cost: Number(newItemCost),
+      assignedTo: [],
+    };
+
+    setItemAssignments((prev) => [...prev, item]);
+    setNewItemName("");
+    setNewItemCost("");
+  }
+
+  function updateItemName(itemId, value) {
+    if (isConfirmed) return;
+
+    setItemAssignments((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, name: value } : item
+      )
+    );
+  }
+
+  function updateItemCost(itemId, value) {
+    if (isConfirmed) return;
+
+    setItemAssignments((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, cost: Number(value) || 0 } : item
+      )
+    );
+  }
+
+  function removeItem(itemId) {
+    if (isConfirmed) return;
+
+    setItemAssignments((prev) => prev.filter((item) => item.id !== itemId));
+  }
+
+  function clearAllAssignments() {
+    if (isConfirmed) return;
+
+    setItemAssignments((prev) =>
+      prev.map((item) => ({
+        ...item,
+        assignedTo: [],
+      }))
+    );
+  }
+
+  function autoAssignUnassignedItems() {
+    if (isConfirmed) return;
+    if (!itemAssignments.length) return;
+
+    const targets =
+      nonWinnerPlayers.length > 0 ? nonWinnerPlayers : sessionPlayers;
+
+    if (!targets.length) return;
+
+    let cursor = 0;
+
+    setItemAssignments((prev) =>
+      prev.map((item) => {
+        if (Array.isArray(item.assignedTo) && item.assignedTo.length > 0) {
+          return item;
+        }
+
+        const assignedPlayer = targets[cursor % targets.length];
+        cursor += 1;
+
+        return {
+          ...item,
+          assignedTo: assignedPlayer ? [assignedPlayer.name] : [],
+        };
+      })
+    );
+  }
+
+  async function handleReceiptUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setScanLoading(true);
+      setScanMessage("");
+      setScanError("");
+
+      const formData = new FormData();
+      formData.append("receipt", file);
+
+      const res = await fetch(`${API_BASE}/scan-receipt`, {
+        method: "POST",
+        body: formData,
       });
 
-      setItemAssignments(assignments);
-      setManualTotals([]);
-      setIsConfirmed(false);
-      setConfirmError("");
-      return;
-    }
+      const data = await res.json().catch(() => null);
 
-    if (splitMode === "pot" || splitMode === "pseudo") {
-      setManualTotals(
-        recommendedAllocation.map((player) => ({
-          name: player.name,
-          rank: player.rank,
-          total: Number(player.total || 0),
-        }))
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to scan receipt");
+      }
+
+      const parsedItems = Array.isArray(data?.items) ? data.items : [];
+
+      if (!parsedItems.length) {
+        setScanMessage(data?.warning || "No receipt items detected.");
+        return;
+      }
+
+      setItemAssignments((prev) => [
+        ...prev,
+        ...parsedItems.map((item) => ({
+          id: item.id || crypto.randomUUID(),
+          name: item.name || "Receipt item",
+          cost: Number(item.cost || 0),
+          assignedTo: [],
+        })),
+      ]);
+
+      setScanMessage(
+        `Added ${parsedItems.length} item${
+          parsedItems.length === 1 ? "" : "s"
+        } from receipt.`
       );
-      setItemAssignments([]);
-      setIsConfirmed(false);
-      setConfirmError("");
+    } catch (err) {
+      console.error(err);
+      setScanError(err.message || "Receipt scan failed");
+    } finally {
+      setScanLoading(false);
+      e.target.value = "";
     }
-  }, [
-    hasAnyResults,
-    splitMode,
-    sessionItems,
-    recommendedAllocation,
-    finalResults,
-    confirmedSplit,
-  ]);
+  }
 
   const finalAllocation = useMemo(() => {
-    if (!hasAnyResults) return [];
+    if (!sessionPlayers.length) return [];
 
-    if (splitMode === "items") {
-      return finalResults.map((player) => {
+    if (activeMode === "items") {
+      return sessionPlayers.map((player) => {
         const ownedItems = itemAssignments
           .filter((item) => item.assignedTo.includes(player.name))
           .map((item) => {
@@ -266,6 +425,7 @@ export default function Results() {
 
             return {
               ...item,
+              shareCount,
               shareValue,
               shared: shareCount > 1,
             };
@@ -283,7 +443,7 @@ export default function Results() {
       });
     }
 
-    if (splitMode === "pot" || splitMode === "pseudo") {
+    if (activeMode === "pot") {
       return manualTotals.map((player) => ({
         name: player.name,
         rank: player.rank,
@@ -292,15 +452,13 @@ export default function Results() {
       }));
     }
 
-    return recommendedAllocation;
-  }, [
-    hasAnyResults,
-    splitMode,
-    finalResults,
-    itemAssignments,
-    manualTotals,
-    recommendedAllocation,
-  ]);
+    return sessionPlayers.map((player) => ({
+      name: player.name,
+      rank: player.rank,
+      items: [],
+      total: 0,
+    }));
+  }, [activeMode, itemAssignments, manualTotals, sessionPlayers]);
 
   const finalTotal = useMemo(() => {
     return finalAllocation.reduce(
@@ -309,79 +467,51 @@ export default function Results() {
     );
   }, [finalAllocation]);
 
-  const totalsMatch = useMemo(() => {
-    return Math.abs(finalTotal - effectiveTotal) < 0.01;
-  }, [finalTotal, effectiveTotal]);
+  const unassignedItems = useMemo(() => {
+    if (activeMode !== "items") return [];
+    return itemAssignments.filter(
+      (item) => !Array.isArray(item.assignedTo) || item.assignedTo.length === 0
+    );
+  }, [activeMode, itemAssignments]);
 
   const allItemsAssigned = useMemo(() => {
-    if (splitMode !== "items") return true;
-    return itemAssignments.every(
-      (item) => Array.isArray(item.assignedTo) && item.assignedTo.length > 0
+    if (activeMode !== "items") return true;
+    return unassignedItems.length === 0;
+  }, [activeMode, unassignedItems]);
+
+  const totalsMatch = useMemo(() => {
+    if (activeMode === "pseudo") return true;
+    return (
+      Math.abs(Number(finalTotal || 0) - Number(effectiveSessionTotal || 0)) < 0.01
     );
-  }, [splitMode, itemAssignments]);
+  }, [activeMode, finalTotal, effectiveSessionTotal]);
 
-  function toggleItemAssignment(itemId, playerName) {
-    if (isConfirmed) return;
+  async function handleConfirm() {
+    setSaveError("");
 
-    setItemAssignments((prev) =>
-      prev.map((item) => {
-        if (item.id !== itemId) return item;
-
-        const alreadyAssigned = item.assignedTo.includes(playerName);
-
-        return {
-          ...item,
-          assignedTo: alreadyAssigned
-            ? item.assignedTo.filter((name) => name !== playerName)
-            : [...item.assignedTo, playerName],
-        };
-      })
-    );
-  }
-
-  function updateManualTotal(playerName, value) {
-    if (isConfirmed) return;
-
-    setManualTotals((prev) =>
-      prev.map((player) =>
-        player.name === playerName
-          ? { ...player, total: Number(value) || 0 }
-          : player
-      )
-    );
-  }
-
-  async function handleConfirmSplit() {
-    setConfirmError("");
-
-    if (splitMode === "items" && !allItemsAssigned) {
-      setConfirmError(
-        "Every item must be assigned to at least one player before confirmation."
-      );
+    if (activeMode === "items" && !allItemsAssigned) {
+      setSaveError("Every item must be assigned before confirming.");
       return;
     }
 
-    if (!totalsMatch && splitMode !== "pseudo") {
-      setConfirmError(
-        "Final split total must match the session total before confirmation."
-      );
+    if (!totalsMatch) {
+      setSaveError("Final total must match the session total before confirming.");
       return;
     }
 
     const payload = {
-      mode: splitMode,
-      modeLabel,
-      paymentRequired,
-      sessionTotal: effectiveTotal,
-      finalTotal,
+      mode: activeMode,
       winnerName: winner?.name || null,
       finalAllocation,
+      finalTotal,
       itemAssignments,
       manualTotals,
       confirmedAt: new Date().toISOString(),
     };
 
     try {
+      setSaveLoading(true);
+
       saveConfirmedSplit(payload);
 
       if (code) {
@@ -398,693 +528,1249 @@ export default function Results() {
         const data = await res.json().catch(() => null);
 
         if (!res.ok) {
-          throw new Error(
-            data?.error || `Failed to save confirmed split (HTTP ${res.status})`
-          );
+          throw new Error(data?.error || "Failed to save confirmed split");
         }
       }
 
       setIsConfirmed(true);
     } catch (err) {
       console.error(err);
-      setConfirmError(err?.message || "Failed to save confirmed split");
+      setSaveError(err.message || "Failed to confirm split");
+    } finally {
+      setSaveLoading(false);
     }
   }
 
-  function handleUnlockSplit() {
-    setIsConfirmed(false);
-    setConfirmError("");
-    clearConfirmedSplit();
+  async function unlock() {
+    try {
+      setSaveError("");
+      setSaveLoading(true);
+
+      if (code) {
+        const res = await fetch(`${API_BASE}/sessions/${code}/confirmed-split`, {
+          method: "DELETE",
+        });
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to unlock split");
+        }
+      }
+
+      clearConfirmedSplit();
+      setIsConfirmed(false);
+    } catch (err) {
+      console.error(err);
+      setSaveError(err.message || "Failed to unlock split");
+    } finally {
+      setSaveLoading(false);
+    }
   }
 
-  const showEmptyState =
-    !loadingSession && !hasAnyResults && !confirmedSplit && !backendSession;
+  const hostName =
+    profile?.displayName ||
+    profile?.display_name ||
+    profile?.email ||
+    "Host";
 
   return (
     <div style={page}>
-      <div style={container}>
-        <h1 style={title}>Game Results & Split Summary</h1>
+      <div style={heroGlowOne} />
+      <div style={heroGlowTwo} />
 
-        {loadingSession ? (
-          <div style={emptyBox}>
-            <h2 style={{ marginTop: 0 }}>Loading session results...</h2>
-          </div>
-        ) : showEmptyState ? (
-          <div style={emptyBox}>
-            <h2 style={{ marginTop: 0 }}>No results to show yet.</h2>
-            <button onClick={() => navigate("/lobby")} style={primaryBtn}>
-              Back to Lobby
-            </button>
-          </div>
-        ) : (
-          <>
-            {!hasRealResults && hasAnyResults && (
-              <div style={sectionBox}>
-                <p style={mutedText}>
-                  Live multiplayer rankings were not persisted for this session,
-                  so this page is showing a fallback session summary using the
-                  shared session player order and bill rule.
-                </p>
+      <section
+        style={{
+          ...heroSection,
+          padding: isPhone ? "28px 14px 40px" : "42px 20px 52px",
+        }}
+      >
+        <div
+          style={{
+            ...resultsLayout,
+            gridTemplateColumns:
+              isPhone || isLaptop
+                ? "1fr"
+                : "minmax(320px, 0.84fr) minmax(0, 1.16fr)",
+            gap: isPhone ? 18 : 24,
+          }}
+        >
+          <div style={sideCard}>
+            <p style={sectionEyebrow}>Session results</p>
+            <h1
+              style={{
+                ...pageTitle,
+                fontSize: isPhone ? 40 : isLaptop ? 52 : 64,
+              }}
+            >
+              Final split
+            </h1>
+
+            <p style={introText}>
+              Review the winner, choose the split method, build or scan the
+              receipt, assign items, and confirm the final outcome for everyone
+              in the session.
+            </p>
+
+            <div style={profileCard}>
+              <div style={avatarCircle}>
+                {String(hostName).slice(0, 2).toUpperCase()}
               </div>
-            )}
 
-            {winner && (
-              <div style={winnerCard}>
-                <h2 style={{ margin: 0 }}>🏆 Winner</h2>
-                <h1 style={{ margin: "10px 0", fontSize: 40 }}>{winner.name}</h1>
-                <p style={{ margin: 0, fontSize: 20 }}>
-                  Recommended: £{Number(winner.recommended || 0).toFixed(2)}
-                </p>
-              </div>
-            )}
-
-            {hasAnyResults && (
-              <div style={sectionBox}>
-                <h2 style={sectionTitle}>Rankings</h2>
-
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Rank</th>
-                      <th style={th}>Name</th>
-                      <th style={th}>Recommended Pay</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {finalResults.map((p) => (
-                      <tr key={p.name}>
-                        <td style={td}>{p.rank}</td>
-                        <td style={td}>{p.name}</td>
-                        <td style={td}>
-                          £{Number(p.recommended || 0).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div style={sectionBox}>
-              <h2 style={sectionTitle}>Split Setup Summary</h2>
-
-              <div style={summaryGrid}>
-                <div style={summaryCard}>
-                  <div style={summaryLabel}>Mode</div>
-                  <div style={summaryValue}>{modeLabel}</div>
-                </div>
-
-                <div style={summaryCard}>
-                  <div style={summaryLabel}>Payment Required</div>
-                  <div style={summaryValue}>
-                    {paymentRequired ? "Yes" : "No"}
-                  </div>
-                </div>
-
-                <div style={summaryCard}>
-                  <div style={summaryLabel}>Session Total</div>
-                  <div style={summaryValue}>
-                    £{Number(effectiveTotal || backendTotal || 0).toFixed(2)}
-                  </div>
-                </div>
-
-                <div style={summaryCard}>
-                  <div style={summaryLabel}>Current Final Total</div>
-                  <div style={summaryValue}>
-                    £{Number(finalTotal || 0).toFixed(2)}
-                  </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={profileLabel}>Session viewer</div>
+                <div style={profileName}>{hostName}</div>
+                <div style={profileSubtext}>
+                  Session code: {code || "Not available"}
                 </div>
               </div>
             </div>
 
-            {splitMode === "items" && (
-              <div style={sectionBox}>
-                <h2 style={sectionTitle}>Bill Items</h2>
+            <div style={summaryPanel}>
+              <div style={summaryRow}>
+                <span style={summaryLabel}>Split mode</span>
+                <strong style={summaryValue}>
+                  {activeMode === "items"
+                    ? "Specific Items"
+                    : activeMode === "pot"
+                    ? "Total Pot"
+                    : "Pseudo Tab"}
+                </strong>
+              </div>
 
-                {!sessionItems || sessionItems.length === 0 ? (
-                  <p style={mutedText}>No items were added for this session.</p>
-                ) : (
-                  <>
-                    <table style={table}>
-                      <thead>
-                        <tr>
-                          <th style={th}>Item</th>
-                          <th style={th}>Cost</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sessionItems.map((item) => (
-                          <tr key={item.id}>
-                            <td style={td}>{item.name}</td>
-                            <td style={td}>
-                              £{Number(item.cost || 0).toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              <div style={summaryRow}>
+                <span style={summaryLabel}>Session total</span>
+                <strong style={summaryValue}>
+                  £{Number(effectiveSessionTotal || 0).toFixed(2)}
+                </strong>
+              </div>
 
-                    <h3 style={{ marginTop: 18 }}>
-                      Items Total: £{Number(itemsTotal || 0).toFixed(2)}
-                    </h3>
-                  </>
-                )}
+              <div style={summaryRow}>
+                <span style={summaryLabel}>Current final total</span>
+                <strong style={summaryValue}>
+                  £{Number(finalTotal || 0).toFixed(2)}
+                </strong>
+              </div>
+
+              {activeMode === "items" && (
+                <div style={summaryRow}>
+                  <span style={summaryLabel}>Unassigned items</span>
+                  <strong
+                    style={{
+                      ...summaryValue,
+                      color: unassignedItems.length ? "#FF9A9A" : "#9BE39B",
+                    }}
+                  >
+                    {unassignedItems.length}
+                  </strong>
+                </div>
+              )}
+            </div>
+
+            {winner && (
+              <div style={winnerCard}>
+                <div style={winnerEyebrow}>Winner</div>
+                <div style={winnerName}>🏆 {winner.name}</div>
+                <div style={winnerSubtext}>Top player this session</div>
               </div>
             )}
+          </div>
 
-            {splitMode === "pot" && (
-              <div style={sectionBox}>
-                <h2 style={sectionTitle}>Total Pot</h2>
-                <p style={mutedText}>
-                  This session uses a single overall cost instead of individual
-                  items.
-                </p>
-                <h3>Pot Total: £{Number(sessionPot || backendTotal || 0).toFixed(2)}</h3>
+          <div style={mainColumn}>
+            {loadingSession ? (
+              <div style={contentCard}>
+                <p style={sectionEyebrow}>Loading</p>
+                <h2 style={cardHeading}>Loading session results...</h2>
               </div>
-            )}
-
-            {splitMode === "pseudo" && (
-              <div style={sectionBox}>
-                <h2 style={sectionTitle}>Pseudo Tab</h2>
-                <p style={mutedText}>
-                  This session does not require real payment processing.
-                </p>
-
-                {Number(sessionPot || backendTotal || 0) > 0 && (
-                  <h3>
-                    Notional Total: £
-                    {Number(sessionPot || backendTotal || 0).toFixed(2)}
-                  </h3>
-                )}
-              </div>
-            )}
-
-            {hasAnyResults && (
-              <div style={sectionBox}>
-                <h2 style={sectionTitle}>Recommended Allocation</h2>
-                <p style={mutedText}>
-                  This is the system’s suggested split based on the available
-                  session result data and the chosen session mode.
-                </p>
-
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Player</th>
-                      <th style={th}>Rank</th>
-                      <th style={th}>Assigned Items</th>
-                      <th style={th}>Suggested Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recommendedAllocation.map((player) => (
-                      <tr key={player.name}>
-                        <td style={td}>{player.name}</td>
-                        <td style={td}>{player.rank}</td>
-                        <td style={td}>
-                          {player.items.length === 0
-                            ? "-"
-                            : player.items.map((item) => item.name).join(", ")}
-                        </td>
-                        <td style={td}>
-                          £{Number(player.total || 0).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {hasAnyResults && (
+            ) : (
               <>
-                <div style={sectionBox}>
-                  <h2 style={sectionTitle}>Editable Final Split</h2>
-                  <p style={mutedText}>
-                    Adjust the suggested split before final confirmation.
-                  </p>
+                <div style={contentCard}>
+                  <p style={sectionEyebrow}>Rankings</p>
+                  <h2 style={cardHeading}>Leaderboard</h2>
 
-                  {splitMode === "items" && (
-                    <table style={table}>
-                      <thead>
-                        <tr>
-                          <th style={th}>Item</th>
-                          <th style={th}>Cost</th>
-                          <th style={th}>Split Across</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {itemAssignments.map((item) => (
-                          <tr key={item.id}>
-                            <td style={td}>{item.name}</td>
-                            <td style={td}>
-                              £{Number(item.cost || 0).toFixed(2)}
-                            </td>
-                            <td style={td}>
-                              <div style={checkboxWrap}>
-                                {finalResults.map((player) => {
-                                  const checked = item.assignedTo.includes(
-                                    player.name
-                                  );
-
-                                  return (
-                                    <label key={player.name} style={checkboxLabel}>
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        disabled={isConfirmed}
-                                        onChange={() =>
-                                          toggleItemAssignment(
-                                            item.id,
-                                            player.name
-                                          )
-                                        }
-                                      />
-                                      <span>{player.name}</span>
-                                    </label>
-                                  );
-                                })}
+                  {!sessionPlayers.length ? (
+                    <p style={helperIntro}>No rankings available yet.</p>
+                  ) : (
+                    <div style={leaderboardList}>
+                      {sessionPlayers.map((player, index) => (
+                        <div
+                          key={`${player.name}-${index}`}
+                          style={{
+                            ...leaderboardRow,
+                            ...(index === 0 ? leaderboardRowWinner : null),
+                          }}
+                        >
+                          <div style={leaderboardLeft}>
+                            <div style={leaderboardRank}>#{player.rank}</div>
+                            <div>
+                              <div style={leaderboardName}>{player.name}</div>
+                              <div style={leaderboardMeta}>
+                                {index === 0 ? "Session winner" : "Participant"}
                               </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                            </div>
+                          </div>
 
-                  {(splitMode === "pot" || splitMode === "pseudo") && (
-                    <table style={table}>
-                      <thead>
-                        <tr>
-                          <th style={th}>Player</th>
-                          <th style={th}>Rank</th>
-                          <th style={th}>Final Contribution</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {manualTotals.map((player) => (
-                          <tr key={player.name}>
-                            <td style={td}>{player.name}</td>
-                            <td style={td}>{player.rank}</td>
-                            <td style={td}>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={player.total}
-                                onChange={(e) =>
-                                  updateManualTotal(
-                                    player.name,
-                                    e.target.value
-                                  )
-                                }
-                                style={inputStyle}
-                                disabled={isConfirmed}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          <div style={leaderboardRight}>
+                            {index === 0 ? "🏆" : "•"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                <div style={sectionBox}>
-                  <h2 style={sectionTitle}>Final Allocation Preview</h2>
-                  <p style={mutedText}>
-                    This is the current split after your edits.
+                <div style={contentCard}>
+                  <p style={sectionEyebrow}>Split method</p>
+                  <h2 style={cardHeading}>Choose how to split</h2>
+                  <p style={helperIntro}>
+                    Pick the final split style for this session. Once confirmed,
+                    all players will see the same saved result.
                   </p>
 
-                  <table style={table}>
-                    <thead>
-                      <tr>
-                        <th style={th}>Player</th>
-                        <th style={th}>Rank</th>
-                        <th style={th}>Final Items</th>
-                        <th style={th}>Final Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {finalAllocation.map((player) => (
-                        <tr key={player.name}>
-                          <td style={td}>{player.name}</td>
-                          <td style={td}>{player.rank}</td>
-                          <td style={td}>
-                            {player.items.length === 0
-                              ? "-"
-                              : player.items
-                                  .map((item) =>
-                                    item.shared
-                                      ? `${item.name} (£${Number(
-                                          item.shareValue || 0
-                                        ).toFixed(2)} share)`
-                                      : item.name
-                                  )
-                                  .join(", ")}
-                          </td>
-                          <td style={td}>
-                            £{Number(player.total || 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div style={modeGrid}>
+                    {["items", "pot", "pseudo"].map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        disabled={isConfirmed}
+                        onClick={() => setLocalSplitMode(mode)}
+                        style={{
+                          ...modeCard,
+                          ...(activeMode === mode ? modeCardActive : null),
+                          ...(isConfirmed ? disabledCard : null),
+                        }}
+                      >
+                        <h3 style={modeTitle}>
+                          {mode === "items"
+                            ? "Specific Items"
+                            : mode === "pot"
+                            ? "Total Pot"
+                            : "Pseudo Tab"}
+                        </h3>
+                        <p style={modeText}>
+                          {mode === "items"
+                            ? "Assign receipt items directly to players."
+                            : mode === "pot"
+                            ? "Manually choose how much each player pays."
+                            : "No payment required, just keep the results."}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                  <h3 style={{ marginTop: 18 }}>
-                    Final Split Total: £{Number(finalTotal || 0).toFixed(2)}
-                  </h3>
+                {activeMode === "items" && (
+                  <>
+                    <div style={contentCard}>
+                      <p style={sectionEyebrow}>Receipt builder</p>
+                      <h2 style={cardHeading}>Add or scan items</h2>
+                      <p style={helperIntro}>
+                        Build the receipt manually or upload a photo to scan it.
+                        You can then edit, delete, auto-assign, or fine-tune
+                        everything below.
+                      </p>
 
-                  {splitMode === "items" && !allItemsAssigned && (
-                    <p
-                      style={{
-                        marginTop: 10,
-                        color: "#FF9A9A",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Every item must be assigned to at least one player.
+                      {!isConfirmed && (
+                        <>
+                          <div
+                            style={{
+                              ...builderRow,
+                              flexDirection: isPhone ? "column" : "row",
+                            }}
+                          >
+                            <input
+                              type="text"
+                              placeholder="Item name"
+                              value={newItemName}
+                              onChange={(e) => setNewItemName(e.target.value)}
+                              style={builderInput}
+                            />
+
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Cost"
+                              value={newItemCost}
+                              onChange={(e) => setNewItemCost(e.target.value)}
+                              style={{
+                                ...builderInput,
+                                width: isPhone ? "100%" : 160,
+                              }}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={addManualItem}
+                              style={{
+                                ...primaryButton,
+                                minWidth: isPhone ? "100%" : 160,
+                              }}
+                            >
+                              Add Item
+                            </button>
+                          </div>
+
+                          <div style={receiptToolRow}>
+                            <button
+                              type="button"
+                              onClick={autoAssignUnassignedItems}
+                              style={secondaryButton}
+                            >
+                              Auto-Assign Unassigned
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={clearAllAssignments}
+                              style={ghostButton}
+                            >
+                              Clear Assignments
+                            </button>
+                          </div>
+
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleReceiptUpload}
+                            style={fileInputStyle}
+                          />
+                        </>
+                      )}
+
+                      {scanLoading ? (
+                        <p style={mutedText}>Scanning receipt...</p>
+                      ) : null}
+
+                      {scanMessage ? (
+                        <p style={successText}>{scanMessage}</p>
+                      ) : null}
+
+                      {scanError ? (
+                        <p style={errorText}>{scanError}</p>
+                      ) : null}
+
+                      {unassignedItems.length > 0 && (
+                        <div style={warningBanner}>
+                          {unassignedItems.length} item
+                          {unassignedItems.length === 1 ? "" : "s"} still need
+                          assigning.
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={contentCard}>
+                      <p style={sectionEyebrow}>Item assignment</p>
+                      <h2 style={cardHeading}>Assign items to players</h2>
+                      <p style={helperIntro}>
+                        Tap the player chips to assign each item. Shared items
+                        split evenly across everyone selected.
+                      </p>
+
+                      {!itemAssignments.length ? (
+                        <p style={mutedText}>
+                          No items yet. Add items manually or upload a receipt.
+                        </p>
+                      ) : (
+                        <div style={assignmentList}>
+                          {itemAssignments.map((item) => {
+                            const isUnassigned =
+                              !Array.isArray(item.assignedTo) ||
+                              item.assignedTo.length === 0;
+
+                            return (
+                              <div
+                                key={item.id}
+                                style={{
+                                  ...assignmentCard,
+                                  ...(isUnassigned ? assignmentCardWarning : null),
+                                }}
+                              >
+                                {!isConfirmed ? (
+                                  <div
+                                    style={{
+                                      ...editableItemRow,
+                                      flexDirection: isPhone ? "column" : "row",
+                                    }}
+                                  >
+                                    <input
+                                      type="text"
+                                      value={item.name}
+                                      onChange={(e) =>
+                                        updateItemName(item.id, e.target.value)
+                                      }
+                                      style={editableInput}
+                                    />
+
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.cost}
+                                      onChange={(e) =>
+                                        updateItemCost(item.id, e.target.value)
+                                      }
+                                      style={{
+                                        ...editableInput,
+                                        width: isPhone ? "100%" : 140,
+                                      }}
+                                    />
+
+                                    <button
+                                      type="button"
+                                      onClick={() => removeItem(item.id)}
+                                      style={deleteButton}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={assignmentHeader}>
+                                    <div>
+                                      <div style={assignmentItemName}>
+                                        {item.name}
+                                      </div>
+                                      <div style={assignmentItemCost}>
+                                        £{Number(item.cost || 0).toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {isUnassigned && (
+                                  <div style={inlineWarningText}>
+                                    Unassigned item
+                                  </div>
+                                )}
+
+                                <div style={chipWrap}>
+                                  {sessionPlayers.map((player) => {
+                                    const active = item.assignedTo.includes(
+                                      player.name
+                                    );
+
+                                    return (
+                                      <button
+                                        key={`${item.id}-${player.name}`}
+                                        type="button"
+                                        disabled={isConfirmed}
+                                        onClick={() =>
+                                          toggleItem(item.id, player.name)
+                                        }
+                                        style={{
+                                          ...playerChip,
+                                          ...(active ? playerChipActive : null),
+                                          ...(isConfirmed
+                                            ? playerChipDisabled
+                                            : null),
+                                        }}
+                                      >
+                                        {player.name}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {activeMode === "pot" && (
+                  <div style={contentCard}>
+                    <p style={sectionEyebrow}>Manual totals</p>
+                    <h2 style={cardHeading}>Set contributions</h2>
+                    <p style={helperIntro}>
+                      Adjust how much each player should contribute toward the
+                      overall bill total.
                     </p>
-                  )}
 
-                  {splitMode !== "pseudo" && (
-                    <p
+                    <div style={manualTotalsList}>
+                      {manualTotals.map((player) => (
+                        <div key={player.name} style={manualRow}>
+                          <div>
+                            <div style={manualName}>{player.name}</div>
+                            <div style={manualMeta}>Rank {player.rank}</div>
+                          </div>
+
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={player.total}
+                            disabled={isConfirmed}
+                            onChange={(e) =>
+                              updateManual(player.name, e.target.value)
+                            }
+                            style={manualInput}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeMode === "pseudo" && (
+                  <div style={contentCard}>
+                    <p style={sectionEyebrow}>Pseudo tab</p>
+                    <h2 style={cardHeading}>No payment required</h2>
+                    <p style={helperIntro}>
+                      This session is being treated as a non-payment or demo
+                      result. Rankings are still saved, but contributions stay
+                      at zero.
+                    </p>
+                  </div>
+                )}
+
+                <div style={contentCard}>
+                  <p style={sectionEyebrow}>Final allocation</p>
+                  <h2 style={cardHeading}>Preview the split</h2>
+                  <p style={helperIntro}>
+                    This is the current final breakdown that will be shared to
+                    the whole session once confirmed.
+                  </p>
+
+                  <div style={allocationList}>
+                    {finalAllocation.map((player) => (
+                      <div key={player.name} style={allocationCard}>
+                        <div style={allocationHeader}>
+                          <div>
+                            <div style={allocationName}>{player.name}</div>
+                            <div style={allocationMeta}>Rank {player.rank}</div>
+                          </div>
+                          <div style={allocationTotal}>
+                            £{Number(player.total || 0).toFixed(2)}
+                          </div>
+                        </div>
+
+                        {player.items?.length > 0 && (
+                          <div style={allocationItems}>
+                            {player.items.map((item) => (
+                              <div
+                                key={`${player.name}-${item.id}`}
+                                style={allocationItemRow}
+                              >
+                                <span>
+                                  {item.name}
+                                  {item.shared
+                                    ? ` (${item.shareCount} way split)`
+                                    : ""}
+                                </span>
+                                <strong>
+                                  £{Number(item.shareValue || 0).toFixed(2)}
+                                </strong>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={finalCheckBox}>
+                    <div
                       style={{
-                        marginTop: 10,
+                        ...finalCheckLine,
                         color: totalsMatch ? "#9BE39B" : "#FF9A9A",
-                        fontWeight: 600,
                       }}
                     >
                       {totalsMatch
                         ? "Final total matches session total."
-                        : "Final total does NOT match session total."}
-                    </p>
-                  )}
-                </div>
-
-                <div style={sectionBox}>
-                  <h2 style={sectionTitle}>Final Confirmation</h2>
-
-                  {!isConfirmed ? (
-                    <>
-                      <p style={mutedText}>
-                        Confirm the final split once you are happy with the
-                        allocation.
-                      </p>
-
-                      {confirmError && (
-                        <p style={{ color: "#FF9A9A", fontWeight: 600 }}>
-                          {confirmError}
-                        </p>
-                      )}
-
-                      <button onClick={handleConfirmSplit} style={primaryBtn}>
-                        Confirm Final Split
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ color: "#9BE39B", fontWeight: 700 }}>
-                        Final split confirmed.
-                      </p>
-
-                      <p style={mutedText}>
-                        {paymentRequired
-                          ? "This session is now ready for payment processing."
-                          : "No real payment is required for this session."}
-                      </p>
-
-                      {confirmedSplit?.confirmedAt && (
-                        <p style={mutedText}>
-                          Confirmed at:{" "}
-                          {new Date(
-                            confirmedSplit.confirmedAt
-                          ).toLocaleString()}
-                        </p>
-                      )}
-
-                      <button onClick={handleUnlockSplit} style={secondaryBtn}>
-                        Unlock and Edit Again
-                      </button>
-                    </>
-                  )}
-                </div>
-              </>
-            )}
-
-            {isConfirmed && confirmedSplit && (
-              <div style={receiptBox}>
-                <h2 style={receiptTitle}>Saved Final Session Summary</h2>
-
-                <div style={receiptRow}>
-                  <span>Mode</span>
-                  <strong>{confirmedSplit.modeLabel}</strong>
-                </div>
-
-                <div style={receiptRow}>
-                  <span>Winner</span>
-                  <strong>{confirmedSplit.winnerName || "N/A"}</strong>
-                </div>
-
-                <div style={receiptRow}>
-                  <span>Payment Required</span>
-                  <strong>
-                    {confirmedSplit.paymentRequired ? "Yes" : "No"}
-                  </strong>
-                </div>
-
-                <div style={receiptDivider} />
-
-                {confirmedSplit.finalAllocation.map((player) => (
-                  <div key={player.name} style={receiptPlayerBlock}>
-                    <div style={receiptRow}>
-                      <span>
-                        {player.name} (Rank {player.rank})
-                      </span>
-                      <strong>£{Number(player.total || 0).toFixed(2)}</strong>
+                        : "Final total does not match session total."}
                     </div>
 
-                    {player.items?.length > 0 && (
-                      <div style={receiptItems}>
-                        {player.items.map((item) => (
-                          <div
-                            key={`${player.name}-${item.id}`}
-                            style={receiptItem}
-                          >
-                            <span>
-                              {item.name}
-                              {item.shared
-                                ? ` (shared, £${Number(
-                                    item.shareValue || 0
-                                  ).toFixed(2)} share)`
-                                : ""}
-                            </span>
-                            <span>
-                              £
-                              {Number(
-                                item.shared ? item.shareValue : item.cost || 0
-                              ).toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
+                    {activeMode === "items" && !allItemsAssigned && (
+                      <div style={{ ...finalCheckLine, color: "#FF9A9A" }}>
+                        Every item must be assigned before confirmation.
                       </div>
                     )}
                   </div>
-                ))}
-
-                <div style={receiptDivider} />
-
-                <div style={receiptRow}>
-                  <span>Final Total</span>
-                  <strong>
-                    £{Number(confirmedSplit.finalTotal || 0).toFixed(2)}
-                  </strong>
                 </div>
-              </div>
-            )}
 
-            <div style={footerRow}>
-              <button onClick={() => navigate("/lobby")} style={secondaryBtn}>
-                Back to Lobby
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+                <div style={contentCard}>
+                  <p style={sectionEyebrow}>Confirm</p>
+                  <h2 style={cardHeading}>Lock the final split</h2>
+                  <p style={helperIntro}>
+                    Once confirmed, every player screen will show the same saved
+                    session result.
+                  </p>
+
+                  {saveError ? <p style={errorText}>{saveError}</p> : null}
+
+                  {!isConfirmed ? (
+                    <button
+                      type="button"
+                      onClick={handleConfirm}
+                      disabled={saveLoading}
+                      style={{
+                        ...primaryButton,
+                        ...(saveLoading ? disabledButton : null),
+                      }}
+                    >
+                      {saveLoading ? "Saving..." : "Confirm Final Split"}
+                    </button>
+                  ) : (
+                    <div style={confirmedBox}>
+                      <div style={confirmedText}>Final split confirmed.</div>
+                      <button
+                        type="button"
+                        onClick={unlock}
+                        disabled={saveLoading}
+                        style={{
+                          ...secondaryButton,
+                          ...(saveLoading ? disabledButton : null),
+                        }}
+                      >
+                        {saveLoading ? "Unlocking..." : "Unlock"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div style={footerRow}>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/lobby")}
+                    style={ghostButton}
+                  >
+                    Back to Lobby
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
 
-/* styles */
 const page = {
   minHeight: "100vh",
-  paddingTop: 80,
-  color: "white",
+  color: "#fff",
+  position: "relative",
+  overflow: "hidden",
+  background:
+    "radial-gradient(circle at top, rgba(255,210,90,0.10), transparent 18%), linear-gradient(180deg, #0d1118 0%, #151b26 35%, #1b2130 100%)",
 };
 
-const container = {
-  maxWidth: 1000,
-  margin: "0 auto",
-  padding: 20,
+const heroGlowOne = {
+  position: "absolute",
+  width: 520,
+  height: 520,
+  borderRadius: "50%",
+  background: "rgba(255, 196, 54, 0.18)",
+  filter: "blur(90px)",
+  top: 60,
+  left: -100,
 };
 
-const title = {
-  textAlign: "center",
-  marginBottom: 24,
+const heroGlowTwo = {
+  position: "absolute",
+  width: 440,
+  height: 440,
+  borderRadius: "50%",
+  background: "rgba(255, 115, 64, 0.12)",
+  filter: "blur(90px)",
+  bottom: 40,
+  right: -80,
 };
 
-const emptyBox = {
-  textAlign: "center",
-  padding: 24,
-  borderRadius: 18,
-  background: "rgba(0,0,0,0.24)",
-  border: "1px solid rgba(255,255,255,0.12)",
+const heroSection = {
+  position: "relative",
+  display: "flex",
+  justifyContent: "center",
 };
 
-const winnerCard = {
-  padding: 18,
-  borderRadius: 16,
-  background: "#222",
-  color: "white",
-  marginBottom: 24,
-  textAlign: "center",
-};
-
-const sectionBox = {
-  marginBottom: 22,
-  padding: 18,
-  borderRadius: 18,
-  background: "rgba(0,0,0,0.24)",
-  border: "1px solid rgba(255,255,255,0.12)",
-};
-
-const sectionTitle = {
-  marginTop: 0,
-};
-
-const summaryGrid = {
+const resultsLayout = {
+  position: "relative",
+  zIndex: 2,
+  width: "100%",
+  maxWidth: 1180,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
+  alignItems: "start",
 };
 
-const summaryCard = {
-  padding: 14,
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.06)",
+const sideCard = {
+  background: "rgba(0, 0, 0, 0.38)",
+  borderRadius: 30,
+  padding: "28px 24px",
+  border: "1px solid rgba(255,255,255,0.1)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+};
+
+const mainColumn = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 20,
+};
+
+const contentCard = {
+  background: "rgba(0, 0, 0, 0.42)",
+  borderRadius: 30,
+  border: "1px solid rgba(255,255,255,0.1)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
+  padding: "28px 24px",
+};
+
+const sectionEyebrow = {
+  margin: 0,
+  marginBottom: 10,
+  color: "#f6cf64",
+  textTransform: "uppercase",
+  letterSpacing: 1.5,
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const pageTitle = {
+  margin: 0,
+  lineHeight: 0.98,
+  fontWeight: 900,
+};
+
+const cardHeading = {
+  margin: "0 0 16px",
+  fontSize: 30,
+  lineHeight: 1.05,
+};
+
+const introText = {
+  marginTop: 14,
+  fontSize: 17,
+  lineHeight: 1.65,
+  opacity: 0.9,
+};
+
+const helperIntro = {
+  margin: "0 0 18px",
+  fontSize: 15,
+  lineHeight: 1.7,
+  opacity: 0.86,
+};
+
+const mutedText = {
+  opacity: 0.78,
+  lineHeight: 1.6,
+};
+
+const profileCard = {
+  marginTop: 24,
+  padding: 18,
+  borderRadius: 22,
+  display: "flex",
+  alignItems: "center",
+  gap: 16,
+  background: "rgba(255,255,255,0.05)",
   border: "1px solid rgba(255,255,255,0.1)",
 };
 
+const avatarCircle = {
+  width: 64,
+  height: 64,
+  borderRadius: "50%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "linear-gradient(135deg, #f4c431, #ff9d2f)",
+  color: "#1b1b1b",
+  fontWeight: 900,
+  fontSize: 22,
+  flexShrink: 0,
+};
+
+const profileLabel = {
+  fontSize: 13,
+  opacity: 0.72,
+  marginBottom: 4,
+};
+
+const profileName = {
+  fontSize: 22,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const profileSubtext = {
+  fontSize: 14,
+  opacity: 0.76,
+  marginTop: 4,
+};
+
+const summaryPanel = {
+  marginTop: 18,
+  padding: 18,
+  borderRadius: 20,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.1)",
+};
+
+const summaryRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  padding: "6px 0",
+};
+
 const summaryLabel = {
-  fontSize: 12,
-  opacity: 0.7,
-  marginBottom: 6,
+  opacity: 0.78,
+  fontSize: 15,
 };
 
 const summaryValue = {
   fontSize: 16,
+  textAlign: "right",
+};
+
+const winnerCard = {
+  marginTop: 20,
+  padding: 22,
+  borderRadius: 22,
+  background:
+    "linear-gradient(180deg, rgba(244,196,49,0.16), rgba(255,255,255,0.04))",
+  border: "1px solid rgba(244,196,49,0.26)",
+};
+
+const winnerEyebrow = {
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: 1.2,
+  color: "#f6cf64",
+  fontWeight: 800,
+  marginBottom: 8,
+};
+
+const winnerName = {
+  fontSize: 28,
+  fontWeight: 900,
+  lineHeight: 1.1,
+};
+
+const winnerSubtext = {
+  marginTop: 8,
+  fontSize: 14,
+  opacity: 0.82,
+};
+
+const leaderboardList = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+
+const leaderboardRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const leaderboardRowWinner = {
+  background: "rgba(244,196,49,0.12)",
+  border: "1px solid rgba(244,196,49,0.24)",
+};
+
+const leaderboardLeft = {
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
+};
+
+const leaderboardRank = {
+  width: 44,
+  height: 44,
+  borderRadius: "50%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "rgba(255,255,255,0.08)",
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const leaderboardName = {
+  fontSize: 18,
+  fontWeight: 800,
+};
+
+const leaderboardMeta = {
+  fontSize: 13,
+  opacity: 0.76,
+  marginTop: 4,
+};
+
+const leaderboardRight = {
+  fontSize: 24,
+  fontWeight: 900,
+};
+
+const modeGrid = {
+  display: "grid",
+  gap: 14,
+};
+
+const modeCard = {
+  textAlign: "left",
+  borderRadius: 20,
+  padding: 18,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.04)",
+  color: "white",
+  cursor: "pointer",
+};
+
+const modeCardActive = {
+  background: "rgba(244,196,49,0.12)",
+  border: "1px solid rgba(244,196,49,0.28)",
+};
+
+const disabledCard = {
+  opacity: 0.72,
+  cursor: "default",
+};
+
+const modeTitle = {
+  marginTop: 0,
+  marginBottom: 8,
+  fontSize: 20,
+};
+
+const modeText = {
+  margin: 0,
+  opacity: 0.82,
+  lineHeight: 1.55,
+  fontSize: 15,
+};
+
+const builderRow = {
+  display: "flex",
+  gap: 12,
+  marginBottom: 14,
+};
+
+const builderInput = {
+  width: "100%",
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 16,
+  boxSizing: "border-box",
+};
+
+const receiptToolRow = {
+  display: "flex",
+  gap: 12,
+  flexWrap: "wrap",
+  marginBottom: 14,
+};
+
+const fileInputStyle = {
+  width: "100%",
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 15,
+  boxSizing: "border-box",
+};
+
+const successText = {
+  marginTop: 12,
+  marginBottom: 0,
+  fontSize: 14,
+  color: "#9BE39B",
   fontWeight: 700,
 };
 
-const mutedText = {
-  opacity: 0.8,
-  lineHeight: 1.5,
+const errorText = {
+  marginTop: 12,
+  marginBottom: 0,
+  fontSize: 14,
+  color: "#FF9A9A",
+  fontWeight: 700,
 };
 
-const table = {
-  width: "100%",
-  borderCollapse: "collapse",
+const warningBanner = {
+  marginTop: 14,
+  padding: "12px 14px",
+  borderRadius: 14,
+  background: "rgba(255,120,120,0.10)",
+  border: "1px solid rgba(255,120,120,0.22)",
+  color: "#FFB3B3",
+  fontWeight: 700,
+  fontSize: 14,
 };
 
-const th = {
-  borderBottom: "2px solid rgba(255,255,255,0.18)",
-  padding: 10,
-  textAlign: "left",
-};
-
-const td = {
-  borderBottom: "1px solid rgba(255,255,255,0.1)",
-  padding: 10,
-};
-
-const footerRow = {
+const assignmentList = {
   display: "flex",
-  justifyContent: "center",
-  marginTop: 10,
-  marginBottom: 30,
+  flexDirection: "column",
+  gap: 12,
 };
 
-const primaryBtn = {
-  padding: "10px 18px",
-  fontSize: 16,
-  cursor: "pointer",
+const assignmentCard = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.08)",
 };
 
-const secondaryBtn = {
-  padding: "10px 18px",
-  fontSize: 16,
-  cursor: "pointer",
+const assignmentCardWarning = {
+  border: "1px solid rgba(255,120,120,0.26)",
+  background: "rgba(255,120,120,0.06)",
 };
 
-const inputStyle = {
-  padding: "8px 10px",
+const assignmentHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  marginBottom: 12,
+};
+
+const editableItemRow = {
+  display: "flex",
+  gap: 12,
+  marginBottom: 12,
+};
+
+const editableInput = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
   fontSize: 15,
-  width: 120,
+  boxSizing: "border-box",
 };
 
-const checkboxWrap = {
+const deleteButton = {
+  padding: "12px 16px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,120,120,0.24)",
+  background: "rgba(255,120,120,0.10)",
+  color: "#FFB3B3",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const assignmentItemName = {
+  fontSize: 17,
+  fontWeight: 800,
+};
+
+const assignmentItemCost = {
+  fontSize: 14,
+  opacity: 0.8,
+  marginTop: 4,
+};
+
+const inlineWarningText = {
+  marginBottom: 12,
+  color: "#FFB3B3",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const chipWrap = {
   display: "flex",
   flexWrap: "wrap",
   gap: 10,
 };
 
-const checkboxLabel = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
+const playerChip = {
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.04)",
+  color: "white",
+  cursor: "pointer",
   fontSize: 14,
+  fontWeight: 700,
 };
 
-const receiptBox = {
-  marginBottom: 22,
-  padding: 22,
+const playerChipActive = {
+  background: "rgba(244,196,49,0.16)",
+  border: "1px solid rgba(244,196,49,0.32)",
+  color: "#f6cf64",
+};
+
+const playerChipDisabled = {
+  cursor: "default",
+};
+
+const manualTotalsList = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+};
+
+const manualRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 14,
+  padding: 16,
   borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const manualName = {
+  fontSize: 17,
+  fontWeight: 800,
+};
+
+const manualMeta = {
+  fontSize: 13,
+  opacity: 0.76,
+  marginTop: 4,
+};
+
+const manualInput = {
+  width: 140,
+  padding: "12px 14px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.12)",
   background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.18)",
+  color: "white",
+  fontSize: 16,
+  boxSizing: "border-box",
 };
 
-const receiptTitle = {
-  marginTop: 0,
-  marginBottom: 18,
-  textAlign: "center",
+const allocationList = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
 };
 
-const receiptRow = {
+const allocationCard = {
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const allocationHeader = {
   display: "flex",
   justifyContent: "space-between",
   gap: 12,
-  padding: "6px 0",
+  alignItems: "center",
 };
 
-const receiptDivider = {
-  height: 1,
-  background: "rgba(255,255,255,0.14)",
-  margin: "14px 0",
+const allocationName = {
+  fontSize: 17,
+  fontWeight: 800,
 };
 
-const receiptPlayerBlock = {
-  marginBottom: 10,
+const allocationMeta = {
+  fontSize: 13,
+  opacity: 0.76,
+  marginTop: 4,
 };
 
-const receiptItems = {
-  marginTop: 8,
-  marginLeft: 10,
-  opacity: 0.86,
+const allocationTotal = {
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#f6cf64",
 };
 
-const receiptItem = {
+const allocationItems = {
+  marginTop: 12,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const allocationItemRow = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 10,
-  padding: "3px 0",
+  gap: 12,
   fontSize: 14,
+  opacity: 0.9,
+};
+
+const finalCheckBox = {
+  marginTop: 18,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const finalCheckLine = {
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const confirmedBox = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+  alignItems: "flex-start",
+};
+
+const confirmedText = {
+  color: "#9BE39B",
+  fontWeight: 800,
+  fontSize: 16,
+};
+
+const footerRow = {
+  display: "flex",
+  justifyContent: "flex-start",
+};
+
+const primaryButton = {
+  padding: "14px 22px",
+  borderRadius: 999,
+  border: "none",
+  background: "#f4c431",
+  color: "#161616",
+  fontSize: 17,
+  fontWeight: 800,
+  cursor: "pointer",
+  minWidth: 220,
+  boxShadow: "0 10px 24px rgba(244,196,49,0.24)",
+};
+
+const secondaryButton = {
+  padding: "14px 22px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
+  fontSize: 16,
+  fontWeight: 700,
+  cursor: "pointer",
+  minWidth: 170,
+};
+
+const ghostButton = {
+  padding: "14px 22px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "transparent",
+  color: "white",
+  fontSize: 16,
+  fontWeight: 700,
+  cursor: "pointer",
+  minWidth: 170,
+};
+
+const disabledButton = {
+  opacity: 0.65,
+  cursor: "not-allowed",
 };

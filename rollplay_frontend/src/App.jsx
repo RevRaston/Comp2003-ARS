@@ -21,6 +21,7 @@ import Cards from "./pages/Cards";
 import Randomizer from "./pages/Randomizer";
 import RandomWheel from "./pages/RandomWheel";
 import Login from "./pages/Login";
+import LoginCallback from "./pages/LoginCallback";
 import GameRunner from "./pages/GameRunner";
 import Profile from "./pages/Profile";
 import PaymentSummary from "./pages/PaymentSummary";
@@ -95,6 +96,8 @@ function AppInner({ token }) {
         <Route path="/split-setup" element={<SplitSetup />} />
 
         <Route path="/payment-summary" element={<PaymentSummary />} />
+
+        <Route path="/login/callback" element={<LoginCallback />} />
 
       </Routes>
     </>
