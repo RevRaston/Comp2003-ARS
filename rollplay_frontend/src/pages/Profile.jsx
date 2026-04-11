@@ -4,6 +4,37 @@ import { supabase } from "../supabase";
 import { useGame } from "../GameContext";
 import AvatarBuilder from "../components/AvatarBuilder";
 
+function toAvatarString(value) {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function parseAvatarSafely(value) {
+  if (!value) return null;
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 export default function Profile() {
   const navigate = useNavigate();
   const { profile, setProfile } = useGame();
@@ -18,9 +49,11 @@ export default function Profile() {
 
   const [avatarJson, setAvatarJson] = useState(() => {
     if (!profile) return null;
-    if (profile.avatarJson) return profile.avatarJson;
-    if (profile.avatar_json) return JSON.stringify(profile.avatar_json);
-    return null;
+    return (
+      toAvatarString(profile.avatarJson) ||
+      toAvatarString(profile.avatar_json) ||
+      null
+    );
   });
 
   const [cardBrand, setCardBrand] = useState(profile?.cardBrand || "");
@@ -45,12 +78,13 @@ export default function Profile() {
 
   useEffect(() => {
     if (!profile) return;
+
     setDisplayName(profile.displayName || profile.display_name || "");
-    if (profile.avatarJson) {
-      setAvatarJson(profile.avatarJson);
-    } else if (profile.avatar_json) {
-      setAvatarJson(JSON.stringify(profile.avatar_json));
-    }
+    setAvatarJson(
+      toAvatarString(profile.avatarJson) ||
+        toAvatarString(profile.avatar_json) ||
+        null
+    );
     setCardBrand(profile.cardBrand || "");
     setCardLast4(profile.cardLast4 || "");
   }, [profile]);
@@ -105,7 +139,10 @@ export default function Profile() {
             <button style={navButton} onClick={() => navigate("/host-session")}>
               Host
             </button>
-            <button style={navButtonActive} onClick={() => navigate("/profile")}>
+            <button
+              style={navButtonActive}
+              onClick={() => navigate("/profile")}
+            >
               Profile
             </button>
           </nav>
@@ -125,7 +162,8 @@ export default function Profile() {
             <p style={sectionEyebrow}>Profile</p>
             <h1 style={pageTitle}>You need to sign in</h1>
             <p style={introText}>
-              Sign in to view or edit your RollPlay profile, avatar, and hosting setup.
+              Sign in to view or edit your RollPlay profile, avatar, and
+              hosting setup.
             </p>
             <button style={primaryButton} onClick={() => navigate("/login")}>
               Go to Login
@@ -145,6 +183,7 @@ export default function Profile() {
 
   async function handleSaveProfile() {
     setError("");
+
     if (!displayName.trim()) {
       setError("Please enter a display name.");
       return;
@@ -153,7 +192,7 @@ export default function Profile() {
     try {
       setLoading(true);
 
-      const avatarObject = avatarJson ? JSON.parse(avatarJson) : null;
+      const avatarObject = parseAvatarSafely(avatarJson);
 
       const { data, error: updateError } = await supabase
         .from("profiles")
@@ -168,14 +207,14 @@ export default function Profile() {
       if (updateError) throw updateError;
 
       const updatedAvatarObj = data.avatar_json ?? avatarObject;
-      const updatedAvatarJson = updatedAvatarObj
-        ? JSON.stringify(updatedAvatarObj)
-        : null;
+      const updatedAvatarJson = toAvatarString(updatedAvatarObj);
 
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
+        display_name: data.display_name,
         avatarJson: updatedAvatarJson,
+        avatar_json: updatedAvatarObj,
         cardBrand: data.card_brand || profile.cardBrand || null,
         cardLast4: data.card_last4 || profile.cardLast4 || null,
         tier: data.tier || profile.tier || "player",
@@ -197,6 +236,7 @@ export default function Profile() {
 
   async function handleGenerateCard() {
     setError("");
+
     try {
       setSavingCard(true);
       const { brand, last4 } = generateFakeCard();
@@ -216,7 +256,9 @@ export default function Profile() {
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
-        avatarJson: avatarJson,
+        display_name: data.display_name,
+        avatarJson: toAvatarString(profile.avatarJson) || toAvatarString(avatarJson),
+        avatar_json: parseAvatarSafely(avatarJson),
         cardBrand: data.card_brand || null,
         cardLast4: data.card_last4 || null,
         tier: data.tier || profile.tier || "player",
@@ -237,6 +279,7 @@ export default function Profile() {
 
   async function handleUpgradeToHost() {
     setError("");
+
     try {
       setUpgrading(true);
 
@@ -245,7 +288,7 @@ export default function Profile() {
         ? generateFakeCard()
         : { brand: cardBrand, last4: cardLast4 };
 
-      const avatarObject = avatarJson ? JSON.parse(avatarJson) : null;
+      const avatarObject = parseAvatarSafely(avatarJson);
 
       const { data, error: updateError } = await supabase
         .from("profiles")
@@ -262,14 +305,14 @@ export default function Profile() {
       if (updateError) throw updateError;
 
       const updatedAvatarObj = data.avatar_json ?? avatarObject;
-      const updatedAvatarJson = updatedAvatarObj
-        ? JSON.stringify(updatedAvatarObj)
-        : null;
+      const updatedAvatarJson = toAvatarString(updatedAvatarObj);
 
       const updatedProfile = {
         ...profile,
         displayName: data.display_name,
+        display_name: data.display_name,
         avatarJson: updatedAvatarJson,
+        avatar_json: updatedAvatarObj,
         cardBrand: data.card_brand || null,
         cardLast4: data.card_last4 || null,
         tier: data.tier || "host",
@@ -297,6 +340,7 @@ export default function Profile() {
     }
 
     localStorage.removeItem("user_id");
+    localStorage.removeItem("access_token");
     localStorage.removeItem("session_code");
     localStorage.removeItem("session_id");
     localStorage.removeItem("session_is_host");
@@ -337,7 +381,10 @@ export default function Profile() {
           <button style={navButton} onClick={() => navigate("/host-session")}>
             Host
           </button>
-          <button style={navButtonActive} onClick={() => navigate("/profile")}>
+          <button
+            style={navButtonActive}
+            onClick={() => navigate("/profile")}
+          >
             Profile
           </button>
         </nav>
@@ -376,7 +423,8 @@ export default function Profile() {
             </h1>
 
             <p style={introText}>
-              This profile is used across all sessions, games, and multiplayer lobbies.
+              This profile is used across all sessions, games, and multiplayer
+              lobbies.
             </p>
 
             <div style={profileSummaryCard}>
@@ -401,7 +449,9 @@ export default function Profile() {
               <div style={statusCard}>
                 <div style={statusLabel}>Demo Card</div>
                 <div style={statusValue}>
-                  {cardBrand && cardLast4 ? `${cardBrand} • ${cardLast4}` : "Not added"}
+                  {cardBrand && cardLast4
+                    ? `${cardBrand} • ${cardLast4}`
+                    : "Not added"}
                 </div>
               </div>
             </div>
@@ -494,13 +544,11 @@ export default function Profile() {
                       type="button"
                       style={ghostButton}
                       onClick={() => {
-                        if (profile.avatarJson) {
-                          setAvatarJson(profile.avatarJson);
-                        } else if (profile.avatar_json) {
-                          setAvatarJson(JSON.stringify(profile.avatar_json));
-                        } else {
-                          setAvatarJson(null);
-                        }
+                        setAvatarJson(
+                          toAvatarString(profile.avatarJson) ||
+                            toAvatarString(profile.avatar_json) ||
+                            null
+                        );
                         setEditingAvatar(false);
                       }}
                     >
@@ -516,8 +564,9 @@ export default function Profile() {
               <h2 style={cardHeading}>Demo card & upgrade</h2>
 
               <p style={infoText}>
-                Card details are <strong>demo-only</strong> and never charged. They are
-                only used as part of the project flow and hosting setup.
+                Card details are <strong>demo-only</strong> and never charged.
+                They are only used as part of the project flow and hosting
+                setup.
               </p>
 
               <div style={summaryPanel}>

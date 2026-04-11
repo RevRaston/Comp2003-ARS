@@ -38,23 +38,24 @@ export default function Login() {
   }, [searchParams]);
 
   function mapProfileRow(row) {
-    if (!row) return null;
+  if (!row) return null;
 
-    const isAdmin = !!row.is_admin;
-    const tier = row.tier || "player";
+  const isAdmin = !!row.is_admin;
+  const tier = row.tier || "player";
 
-    return {
-      id: row.id,
-      displayName: row.display_name,
-      avatarKey: row.avatar_key || null,
-      avatarJson: row.avatar_json || null,
-      cardBrand: row.card_brand || null,
-      cardLast4: row.card_last4 || null,
-      tier,
-      isAdmin,
-      canHost: tier === "host" || isAdmin,
-    };
-  }
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    avatarKey: row.avatar_key || null,
+    avatarJson: row.avatar_json ? JSON.stringify(row.avatar_json) : null,
+    avatar_json: row.avatar_json || null,
+    cardBrand: row.card_brand || null,
+    cardLast4: row.card_last4 || null,
+    tier,
+    isAdmin,
+    canHost: tier === "host" || isAdmin,
+  };
+}
 
   async function loadOrCreateProfile(user) {
     const { data, error } = await supabase
