@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Craps — Highest Roll Wins</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+   
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0e2d1c;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    #craps {
+      background: #1a4a2e;
+      background-image: radial-gradient(ellipse at 50% 30%, #256b40 0%, #0e2d1c 100%);
+      font-family: 'DM Sans', sans-serif;
+      color: #f0e8d0;
+      padding: 16px;
+      border-radius: 16px;
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      max-width: 680px;
+    }
+
+    #craps::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(255,255,255,0.015) 40px, rgba(255,255,255,0.015) 41px);
+      pointer-events: none;
+    }
+
+   
+    .header-bar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .header-left, .header-right { display: flex; flex-direction: column; gap: 5px; }
+    .header-right { align-items: flex-end; }
+    .header-center { text-align: center; }
+
+    h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 20px;
+      letter-spacing: 3px;
+      color: #f5d76e;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      white-space: nowrap;
+    }
+    .subtitle { font-size: 10px; color: #a8c8a0; letter-spacing: 2px; }
+
+   
+    .hbtn {
+      border: none;
+      border-radius: 7px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 7px 12px;
+      transition: transform 0.1s, opacity 0.15s;
+      width: 100%;
+      text-align: center;
+    }
+    .hbtn:active   { transform: scale(0.97); }
+    .hbtn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+    .btn-start { background: #f5d76e; color: #1a1a1a; }
+    .btn-menu  { background: rgba(255,255,255,0.1); color: #f0e8d0; border: 1px solid rgba(255,255,255,0.2); }
+
+    
+    #setup-screen { text-align: center; padding: 10px 0; }
+
+    .setup-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 17px;
+      color: #f5d76e;
+      margin-bottom: 14px;
+    }
+
+    .player-count-btns { display: flex; gap: 10px; justify-content: center; margin-bottom: 16px; }
+
+    .pcount-btn {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: 2px solid rgba(245,215,110,0.4);
+      background: rgba(0,0,0,0.3);
+      color: #f5d76e;
+      font-size: 20px; font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pcount-btn:hover, .pcount-btn.active { background: #f5d76e; color: #1a1a1a; border-color: #f5d76e; }
+
+    .player-names { display: flex; flex-direction: column; gap: 7px; max-width: 260px; margin: 0 auto 20px; }
+
+    .name-input {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(245,215,110,0.3);
+      border-radius: 8px;
+      padding: 7px 12px;
+      color: #f0e8d0;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      width: 100%;
+    }
+    .name-input::placeholder { color: #a8c8a0; }
+    .name-input:focus { outline: none; border-color: rgba(245,215,110,0.7); }
+
+    .start-btn {
+      background: #f5d76e; color: #1a1a1a;
+      border: none; border-radius: 10px;
+      padding: 11px 36px;
+      font-size: 14px; font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer; letter-spacing: 1px;
+    }
+
+   
+    #pass-screen {
+      display: none;
+      text-align: center;
+      padding: 50px 20px;
+    }
+    .pass-icon    { font-size: 52px; margin-bottom: 16px; }
+    .pass-title   { font-family: 'Playfair Display', serif; font-size: 24px; color: #f5d76e; margin-bottom: 8px; }
+    .pass-sub     { font-size: 13px; color: #a8c8a0; margin-bottom: 6px; }
+    .pass-context { font-size: 12px; color: rgba(245,215,110,0.7); margin-bottom: 32px; font-style: italic; }
+    .pass-btn {
+      background: #f5d76e; color: #1a1a1a;
+      border: none; border-radius: 10px;
+      padding: 14px 44px;
+      font-size: 15px; font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer; letter-spacing: 1px;
+    }
+
+   
+    #game-screen { display: none; }
+
+   
+    .scoreboard { display: grid; gap: 6px; margin-bottom: 10px; }
+    .scoreboard.p1 { grid-template-columns: 1fr; }
+    .scoreboard.p2 { grid-template-columns: 1fr 1fr; }
+    .scoreboard.p3 { grid-template-columns: 1fr 1fr 1fr; }
+    .scoreboard.p4 { grid-template-columns: 1fr 1fr; }
+
+    .score-card {
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 9px;
+      padding: 8px 10px;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .score-card.active-card  { border: 1.5px solid rgba(245,215,110,0.6); background: rgba(0,0,0,0.35); }
+    .score-card.rolled-card  { border-color: rgba(46,204,113,0.4); }
+    .score-card.waiting-card { opacity: 0.45; }
+
+    .sc-name   { font-size: 10px; color: #f5d76e; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+    .sc-dice   { font-size: 22px; letter-spacing: 2px; min-height: 28px; line-height: 1.2; }
+    .sc-total  { font-family: 'Playfair Display', serif; font-size: 20px; color: #f5d76e; min-height: 24px; }
+    .sc-status { font-size: 10px; color: #a8c8a0; min-height: 14px; font-style: italic; }
+
+    
+    .roll-area {
+      background: rgba(0,0,0,0.25);
+      border: 1.5px solid rgba(245,215,110,0.35);
+      border-radius: 12px;
+      padding: 20px 16px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .roll-player-name { font-family: 'Playfair Display', serif; font-size: 18px; color: #f5d76e; margin-bottom: 6px; }
+    .roll-instruction  { font-size: 12px; color: #a8c8a0; margin-bottom: 18px; }
+
+    .dice-display {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 18px;
+      min-height: 80px;
+      align-items: center;
+    }
+
+ 
+    .die {
+      width: 72px; height: 72px;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+    }
+    .die-rolling { animation: rollAnim 0.5s ease-out; }
+    @keyframes rollAnim {
+      0%   { transform: rotate(0deg)   scale(0.8); opacity: 0.5; }
+      40%  { transform: rotate(180deg) scale(1.1); }
+      100% { transform: rotate(360deg) scale(1);   opacity: 1;   }
+    }
+
+    .roll-result       { font-family: 'Playfair Display', serif; font-size: 36px; color: #f5d76e; min-height: 44px; line-height: 1; }
+    .roll-result-label { font-size: 12px; color: #a8c8a0; margin-top: 4px; }
+
+    .roll-btn {
+      background: #f5d76e; color: #1a1a1a;
+      border: none; border-radius: 10px;
+      padding: 12px 40px;
+      font-size: 15px; font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer; letter-spacing: 1px;
+      transition: transform 0.1s;
+    }
+    .roll-btn:active   { transform: scale(0.97); }
+    .roll-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+    .msg-bar { text-align: center; font-size: 12px; color: #f0e8d0; min-height: 18px; margin-top: 6px; }
+
+    
+    #win-screen {
+      display: none;
+      text-align: center;
+      padding: 30px 20px;
+    }
+    .win-icon  { font-size: 52px; margin-bottom: 12px; }
+    .win-title { font-family: 'Playfair Display', serif; font-size: 26px; color: #f5d76e; margin-bottom: 6px; }
+    .win-sub   { font-size: 13px; color: #a8c8a0; margin-bottom: 16px; }
+
+    .win-results { display: grid; gap: 6px; margin: 0 auto 20px; max-width: 400px; }
+    .win-results.p1 { grid-template-columns: 1fr; }
+    .win-results.p2 { grid-template-columns: 1fr 1fr; }
+    .win-results.p3 { grid-template-columns: 1fr 1fr 1fr; }
+    .win-results.p4 { grid-template-columns: 1fr 1fr; }
+
+    .wr-box { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 9px; padding: 10px; }
+    .wr-box.wr-winner { border-color: rgba(46,204,113,0.6); background: rgba(46,204,113,0.08); }
+    .wr-box.wr-tie    { border-color: rgba(245,215,110,0.5); }
+
+    .wr-name  { font-size: 11px; color: #f5d76e; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .wr-dice  { font-size: 20px; letter-spacing: 2px; margin-bottom: 2px; }
+    .wr-score { font-family: 'Playfair Display', serif; font-size: 22px; color: #f5d76e; }
+    .wr-rank  { font-size: 10px; color: #a8c8a0; }
+
+    .win-btns { display: flex; gap: 10px; justify-content: center; }
+    .win-btn  { border: none; border-radius: 10px; padding: 11px 30px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+    .win-btn-primary   { background: #f5d76e; color: #1a1a1a; }
+    .win-btn-secondary { background: rgba(255,255,255,0.1); color: #f0e8d0; border: 1px solid rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+<div id="craps">
+
+ 
+  <div class="header-bar">
+    <div class="header-left">
+      <button class="hbtn btn-start" id="btn-start" onclick="handleStart()">START</button>
+    </div>
+    <div class="header-center">
+      <h1>⚄ CRAPS ⚄</h1>
+      <div class="subtitle">HIGHEST ROLL WINS</div>
+    </div>
+    <div class="header-right">
+      <button class="hbtn btn-menu" id="btn-menu" onclick="goMenu()" style="display:none">MENU</button>
+    </div>
+  </div>
+
+  
+  <div id="setup-screen">
+    <div class="setup-title">How many players?</div>
+    <div class="player-count-btns">
+      <button class="pcount-btn active" onclick="selectCount(1)">1</button>
+      <button class="pcount-btn"        onclick="selectCount(2)">2</button>
+      <button class="pcount-btn"        onclick="selectCount(3)">3</button>
+      <button class="pcount-btn"        onclick="selectCount(4)">4</button>
+    </div>
+    <div class="player-names" id="name-inputs">
+      <input class="name-input" id="name0" placeholder="Player 1" maxlength="14" value="Player 1">
+    </div>
+    <button class="start-btn" onclick="startGame()">START GAME</button>
+  </div>
+
+  
+  <div id="pass-screen">
+    <div class="pass-icon"></div>
+    <div class="pass-title"   id="pass-title">Pass to Player 2</div>
+    <div class="pass-sub"     id="pass-sub">Hand the device to Player 2</div>
+    <div class="pass-context" id="pass-context"></div>
+    <button class="pass-btn"  onclick="revealForPlayer()">I'm ready to roll!</button>
+  </div>
+
+ 
+  <div id="game-screen">
+
+    
+    <div class="scoreboard p1" id="scoreboard"></div>
+
+    
+    <div class="roll-area">
+      <div class="roll-player-name" id="roll-player-name">Player 1</div>
+      <div class="roll-instruction"  id="roll-instruction">Press the button to roll your two dice!</div>
+
+      <div class="dice-display">
+        <svg class="die" id="die1" viewBox="0 0 80 80"></svg>
+        <svg class="die" id="die2" viewBox="0 0 80 80"></svg>
+      </div>
+
+      <div class="roll-result"       id="roll-result"></div>
+      <div class="roll-result-label" id="roll-result-label"></div>
+
+      <div style="margin-top:16px;">
+        <button class="roll-btn" id="roll-btn" onclick="rollDice()">🎲 ROLL DICE</button>
+      </div>
+    </div>
+
+    <div class="msg-bar" id="msg-line"></div>
+
+  </div>
+
+ 
+  <div id="win-screen">
+    <div class="win-icon"></div>
+    <div class="win-title" id="win-title">Player 1 wins!</div>
+    <div class="win-sub"   id="win-sub">with a roll of 12</div>
+    <div class="win-results p2" id="win-results"></div>
+    <div class="win-btns">
+      <button class="win-btn win-btn-primary"   onclick="newRound()">ROLL AGAIN</button>
+      <button class="win-btn win-btn-secondary" onclick="goMenu()">CHANGE PLAYERS</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+ 
+  const DOT_POS = {
+    1: [[40,40]],
+    2: [[22,22],[58,58]],
+    3: [[22,22],[40,40],[58,58]],
+    4: [[22,22],[58,22],[22,58],[58,58]],
+    5: [[22,22],[58,22],[40,40],[22,58],[58,58]],
+    6: [[22,20],[58,20],[22,40],[58,40],[22,60],[58,60]]
+  };
+
+
+  let players        = [];
+  let numPlayers     = 1;
+  let currentIdx     = 0;
+  let pendingCallback = null;
+  let rolling        = false;
+
+  
+  function selectCount(n) {
+    numPlayers = n;
+    document.querySelectorAll('.pcount-btn').forEach((b, i) =>
+      b.classList.toggle('active', [1,2,3,4][i] === n)
+    );
+    const cont = document.getElementById('name-inputs');
+    cont.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const inp = document.createElement('input');
+      inp.className   = 'name-input';
+      inp.id          = 'name' + i;
+      inp.maxLength   = 14;
+      inp.placeholder = 'Player ' + (i + 1);
+      inp.value       = 'Player ' + (i + 1);
+      cont.appendChild(inp);
+    }
+  }
+
+
+  function startGame() {
+    const names = [];
+    for (let i = 0; i < numPlayers; i++) {
+      const el = document.getElementById('name' + i);
+      names.push(el ? el.value.trim() || 'Player ' + (i + 1) : 'Player ' + (i + 1));
+    }
+ 
+    players = names.map(nm => ({ name: nm, d1: null, d2: null, total: null }));
+    launchGame();
+  }
+
+  function newRound() {
+    players = players.map(p => ({ name: p.name, d1: null, d2: null, total: null }));
+    launchGame();
+  }
+
+
+  function launchGame() {
+    currentIdx = 0;
+    rolling    = false;
+
+    hideAllScreens();
+    document.getElementById('game-screen').style.display = 'block';
+    document.getElementById('btn-menu').style.display    = 'block';
+    document.getElementById('btn-start').style.display   = 'none';
+    document.getElementById('scoreboard').className      = 'scoreboard p' + numPlayers;
+
+    const rb = document.getElementById('roll-btn');
+    rb.textContent = ' ROLL DICE';
+    rb.onclick     = rollDice;
+    rb.disabled    = false;
+
+    renderScoreboard();
+    setupRollFor(0);
+  }
+
+  function handleStart() {
+    hideAllScreens();
+    document.getElementById('setup-screen').style.display = 'block';
+  }
+
+
+  function hideAllScreens() {
+    ['setup-screen','pass-screen','game-screen','win-screen'].forEach(id =>
+      document.getElementById(id).style.display = 'none'
+    );
+  }
+
+  function showPassScreen(toIdx, contextMsg, callback) {
+    const p = players[toIdx];
+    hideAllScreens();
+    document.getElementById('pass-screen').style.display  = 'block';
+    document.getElementById('pass-title').textContent     = 'Hand it to ' + p.name;
+    document.getElementById('pass-sub').textContent       = 'Pass the device to ' + p.name + ' now.';
+    document.getElementById('pass-context').textContent   = contextMsg || '';
+    pendingCallback = callback;
+  }
+
+  function revealForPlayer() {
+    hideAllScreens();
+    document.getElementById('game-screen').style.display = 'block';
+    if (pendingCallback) pendingCallback();
+  }
+
+
+  function setupRollFor(idx) {
+    currentIdx = idx;
+    const p    = players[idx];
+
+    document.getElementById('roll-player-name').textContent = p.name;
+    document.getElementById('roll-instruction').textContent  = 'Press the button to roll your two dice!';
+    document.getElementById('roll-result').textContent       = '';
+    document.getElementById('roll-result-label').textContent = '';
+
+   
+    const rb = document.getElementById('roll-btn');
+    rb.textContent = ' ROLL DICE';
+    rb.onclick     = rollDice;
+    rb.disabled    = false;
+
+ 
+    setDieFace('die1', 1);
+    setDieFace('die2', 1);
+
+    renderScoreboard();
+    setMsg('');
+  }
+
+
+  function rollDice() {
+    if (rolling) return;
+    rolling = true;
+
+    const rb = document.getElementById('roll-btn');
+    rb.disabled = true;
+    document.getElementById('roll-instruction').textContent = 'Rolling...';
+
+  
+    document.getElementById('die1').classList.add('die-rolling');
+    document.getElementById('die2').classList.add('die-rolling');
+
+   
+    let ticks = 0;
+    const anim = setInterval(() => {
+      setDieFace('die1', rand());
+      setDieFace('die2', rand());
+      ticks++;
+
+      if (ticks >= 8) {
+        clearInterval(anim);
+
+    
+        const r1 = rand(), r2 = rand(), t = r1 + r2;
+        setDieFace('die1', r1);
+        setDieFace('die2', r2);
+        document.getElementById('die1').classList.remove('die-rolling');
+        document.getElementById('die2').classList.remove('die-rolling');
+
+       
+        players[currentIdx].d1    = r1;
+        players[currentIdx].d2    = r2;
+        players[currentIdx].total = t;
+
+      
+        document.getElementById('roll-result').textContent       = t;
+        document.getElementById('roll-result-label').textContent = r1 + ' + ' + r2 + ' = ' + t;
+        document.getElementById('roll-instruction').textContent  = 'You rolled a ' + t + '!';
+        renderScoreboard();
+        rolling = false;
+
+       
+        if (currentIdx < numPlayers - 1) {
+          rb.textContent = '✓ Done — Pass Device';
+          rb.disabled    = false;
+          rb.onclick     = afterRoll;
+          setMsg('Great roll! Pass the device to the next player.');
+        } else {
+        
+          rb.textContent = ' SEE RESULTS';
+          rb.disabled    = false;
+          rb.onclick     = showResults;
+          setMsg('All players have rolled — see who won!');
+        }
+      }
+    }, 80);
+  }
+
+  function rand() { return Math.floor(Math.random() * 6) + 1; }
+
+
+  function afterRoll() {
+    const p       = players[currentIdx];
+    const context = p.name + ' rolled ' + p.total + ' (' + p.d1 + ' + ' + p.d2 + ').';
+    showPassScreen(currentIdx + 1, context, () => setupRollFor(currentIdx + 1));
+  }
+
+  function showResults() {
+    const maxTotal = Math.max(...players.map(p => p.total));
+    const winners  = players.filter(p => p.total === maxTotal);
+    const isTie    = winners.length > 1;
+
+    hideAllScreens();
+    document.getElementById('win-screen').style.display  = 'block';
+    document.getElementById('win-results').className     = 'win-results p' + numPlayers;
+
+    document.getElementById('win-title').textContent =
+      isTie ? "It's a tie!" : winners[0].name + ' wins!';
+    document.getElementById('win-sub').textContent =
+      isTie
+        ? winners.map(w => w.name).join(' & ') + ' both rolled ' + maxTotal
+        : 'with a roll of ' + maxTotal;
+
+  
+    const sorted = [...players].sort((a, b) => b.total - a.total);
+    const wr     = document.getElementById('win-results');
+    wr.innerHTML = '';
+
+    sorted.forEach((p, rank) => {
+      const isWinner = p.total === maxTotal;
+      const box      = document.createElement('div');
+      box.className  = 'wr-box' + (isTie && isWinner ? ' wr-tie' : isWinner ? ' wr-winner' : '');
+      box.innerHTML  = `
+        <div class="wr-name">${p.name}</div>
+        <div class="wr-dice">${dieFace(p.d1)} ${dieFace(p.d2)}</div>
+        <div class="wr-score">${p.total}</div>
+        <div class="wr-rank">${
+          isWinner && !isTie ? '🏆 Winner' :
+          isTie && isWinner  ? '🤝 Tied'   :
+          '#' + (rank + 1)
+        }</div>`;
+      wr.appendChild(box);
+    });
+  }
+
+
+  function renderScoreboard() {
+    const el = document.getElementById('scoreboard');
+    el.innerHTML = '';
+    players.forEach((p, i) => {
+      const hasRolled = p.total !== null;
+      const isActive  = i === currentIdx && !hasRolled;
+      const sc = document.createElement('div');
+      sc.className = 'score-card' +
+        (isActive   ? ' active-card'  :
+         hasRolled  ? ' rolled-card'  :
+                      ' waiting-card');
+      sc.innerHTML = `
+        <div class="sc-name">${p.name}</div>
+        <div class="sc-dice">${hasRolled ? dieFace(p.d1) + ' ' + dieFace(p.d2) : '— —'}</div>
+        <div class="sc-total">${hasRolled ? p.total : ''}</div>
+        <div class="sc-status">${
+          isActive   ? 'rolling now…'       :
+          hasRolled  ? p.d1 + ' + ' + p.d2 :
+                       'waiting'
+        }</div>`;
+      el.appendChild(sc);
+    });
+  }
+
+  function dieFace(n) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][n - 1]; }
+
+
+  function setDieFace(id, n) {
+    const svg = document.getElementById(id);
+    svg.innerHTML = '<rect width="80" height="80" rx="12" fill="#fff"/>';
+    (DOT_POS[n] || []).forEach(([cx, cy]) => {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', cx);
+      c.setAttribute('cy', cy);
+      c.setAttribute('r',  '7');
+      c.setAttribute('fill', '#1a1a1a');
+      svg.appendChild(c);
+    });
+  }
+
+  function setMsg(t) { document.getElementById('msg-line').textContent = t; }
+
+
+  function goMenu() {
+    hideAllScreens();
+    document.getElementById('setup-screen').style.display = 'block';
+    document.getElementById('btn-menu').style.display     = 'none';
+    document.getElementById('btn-start').style.display    = 'block';
+    selectCount(numPlayers);
+  }
+
+  
+  selectCount(1);
+  document.getElementById('setup-screen').style.display = 'block';
+</script>
+</body>
+</html>
