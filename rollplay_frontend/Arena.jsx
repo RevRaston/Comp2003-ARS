@@ -10,12 +10,6 @@ import SumoGame from "../games/Sumo/SumoGame";
 import DartsGame from "../games/Darts/DartsGame";
 import GuessingCardGame from "../games/GuessingCard/GuessingCardGame";
 import MazeGame from "../games/Maze/MazeGame";
-import StackGame from "../games/Stack/StackGame";
-import PokerGame from "../games/Poker/PokerGame";
-import NinetyNineGame from "../games/NinetyNine/NinetyNineGame";
-import CrapsGame from "../games/Craps/CrapsGame";
-import ButtonMasherGame from "../games/ButtonMasher/ButtonMasherGame";
-import BlackjackGame from "../games/Blackjack/BlackjackGame";
 
 const defaultBase =
   typeof window !== "undefined" && window.location.hostname === "localhost"
@@ -33,12 +27,6 @@ const GAME_COMPONENTS = {
   darts: DartsGame,
   guessing_card: GuessingCardGame,
   maze: MazeGame,
-  stack: StackGame,
-  poker: PokerGame,
-  ninety_nine: NinetyNineGame,
-  craps: CrapsGame,
-  button_masher: ButtonMasherGame,
-  blackjack: BlackjackGame,
 };
 
 export default function Arena() {
@@ -381,11 +369,7 @@ export default function Arena() {
         (entry) => entry.round === currentRound + 1
       );
 
-      if (
-        nextRoundEntry &&
-        isGameEnabled &&
-        !isGameEnabled(nextRoundEntry.level.id)
-      ) {
+      if (nextRoundEntry && isGameEnabled && !isGameEnabled(nextRoundEntry.level.id)) {
         throw new Error(`${nextRoundEntry.level.name} is locked. Choose another game.`);
       }
 
