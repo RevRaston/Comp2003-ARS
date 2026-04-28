@@ -12,6 +12,8 @@ export default function Splash() {
     typeof window !== "undefined" ? window.innerWidth : 1280
   );
 
+  const [openInfo, setOpenInfo] = useState(null);
+
   useEffect(() => {
     function handleResize() {
       setScreenWidth(window.innerWidth);
@@ -23,6 +25,10 @@ export default function Splash() {
 
   const isPhone = screenWidth <= 640;
   const isLaptop = screenWidth <= 1100;
+
+  function toggleInfo(id) {
+    setOpenInfo((current) => (current === id ? null : id));
+  }
 
   function handleHostClick() {
     if (!loggedIn) {
@@ -60,6 +66,37 @@ export default function Splash() {
 
   const hostUpgradeStyle = !canHost && loggedIn;
 
+  const steps = [
+    {
+      id: "host",
+      number: "1",
+      title: "Host",
+      short: "Create a session.",
+      more: "The host starts the room, chooses the session setup, and shares the code with players.",
+    },
+    {
+      id: "join",
+      number: "2",
+      title: "Join",
+      short: "Players enter the code.",
+      more: "Each player joins from their own device so everyone can take part in the same session.",
+    },
+    {
+      id: "play",
+      number: "3",
+      title: "Play",
+      short: "Compete in mini-games.",
+      more: "Games generate rankings which can influence how the final split is suggested.",
+    },
+    {
+      id: "split",
+      number: "4",
+      title: "Split",
+      short: "Review and confirm.",
+      more: "The final split is shown clearly, with options to review or adjust before confirmation.",
+    },
+  ];
+
   return (
     <div style={page}>
       {/* TOP BAR */}
@@ -80,12 +117,12 @@ export default function Splash() {
           <div style={logoBox}>
             <img
               src="/branding/RollPay_Logo.png"
-              alt="RollPay_logo"
+              alt="RollPay logo"
               style={logoImg}
             />
           </div>
           <div>
-            <div style={brandText}>RollPlay</div>
+            <div style={brandText}>RollPay</div>
           </div>
         </div>
 
@@ -99,7 +136,7 @@ export default function Splash() {
             style={navButton}
             onClick={() => scrollToSection("how-to-use")}
           >
-            How to Use
+            How it Works
           </button>
           <button
             style={navButton}
@@ -133,14 +170,18 @@ export default function Splash() {
         <div
           style={{
             ...heroCard,
-            padding: isPhone ? "32px 18px" : isLaptop ? "42px 24px" : "52px 28px",
+            padding: isPhone
+              ? "32px 18px"
+              : isLaptop
+              ? "42px 24px"
+              : "52px 28px",
             borderRadius: isPhone ? 24 : 32,
           }}
         >
           <div style={heroLogoWrap}>
             <img
               src="/branding/RollPay_Logo.png"
-              alt="RollPay_logo"
+              alt="RollPay logo"
               style={{
                 ...heroLogo,
                 maxWidth: isPhone ? 140 : 180,
@@ -154,7 +195,7 @@ export default function Splash() {
               fontSize: isPhone ? 12 : 14,
             }}
           >
-            Multiplayer pub-style bill splitting
+            Multiplayer bill splitting
           </p>
 
           <h1
@@ -163,19 +204,17 @@ export default function Splash() {
               fontSize: isPhone ? "52px" : isLaptop ? "72px" : "96px",
             }}
           >
-            RollPlay
+            RollPay
           </h1>
 
           <p
             style={{
               ...subtitleStyle,
-              fontSize: isPhone ? 17 : isLaptop ? 22 : 30,
-              lineHeight: isPhone ? 1.5 : 1.45,
+              fontSize: isPhone ? 18 : isLaptop ? 23 : 30,
+              lineHeight: isPhone ? 1.45 : 1.4,
             }}
           >
-            Turn splitting the bill into a game.
-            <br />
-            Pick the rule, play the rounds, let the leaderboard decide who pays.
+            Split the bill. Play the game. Let the results decide.
           </p>
 
           <div
@@ -217,8 +256,7 @@ export default function Splash() {
                 fontSize: isPhone ? 13 : 14,
               }}
             >
-              You currently have a <strong>Player</strong> account. Tap
-              <strong> “Upgrade to Host”</strong> to unlock hosting.
+              Player account active. Upgrade to unlock hosting.
             </p>
           )}
 
@@ -229,7 +267,7 @@ export default function Splash() {
                 fontSize: isPhone ? 13 : 14,
               }}
             >
-              Hosting requires an account. Joining friends is always free.
+              Hosting needs an account. Joining is free.
             </p>
           )}
         </div>
@@ -241,24 +279,16 @@ export default function Splash() {
         id="how-to-use"
       >
         <div style={sectionInner}>
-          <p style={sectionEyebrow}>How to use</p>
+          <p style={sectionEyebrow}>How it works</p>
+
           <h2
             style={{
               ...sectionTitle,
               fontSize: isPhone ? 34 : isLaptop ? 42 : 52,
             }}
           >
-            How a RollPlay session works
+            One session. One game. One final split.
           </h2>
-          <p
-            style={{
-              ...sectionIntro,
-              fontSize: isPhone ? 16 : 18,
-            }}
-          >
-            One player hosts, others join with a code, the mini-games decide the
-            rankings, and the final split is generated from the results.
-          </p>
 
           <div
             style={{
@@ -267,42 +297,26 @@ export default function Splash() {
                 ? "1fr"
                 : isLaptop
                 ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(auto-fit, minmax(220px, 1fr))",
+                : "repeat(4, minmax(0, 1fr))",
             }}
           >
-            <div style={infoCard}>
-              <div style={stepBadge}>1</div>
-              <h3 style={cardTitle}>Host a session</h3>
-              <p style={cardText}>
-                Set the rule, choose the game order, and prepare the bill split.
-              </p>
-            </div>
+            {steps.map((step) => (
+              <div key={step.id} style={infoCard}>
+                <div style={stepBadge}>{step.number}</div>
+                <h3 style={cardTitle}>{step.title}</h3>
+                <p style={cardText}>{step.short}</p>
 
-            <div style={infoCard}>
-              <div style={stepBadge}>2</div>
-              <h3 style={cardTitle}>Players join</h3>
-              <p style={cardText}>
-                Friends join on their own phone or device using the session code.
-              </p>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => toggleInfo(step.id)}
+                  style={infoButton}
+                >
+                  {openInfo === step.id ? "Hide info" : "More info"}
+                </button>
 
-            <div style={infoCard}>
-              <div style={stepBadge}>3</div>
-              <h3 style={cardTitle}>Play the rounds</h3>
-              <p style={cardText}>
-                Compete through mini-games while the session stays synced for
-                everyone.
-              </p>
-            </div>
-
-            <div style={infoCard}>
-              <div style={stepBadge}>4</div>
-              <h3 style={cardTitle}>Confirm the split</h3>
-              <p style={cardText}>
-                Review rankings, payment allocation, and confirm the final
-                session summary.
-              </p>
-            </div>
+                {openInfo === step.id && <p style={expandText}>{step.more}</p>}
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -326,38 +340,30 @@ export default function Splash() {
             }}
           >
             <div>
-              <p style={sectionEyebrow}>About this game</p>
+              <p style={sectionEyebrow}>About</p>
               <h2
                 style={{
                   ...sectionTitle,
                   fontSize: isPhone ? 34 : isLaptop ? 42 : 52,
                 }}
               >
-                Why RollPlay was created
+                Bill splitting, made social.
               </h2>
 
               <p style={aboutText}>
-                RollPlay was built to turn one of the most awkward parts of a
-                social night out into something competitive, fun, and memorable.
+                RollPay turns group payments into a shared social moment. Instead
+                of making bill splitting feel awkward or overly transactional,
+                the app adds quick mini-games, rankings, and a clear final split.
               </p>
 
               <p style={aboutText}>
-                Instead of arguing over the bill, players compete through
-                multiple rounds and let the leaderboard help decide the final
-                payment outcome.
-              </p>
-
-              <p style={aboutText}>
-                It is designed as a multiplayer social experience for pubs,
-                nights out, parties, and casual gatherings where everyone wants
-                the split to feel more entertaining.
+                The prototype is designed for pubs, restaurants, parties, and
+                casual group settings where users want the payment process to
+                feel quick, fair, and more entertaining.
               </p>
 
               <p style={aboutMeta}>
-                Created by: <strong>Placeholder creator / team name</strong>
-                <br />
-                Project purpose:{" "}
-                <strong>University project / portfolio product</strong>
+                Built as a university proof-of-concept by the RollPay team.
               </p>
             </div>
 
@@ -365,11 +371,11 @@ export default function Splash() {
               <h3 style={cardTitle}>What makes it different?</h3>
 
               <ul style={featureList}>
-                <li>Bill splitting based on game outcomes</li>
+                <li>Game-driven bill splitting</li>
                 <li>Shared multiplayer sessions</li>
-                <li>Cross-device social play</li>
-                <li>Multiple mini-games in one flow</li>
-                <li>Fun tone with structured payment summary</li>
+                <li>Cross-device play</li>
+                <li>Clear ranked results</li>
+                <li>Final split review before confirmation</li>
               </ul>
             </div>
           </div>
@@ -392,7 +398,7 @@ export default function Splash() {
               fontSize: isPhone ? 34 : isLaptop ? 42 : 52,
             }}
           >
-            Screenshots and gameplay previews
+            App previews
           </h2>
           <p
             style={{
@@ -400,9 +406,7 @@ export default function Splash() {
               fontSize: isPhone ? 16 : 18,
             }}
           >
-            Use placeholders for now. Later this section can show real game
-            screenshots, lobby images, arena visuals, gameplay videos, and quick
-            mobile access for players.
+            Preview the app flow, mini-games, and mobile access.
           </p>
 
           <div
@@ -418,9 +422,9 @@ export default function Splash() {
                 minHeight: isPhone ? 220 : 320,
               }}
             >
-              <div style={galleryLabel}>VIDEO PLACEHOLDER</div>
+              <div style={galleryLabel}>Gameplay Preview</div>
               <div style={gallerySubLabel}>
-                Add a gameplay trailer or session montage here
+                Add a short gameplay trailer or session montage here.
               </div>
             </div>
 
@@ -430,7 +434,7 @@ export default function Splash() {
                 gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
               }}
             >
-              Image Placeholder 1
+              Lobby Preview
             </div>
 
             <div
@@ -442,13 +446,11 @@ export default function Splash() {
             >
               <img
                 src="/branding/RollPay_QR.png"
-                alt="Scan to open RollPlay on mobile"
+                alt="Scan to open RollPay on mobile"
                 style={qrImage}
               />
               <div style={qrTitle}>Scan to play</div>
-              <div style={qrText}>
-                Open RollPlay on your phone instantly.
-              </div>
+              <div style={qrText}>Open RollPay on your phone instantly.</div>
             </div>
 
             <div
@@ -457,7 +459,7 @@ export default function Splash() {
                 gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
               }}
             >
-              Image Placeholder 3
+              Mini-Game Preview
             </div>
 
             <div
@@ -466,7 +468,7 @@ export default function Splash() {
                 gridColumn: isPhone ? "span 1" : isLaptop ? "span 6" : "span 3",
               }}
             >
-              Image Placeholder 4
+              Results Preview
             </div>
           </div>
         </div>
@@ -482,7 +484,7 @@ export default function Splash() {
           }}
         >
           <div>
-            <h3 style={footerTitle}>RollPlay</h3>
+            <h3 style={footerTitle}>RollPay</h3>
             <p style={footerText}>Multiplayer bill splitting made social.</p>
           </div>
 
@@ -491,7 +493,7 @@ export default function Splash() {
               style={footerLinkBtn}
               onClick={() => scrollToSection("how-to-use")}
             >
-              How to Use
+              How it Works
             </button>
             <button
               style={footerLinkBtn}
@@ -806,6 +808,25 @@ const cardText = {
   fontSize: 16,
   lineHeight: 1.6,
   opacity: 0.86,
+};
+
+const infoButton = {
+  marginTop: 14,
+  padding: "8px 12px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+  color: "#f6cf64",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const expandText = {
+  margin: "12px 0 0",
+  fontSize: 14,
+  lineHeight: 1.55,
+  opacity: 0.82,
 };
 
 const aboutGrid = {

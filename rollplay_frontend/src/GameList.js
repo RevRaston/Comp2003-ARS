@@ -1,5 +1,3 @@
-// src/GameList.js
-
 export const GAME_PACKS = [
   {
     id: "bar",
@@ -34,6 +32,7 @@ export const GAME_CATALOGUE = [
     duration: "30–60 sec",
     energy: "High",
     typeLabel: "Arcade",
+    defaultEnabled: true,
   },
   {
     id: "darts",
@@ -47,6 +46,7 @@ export const GAME_CATALOGUE = [
     duration: "45–90 sec",
     energy: "Medium",
     typeLabel: "Precision",
+    defaultEnabled: true,
   },
   {
     id: "guessing_card",
@@ -60,6 +60,7 @@ export const GAME_CATALOGUE = [
     duration: "1–2 min",
     energy: "Low",
     typeLabel: "Mind Game",
+    defaultEnabled: true,
   },
   {
     id: "maze",
@@ -73,10 +74,66 @@ export const GAME_CATALOGUE = [
     duration: "1–3 min",
     energy: "Medium",
     typeLabel: "Tactical",
+    defaultEnabled: true,
+  },
+  {
+    id: "dice_duel",
+    name: "Dice Duel",
+    pack: "bar",
+    thumb: "/thumbs/dice_duel.png",
+    description: "Roll against the group and let the highest number win.",
+    minPlayers: 2,
+    maxPlayers: 8,
+    difficulty: "Easy",
+    duration: "20–40 sec",
+    energy: "Low",
+    typeLabel: "RNG",
+    defaultEnabled: false,
+  },
+  {
+    id: "stack_attack",
+    name: "Stack Attack",
+    pack: "restaurant",
+    thumb: "/thumbs/stack_attack.png",
+    description: "Time your actions and build the highest stack.",
+    minPlayers: 2,
+    maxPlayers: 4,
+    difficulty: "Medium",
+    duration: "45–90 sec",
+    energy: "Medium",
+    typeLabel: "Reaction",
+    defaultEnabled: false,
+  },
+  {
+    id: "quickdraw",
+    name: "QuickDraw",
+    pack: "bar",
+    thumb: "/thumbs/quickdraw.png",
+    description: "React first when the signal appears.",
+    minPlayers: 2,
+    maxPlayers: 8,
+    difficulty: "Easy",
+    duration: "20–40 sec",
+    energy: "High",
+    typeLabel: "Reaction",
+    defaultEnabled: false,
+  },
+  {
+    id: "roulette",
+    name: "Roulette",
+    pack: "restaurant",
+    thumb: "/thumbs/roulette.png",
+    description: "A fast chance-based round for quick outcomes.",
+    minPlayers: 2,
+    maxPlayers: 8,
+    difficulty: "Easy",
+    duration: "20–40 sec",
+    energy: "Low",
+    typeLabel: "Chance",
+    defaultEnabled: false,
   },
 ];
 
-// helpers
 export const PACK_LOOKUP = Object.fromEntries(
   GAME_PACKS.map((pack) => [pack.id, pack])
 );
@@ -84,4 +141,5 @@ export const PACK_LOOKUP = Object.fromEntries(
 export const GAME_LIST = GAME_CATALOGUE.map((g) => ({
   id: g.id,
   name: g.name,
+  enabled: g.defaultEnabled,
 }));

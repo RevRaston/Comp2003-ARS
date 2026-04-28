@@ -20,9 +20,7 @@ function toAvatarString(value) {
 function parseAvatarSafely(value) {
   if (!value) return null;
 
-  if (typeof value === "object") {
-    return value;
-  }
+  if (typeof value === "object") return value;
 
   if (typeof value === "string") {
     try {
@@ -123,8 +121,14 @@ export default function Profile() {
               justifyContent: isPhone ? "center" : "flex-start",
             }}
           >
-            <div style={logoBox}>LOGO</div>
-            <div style={brandText}>RollPlay</div>
+            <div style={logoBox}>
+              <img
+                src="/branding/RollPay_Logo.png"
+                alt="RollPay"
+                style={logoImg}
+              />
+            </div>
+            <div style={brandText}>RollPay</div>
           </div>
 
           <nav
@@ -151,7 +155,7 @@ export default function Profile() {
         <section
           style={{
             ...heroSection,
-            minHeight: "calc(100vh - 76px)",
+            minHeight: isPhone ? "auto" : "calc(100vh - 76px)",
             padding: isPhone ? "28px 14px 40px" : "42px 20px 52px",
           }}
         >
@@ -162,8 +166,8 @@ export default function Profile() {
             <p style={sectionEyebrow}>Profile</p>
             <h1 style={pageTitle}>You need to sign in</h1>
             <p style={introText}>
-              Sign in to view or edit your RollPlay profile, avatar, and
-              hosting setup.
+              Sign in to view or edit your RollPay profile, avatar, and hosting
+              setup.
             </p>
             <button style={primaryButton} onClick={() => navigate("/login")}>
               Go to Login
@@ -257,7 +261,8 @@ export default function Profile() {
         ...profile,
         displayName: data.display_name,
         display_name: data.display_name,
-        avatarJson: toAvatarString(profile.avatarJson) || toAvatarString(avatarJson),
+        avatarJson:
+          toAvatarString(profile.avatarJson) || toAvatarString(avatarJson),
         avatar_json: parseAvatarSafely(avatarJson),
         cardBrand: data.card_brand || null,
         cardLast4: data.card_last4 || null,
@@ -365,8 +370,14 @@ export default function Profile() {
             justifyContent: isPhone ? "center" : "flex-start",
           }}
         >
-          <div style={logoBox}>LOGO</div>
-          <div style={brandText}>RollPlay</div>
+          <div style={logoBox}>
+            <img
+              src="/branding/RollPay_Logo.png"
+              alt="RollPay"
+              style={logoImg}
+            />
+          </div>
+          <div style={brandText}>RollPay</div>
         </div>
 
         <nav
@@ -393,6 +404,7 @@ export default function Profile() {
       <section
         style={{
           ...heroSection,
+          minHeight: isPhone ? "auto" : "calc(100vh - 76px)",
           padding: isPhone ? "28px 14px 40px" : "42px 20px 52px",
         }}
       >
@@ -404,6 +416,7 @@ export default function Profile() {
         <div
           style={{
             ...profileLayout,
+            maxWidth: isPhone ? 520 : 1180,
             gridTemplateColumns:
               isPhone || isLaptop
                 ? "1fr"
@@ -459,10 +472,9 @@ export default function Profile() {
             <div style={tipsCard}>
               <h3 style={smallCardTitle}>What this page controls</h3>
               <ul style={tipsList}>
-                <li>Your public display name in sessions</li>
+                <li>Your public display name</li>
                 <li>Your avatar and appearance</li>
-                <li>Your darts throw style</li>
-                <li>Your demo card and host upgrade status</li>
+                <li>Your demo card and host status</li>
               </ul>
             </div>
           </div>
@@ -477,13 +489,13 @@ export default function Profile() {
               <div style={fieldBlock}>
                 <label style={labelStyle}>Display Name</label>
                 <p style={helperText}>
-                  This is the name shown to other players in the lobby and arena.
+                  This is the name shown to other players.
                 </p>
                 <input
                   style={inputStyle}
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="e.g. Fluff, Ryan, DartsKing"
+                  placeholder="e.g. Ryan"
                 />
               </div>
             </div>
@@ -565,8 +577,6 @@ export default function Profile() {
 
               <p style={infoText}>
                 Card details are <strong>demo-only</strong> and never charged.
-                They are only used as part of the project flow and hosting
-                setup.
               </p>
 
               <div style={summaryPanel}>
@@ -574,7 +584,7 @@ export default function Profile() {
                   <span style={summaryLabel}>Current demo card</span>
                   <strong style={summaryValue}>
                     {cardBrand && cardLast4
-                      ? `${cardBrand} • **** **** **** ${cardLast4}`
+                      ? `${cardBrand} • **** ${cardLast4}`
                       : "No demo card yet"}
                   </strong>
                 </div>
@@ -609,9 +619,7 @@ export default function Profile() {
                     disabled={upgrading}
                     style={primaryButton}
                   >
-                    {upgrading
-                      ? "Processing..."
-                      : "Pay for the Game (Upgrade to Host)"}
+                    {upgrading ? "Processing..." : "Upgrade to Host"}
                   </button>
                 )}
               </div>
@@ -639,10 +647,7 @@ export default function Profile() {
                   Cancel
                 </button>
 
-                <button
-                  style={dangerGhostButton}
-                  onClick={handleSignOut}
-                >
+                <button style={dangerGhostButton} onClick={handleSignOut}>
                   Sign Out
                 </button>
               </div>
@@ -688,8 +693,14 @@ const logoBox = {
   justifyContent: "center",
   background: "rgba(255,255,255,0.08)",
   border: "1px solid rgba(255,255,255,0.14)",
-  fontSize: 11,
-  fontWeight: 700,
+  overflow: "hidden",
+  padding: 4,
+};
+
+const logoImg = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
 };
 
 const brandText = {
@@ -723,9 +734,9 @@ const navButtonActive = {
 const heroSection = {
   position: "relative",
   display: "flex",
+  alignItems: "center",
   justifyContent: "center",
   overflow: "hidden",
-  paddingBottom: 48,
 };
 
 const heroGlowOne = {
@@ -777,6 +788,7 @@ const profileLayout = {
   maxWidth: 1180,
   display: "grid",
   alignItems: "start",
+  margin: "0 auto",
 };
 
 const sideCard = {
@@ -785,6 +797,7 @@ const sideCard = {
   padding: "28px 24px",
   border: "1px solid rgba(255,255,255,0.1)",
   boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+  boxSizing: "border-box",
 };
 
 const mainColumn = {
@@ -799,19 +812,21 @@ const contentCard = {
   border: "1px solid rgba(255,255,255,0.1)",
   boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
   padding: "28px 24px",
+  boxSizing: "border-box",
 };
 
 const authCard = {
   position: "relative",
   zIndex: 2,
   width: "100%",
-  maxWidth: 720,
+  maxWidth: 520,
   background: "rgba(0, 0, 0, 0.42)",
   borderRadius: 30,
   border: "1px solid rgba(255,255,255,0.1)",
   boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
   padding: "32px 24px",
   textAlign: "center",
+  boxSizing: "border-box",
 };
 
 const sectionEyebrow = {

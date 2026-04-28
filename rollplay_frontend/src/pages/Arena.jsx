@@ -43,6 +43,7 @@ export default function Arena() {
     round = 1,
     setRound,
     maxRounds = 3,
+    isGameEnabled,
   } = useGame();
 
   const [enrichedPlayers, setEnrichedPlayers] = useState([]);
@@ -54,7 +55,6 @@ export default function Arena() {
   );
 
   const lastServerRoundRef = useRef(null);
-
   const code = sessionCode || localStorage.getItem("session_code");
 
   useEffect(() => {
@@ -228,7 +228,6 @@ export default function Arena() {
         };
       });
 
-      console.log("ARENA merged players:", merged);
       setEnrichedPlayers(merged);
     }
 
@@ -280,65 +279,67 @@ export default function Arena() {
 
   const CurrentGameComponent = GAME_COMPONENTS[currentLevelId] || SumoGame;
 
+  useEffect(() => {
+    if (!currentLevelId) return;
+
+    const locked = isGameEnabled ? !isGameEnabled(currentLevelId) : false;
+
+    if (locked) {
+      alert("This game is currently locked.");
+      navigate("/choose-game");
+    }
+  }, [currentLevelId, isGameEnabled, navigate]);
+
   const hasNextRound =
     currentRound < maxRounds &&
     selectedLevels.some((entry) => entry.round === currentRound + 1);
 
   async function handleRoundComplete(payload = {}) {
-  setRoundComplete(true);
-  setRoundActionError("");
+    setRoundComplete(true);
+    setRoundActionError("");
 
-  if (!code) return;
+    if (!code) return;
 
-  try {
-    const roundResult = {
-      round: currentRound,
-      gameId: currentLevelId,
-      winnerKey:
-        payload?.winnerKey === undefined ? null : payload.winnerKey,
-      winnerName:
-        enrichedPlayers.find((p) => {
-          const key =
-            p?.user_id ??
-            p?.userId ??
-            p?.id ??
-            p?.profile_id ??
-            p?.profileId ??
-            null;
-          return String(key || "") === String(payload?.winnerKey || "");
-        })?.display_name ||
-        enrichedPlayers.find((p) => {
-          const key =
-            p?.user_id ??
-            p?.userId ??
-            p?.id ??
-            p?.profile_id ??
-            p?.profileId ??
-            null;
-          return String(key || "") === String(payload?.winnerKey || "");
-        })?.name ||
-        null,
-      scores: Array.isArray(payload?.scores) ? payload.scores : [],
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const winnerPlayer = enrichedPlayers.find((p) => {
+        const key =
+          p?.user_id ??
+          p?.userId ??
+          p?.id ??
+          p?.profile_id ??
+          p?.profileId ??
+          null;
 
-    const res = await fetch(`${API_BASE}/sessions/${code}/round-result`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ roundResult }),
-    });
+        return String(key || "") === String(payload?.winnerKey || "");
+      });
 
-    const data = await res.json().catch(() => null);
+      const roundResult = {
+        round: currentRound,
+        gameId: currentLevelId,
+        winnerKey: payload?.winnerKey === undefined ? null : payload.winnerKey,
+        winnerName:
+          winnerPlayer?.display_name || winnerPlayer?.name || null,
+        scores: Array.isArray(payload?.scores) ? payload.scores : [],
+        createdAt: new Date().toISOString(),
+      };
 
-    if (!res.ok) {
-      throw new Error(data?.error || "Failed to save round result");
+      const res = await fetch(`${API_BASE}/sessions/${code}/round-result`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ roundResult }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save round result");
+      }
+    } catch (err) {
+      console.error("Failed to save round result:", err);
     }
-  } catch (err) {
-    console.error("Failed to save round result:", err);
   }
-}
 
   async function handleAdvanceRound() {
     if (!isHost || !code || advancingRound) return;
@@ -362,6 +363,14 @@ export default function Arena() {
         }
 
         return;
+      }
+
+      const nextRoundEntry = selectedLevels.find(
+        (entry) => entry.round === currentRound + 1
+      );
+
+      if (nextRoundEntry && isGameEnabled && !isGameEnabled(nextRoundEntry.level.id)) {
+        throw new Error(`${nextRoundEntry.level.name} is locked. Choose another game.`);
       }
 
       const res = await fetch(`${API_BASE}/sessions/${code}/advance-round`, {
@@ -433,7 +442,8 @@ export default function Arena() {
               }}
             >
               <div style={metaPill}>
-                Round <strong>{currentRound}</strong> of <strong>{maxRounds}</strong>
+                Round <strong>{currentRound}</strong> of{" "}
+                <strong>{maxRounds}</strong>
               </div>
               <div style={metaPill}>
                 Pack <strong>{currentPackName}</strong>
@@ -455,13 +465,13 @@ export default function Arena() {
           >
             <div style={legendTitle}>Quick notes</div>
             <div style={legendText}>
-              Your dot is <strong>blue</strong> on your screen.
+              Your avatar is shown around the arena.
             </div>
             <div style={legendText}>
-              Opponents appear <strong>red</strong>.
+              The host controls round progression.
             </div>
             <div style={legendText}>
-              Click the game area first if controls need focus.
+              Locked games cannot be played.
             </div>
           </div>
         </section>
@@ -662,7 +672,7 @@ function ArenaSlot({ player, label, compact = false, highlightMe = false }) {
   );
 }
 
-/* ---------------- styles ---------------- */
+/* styles */
 
 const page = {
   minHeight: "100vh",

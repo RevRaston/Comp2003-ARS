@@ -1,7 +1,7 @@
 // src/pages/LevelSelect.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GAME_CATALOGUE, GAME_PACKS } from "../GameList";
+import { GAME_PACKS } from "../GameList";
 import { useGame } from "../GameContext";
 
 const defaultBase =
@@ -27,8 +27,13 @@ export default function LevelSelect() {
     selectedLevels,
     setSelectedLevels,
     players,
+    profile,
+    games = [],
+    toggleGameEnabled,
+    isGameEnabled,
   } = useGame();
 
+  const isAdmin = !!profile?.isAdmin;
   const MAX_ROUNDS = maxRounds ?? 3;
 
   const [activePack, setActivePack] = useState(GAME_PACKS[0]?.id || "bar");
@@ -74,7 +79,7 @@ export default function LevelSelect() {
 
         const mapped = data.levels
           .map((entry) => {
-            const level = GAME_CATALOGUE.find((g) => g.id === entry.level_key);
+            const level = games.find((g) => g.id === entry.level_key);
             if (!level) return null;
 
             return {
@@ -99,7 +104,7 @@ export default function LevelSelect() {
     return () => {
       cancelled = true;
     };
-  }, [code, setSelectedLevels]);
+  }, [code, setSelectedLevels, games]);
 
   useEffect(() => {
     if (isHost) return;
@@ -167,6 +172,9 @@ export default function LevelSelect() {
     if (!isHost) return;
     if (isSpinning) return;
 
+    const locked = isGameEnabled ? !isGameEnabled(level.id) : level.enabled === false;
+    if (locked) return;
+
     const newSet = [...localSelections];
     const existing = newSet.find((e) => e.round === round);
 
@@ -190,8 +198,11 @@ export default function LevelSelect() {
     if (!isHost) return;
     if (isSpinning || allRoundsChosen) return;
 
-    const packGames = GAME_CATALOGUE.filter((g) => g.pack === activePack);
-    const available = packGames.filter((g) => !chosenIds.includes(g.id));
+    const packGames = games.filter((g) => g.pack === activePack);
+    const available = packGames.filter(
+      (g) => !chosenIds.includes(g.id) && (isGameEnabled ? isGameEnabled(g.id) : g.enabled !== false)
+    );
+
     if (!available.length) return;
 
     setIsSpinning(true);
@@ -210,6 +221,15 @@ export default function LevelSelect() {
     const round1 = localSelections.find((s) => s.round === 1);
     if (!round1) {
       alert("Pick a game for Round 1");
+      return;
+    }
+
+    const lockedRound = localSelections.find((s) =>
+      isGameEnabled ? !isGameEnabled(s.level.id) : s.level.enabled === false
+    );
+
+    if (lockedRound) {
+      alert(`${lockedRound.level.name} is currently locked. Replace it before starting.`);
       return;
     }
 
@@ -241,8 +261,8 @@ export default function LevelSelect() {
   }
 
   const visibleGames = useMemo(() => {
-    return GAME_CATALOGUE.filter((g) => g.pack === activePack);
-  }, [activePack]);
+    return games.filter((g) => g.pack === activePack);
+  }, [activePack, games]);
 
   const selectedForCurrentRound = localSelections.find((s) => s.round === round);
 
@@ -281,8 +301,8 @@ export default function LevelSelect() {
                 fontSize: isPhone ? 15 : 17,
               }}
             >
-              The host chooses which mini-games will be played and in what
-              order. Once round one is locked in, everyone moves into the arena.
+              Pick the mini-games for this session. Locked games are visible but
+              cannot be selected until an admin unlocks them.
             </p>
 
             <div
@@ -307,6 +327,7 @@ export default function LevelSelect() {
                 Round <strong>{Math.min(round, MAX_ROUNDS)}</strong> of{" "}
                 <strong>{MAX_ROUNDS}</strong>
               </div>
+              {isAdmin && <div style={adminPill}>Admin game locks enabled</div>}
             </div>
           </div>
 
@@ -356,7 +377,7 @@ export default function LevelSelect() {
               {isHost ? "Pick the line-up." : "Waiting for the host."}
             </strong>{" "}
             {isHost
-              ? "Choose a game card to assign it to the current round, or use the random picker for the active pack."
+              ? "Choose a game card to assign it to the current round. Admins can lock unfinished games globally."
               : "You’ll be moved automatically once the host starts round one."}
           </div>
 
@@ -379,9 +400,7 @@ export default function LevelSelect() {
               <p style={panelEyebrow}>Game packs</p>
               <h2 style={packsTitle}>Choose a pack</h2>
             </div>
-            <div style={miniStat}>
-              {GAME_PACKS.length} packs available
-            </div>
+            <div style={miniStat}>{GAME_PACKS.length} packs available</div>
           </div>
 
           <div
@@ -424,9 +443,7 @@ export default function LevelSelect() {
                 <p style={panelEyebrow}>Catalogue</p>
                 <h2 style={panelTitle}>Games in this pack</h2>
               </div>
-              <div style={miniStat}>
-                {visibleGames.length} in pack
-              </div>
+              <div style={miniStat}>{visibleGames.length} in pack</div>
             </div>
 
             <p style={panelHint}>
@@ -448,47 +465,84 @@ export default function LevelSelect() {
                   (s) => s.level.id === game.id
                 );
 
+                const locked = isGameEnabled
+                  ? !isGameEnabled(game.id)
+                  : game.enabled === false;
+
                 const disabled =
-                  !isHost || isSpinning || Boolean(chosenEntry) || allRoundsChosen;
+                  locked ||
+                  !isHost ||
+                  isSpinning ||
+                  Boolean(chosenEntry) ||
+                  allRoundsChosen;
 
                 return (
-                  <button
-                    key={game.id}
-                    onClick={() => chooseLevel(game)}
-                    disabled={disabled}
-                    style={{
-                      ...gameCard,
-                      ...(chosenEntry ? chosenCard : {}),
-                      opacity: disabled && !chosenEntry ? 0.72 : 1,
-                      cursor: disabled ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    <div
-                      style={{
-                        ...thumb,
-                        backgroundImage: `url(${game.thumb})`,
+                  <div key={game.id} style={{ position: "relative" }}>
+                    <button
+                      onClick={() => {
+                        if (locked) return;
+                        chooseLevel(game);
                       }}
-                    />
+                      disabled={disabled}
+                      style={{
+                        ...gameCard,
+                        ...(chosenEntry ? chosenCard : {}),
+                        ...(locked ? lockedGameCard : {}),
+                        opacity: locked ? 0.42 : disabled && !chosenEntry ? 0.72 : 1,
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        filter: locked ? "grayscale(1)" : "none",
+                      }}
+                    >
+                      <div
+                        style={{
+                          ...thumb,
+                          backgroundImage: `url(${game.thumb})`,
+                        }}
+                      />
 
-                    <div style={cardBody}>
-                      <div style={cardTopRow}>
-                        <div>
-                          <h3 style={gameTitle}>{game.name}</h3>
-                          <span style={gameId}>{game.id}</span>
+                      <div style={cardBody}>
+                        <div style={cardTopRow}>
+                          <div>
+                            <h3 style={gameTitle}>{game.name}</h3>
+                            <span style={gameId}>{game.id}</span>
+                          </div>
+
+                          {locked ? (
+                            <span style={lockedBadge}>Locked</span>
+                          ) : chosenEntry ? (
+                            <span style={roundBadge}>
+                              Round {chosenEntry.round}
+                            </span>
+                          ) : (
+                            <span style={selectHint}>
+                              {isHost && !allRoundsChosen ? "Select" : "View"}
+                            </span>
+                          )}
                         </div>
 
-                        {chosenEntry ? (
-                          <span style={roundBadge}>Round {chosenEntry.round}</span>
-                        ) : (
-                          <span style={selectHint}>
-                            {isHost && !allRoundsChosen ? "Select" : "Locked"}
-                          </span>
-                        )}
+                        <p style={cardDesc}>{game.description}</p>
                       </div>
+                    </button>
 
-                      <p style={cardDesc}>{game.description}</p>
-                    </div>
-                  </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await toggleGameEnabled(game.id);
+                          } catch (err) {
+                            alert(err.message || "Failed to update game lock.");
+                          }
+                        }}
+                        style={{
+                          ...adminToggleButton,
+                          ...(locked ? adminUnlockButton : adminLockButton),
+                        }}
+                      >
+                        {locked ? "Unlock" : "Lock"}
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -680,6 +734,16 @@ const playerPill = {
   color: "#fff",
 };
 
+const adminPill = {
+  padding: "9px 12px",
+  borderRadius: 999,
+  background: "rgba(255, 110, 110, 0.14)",
+  border: "1px solid rgba(255, 110, 110, 0.3)",
+  color: "#ffb0b0",
+  fontSize: 13,
+  fontWeight: 800,
+};
+
 const sessionCard = {
   borderRadius: 24,
   padding: 18,
@@ -844,6 +908,7 @@ const catalogueGrid = {
 };
 
 const gameCard = {
+  width: "100%",
   padding: 0,
   overflow: "hidden",
   textAlign: "left",
@@ -852,6 +917,11 @@ const gameCard = {
   background: "rgba(255,255,255,0.04)",
   color: "white",
   transition: "0.2s ease",
+};
+
+const lockedGameCard = {
+  background: "rgba(255,255,255,0.025)",
+  border: "1px solid rgba(255,255,255,0.08)",
 };
 
 const chosenCard = {
@@ -911,11 +981,48 @@ const roundBadge = {
   whiteSpace: "nowrap",
 };
 
+const lockedBadge = {
+  display: "inline-block",
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#bfc3cc",
+  whiteSpace: "nowrap",
+};
+
 const selectHint = {
   fontSize: 12,
   fontWeight: 700,
   opacity: 0.75,
   whiteSpace: "nowrap",
+};
+
+const adminToggleButton = {
+  position: "absolute",
+  top: 10,
+  right: 10,
+  zIndex: 4,
+  padding: "7px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: "pointer",
+  boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+};
+
+const adminLockButton = {
+  background: "rgba(255, 110, 110, 0.95)",
+  border: "1px solid rgba(255,255,255,0.22)",
+  color: "#1d1d1d",
+};
+
+const adminUnlockButton = {
+  background: "rgba(244,196,49,0.95)",
+  border: "1px solid rgba(255,255,255,0.22)",
+  color: "#1d1d1d",
 };
 
 const sidebar = {

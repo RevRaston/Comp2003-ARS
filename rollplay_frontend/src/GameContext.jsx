@@ -1,5 +1,6 @@
-// src/GameContext.jsx
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
+import { GAME_CATALOGUE } from "./GameList";
 
 const GameContext = createContext(null);
 
@@ -13,6 +14,12 @@ const API_BASE = (
   import.meta.env.VITE_BACKEND_URL ||
   defaultBase
 ).replace(/\/$/, "");
+
+function buildDefaultGameLocks() {
+  return Object.fromEntries(
+    GAME_CATALOGUE.map((game) => [game.id, game.defaultEnabled !== false])
+  );
+}
 
 export function GameProvider({ children }) {
   const [players, setPlayers] = useState([]);
@@ -36,6 +43,72 @@ export function GameProvider({ children }) {
   const [paymentRequired, setPaymentRequired] = useState(true);
 
   const [confirmedSplit, setConfirmedSplit] = useState(null);
+
+  const [gameLocks, setGameLocks] = useState(buildDefaultGameLocks());
+  const [gameLocksLoading, setGameLocksLoading] = useState(false);
+
+  const loadGameLocks = useCallback(async () => {
+    setGameLocksLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("game_locks")
+        .select("game_id, enabled");
+
+      if (error) throw error;
+
+      const nextLocks = buildDefaultGameLocks();
+
+      for (const row of data || []) {
+        nextLocks[row.game_id] = Boolean(row.enabled);
+      }
+
+      setGameLocks(nextLocks);
+    } catch (err) {
+      console.error("Failed to load game locks:", err);
+      setGameLocks(buildDefaultGameLocks());
+    } finally {
+      setGameLocksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGameLocks();
+  }, [loadGameLocks]);
+
+  async function toggleGameEnabled(gameId) {
+    if (!profile?.isAdmin) {
+      throw new Error("Only admins can update game availability.");
+    }
+
+    const current = gameLocks[gameId] !== false;
+    const nextEnabled = !current;
+
+    setGameLocks((prev) => ({
+      ...prev,
+      [gameId]: nextEnabled,
+    }));
+
+    const { error } = await supabase.from("game_locks").upsert({
+      game_id: gameId,
+      enabled: nextEnabled,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setGameLocks((prev) => ({
+        ...prev,
+        [gameId]: current,
+      }));
+      throw error;
+    }
+
+    return nextEnabled;
+  }
+
+  function isGameEnabled(gameId) {
+    return gameLocks[gameId] !== false;
+  }
 
   useEffect(() => {
     const storedCode = localStorage.getItem("session_code");
@@ -183,6 +256,11 @@ export function GameProvider({ children }) {
     localStorage.removeItem("confirmed_split");
   }
 
+  const games = GAME_CATALOGUE.map((game) => ({
+    ...game,
+    enabled: gameLocks[game.id] !== false,
+  }));
+
   const value = {
     players,
     setPlayers,
@@ -224,14 +302,17 @@ export function GameProvider({ children }) {
     saveConfirmedSplit,
     clearConfirmedSplit,
 
+    games,
+    gameLocks,
+    gameLocksLoading,
+    loadGameLocks,
+    toggleGameEnabled,
+    isGameEnabled,
+
     canHost: profile?.canHost ?? false,
   };
 
-  return (
-    <GameContext.Provider value={value}>
-      {children}
-    </GameContext.Provider>
-  );
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
 
 export function useGame() {

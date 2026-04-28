@@ -1,4 +1,3 @@
-// src/pages/JoinSession.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../GameContext";
@@ -28,17 +27,18 @@ export default function JoinSession({ token }) {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     function handleResize() {
       setScreenWidth(window.innerWidth);
     }
+
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const isPhone = screenWidth <= 640;
-  const isLaptop = screenWidth <= 1100;
 
   async function handleJoinSession() {
     setError("");
@@ -112,8 +112,10 @@ export default function JoinSession({ token }) {
             justifyContent: isPhone ? "center" : "flex-start",
           }}
         >
-          <div style={logoBox}>LOGO</div>
-          <div style={brandText}>RollPlay</div>
+          <div style={logoBox}>
+            <img src="/branding/RollPay_Logo.png" alt="RollPay" style={logoImg} />
+          </div>
+          <div style={brandText}>RollPay</div>
         </div>
 
         <nav
@@ -122,16 +124,10 @@ export default function JoinSession({ token }) {
             justifyContent: isPhone ? "center" : "flex-end",
           }}
         >
-          <button
-            style={navButtonActive}
-            onClick={() => navigate("/join-session")}
-          >
+          <button style={navButtonActive} onClick={() => navigate("/join-session")}>
             Join
           </button>
-          <button
-            style={navButton}
-            onClick={() => navigate("/host-session")}
-          >
+          <button style={navButton} onClick={() => navigate("/host-session")}>
             Host
           </button>
           <button style={navButton} onClick={() => navigate("/profile")}>
@@ -149,148 +145,113 @@ export default function JoinSession({ token }) {
       >
         <div style={heroGlowOne} />
         <div style={heroGlowTwo} />
-        {!isPhone && <div style={heroBubbleOne} />}
-        {!isPhone && <div style={heroBubbleTwo} />}
 
         <div
           style={{
-            ...joinLayout,
-            gridTemplateColumns:
-              isPhone || isLaptop
-                ? "1fr"
-                : "minmax(320px, 0.9fr) minmax(0, 1.1fr)",
-            gap: isPhone ? 18 : 24,
+            ...formCard,
+            padding: isPhone ? "24px 16px" : "32px 28px",
           }}
         >
-          <div style={sideCard}>
-            <p style={sectionEyebrow}>Player entry</p>
-            <h1
-              style={{
-                ...pageTitle,
-                fontSize: isPhone ? 40 : isLaptop ? 52 : 64,
-              }}
-            >
-              Join a game
-            </h1>
+          <p style={sectionEyebrow}>Player entry</p>
 
-            <p style={introText}>
-              Enter the session code from the host and choose the name you want
-              shown in the lobby and arena.
-            </p>
+          <h1
+            style={{
+              ...pageTitle,
+              fontSize: isPhone ? 42 : 58,
+            }}
+          >
+            Join a session
+          </h1>
 
-            <div style={tipsCard}>
-              <h3 style={smallCardTitle}>What you’ll need</h3>
-              <ul style={tipsList}>
-                <li>A valid session code from the host.</li>
-                <li>Your own device for joining and playing.</li>
-                <li>A name other players can recognise.</li>
-              </ul>
+          <p style={introText}>
+            Enter your code and join the lobby.
+          </p>
+
+          <div style={fieldBlock}>
+            <label style={labelStyle} htmlFor="session-code">
+              Session code
+            </label>
+            <input
+              id="session-code"
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="Enter code"
+              autoCapitalize="characters"
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={fieldBlock}>
+            <label style={labelStyle} htmlFor="player-name">
+              Your name
+            </label>
+            <input
+              id="player-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your name"
+              style={inputStyle}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowHelp((v) => !v)}
+            style={infoButton}
+          >
+            {showHelp ? "Hide help" : "Need help?"}
+          </button>
+
+          {showHelp && (
+            <div style={helpBox}>
+              Ask the host for the session code. Once joined, you’ll enter the
+              lobby and wait for the host to start.
+            </div>
+          )}
+
+          <div style={summaryPanel}>
+            <div style={summaryRow}>
+              <span style={summaryLabel}>Joining as</span>
+              <strong style={summaryValue}>{name.trim() || "Not set"}</strong>
             </div>
 
-            <div style={tipsCardAlt}>
-              <h3 style={smallCardTitle}>What happens next?</h3>
-              <p style={infoText}>
-                Once you join, you’ll enter the lobby, wait for the host to
-                start the session, and then follow the group into each round.
-              </p>
+            <div style={summaryRow}>
+              <span style={summaryLabel}>Code</span>
+              <strong style={summaryValue}>{code.trim() || "Not entered"}</strong>
             </div>
           </div>
 
+          {error && <p style={errorText}>{error}</p>}
+
           <div
             style={{
-              ...formCard,
-              padding: isPhone ? "22px 16px" : "28px 24px",
+              ...actionRow,
+              flexDirection: isPhone ? "column" : "row",
             }}
           >
-            <p style={sectionEyebrow}>Session join</p>
-            <h2 style={formTitle}>Enter your session details</h2>
-            <p style={formIntro}>
-              Join an existing RollPlay session using the code provided by the
-              host.
-            </p>
-
-            <div style={fieldBlock}>
-              <label style={labelStyle} htmlFor="session-code">
-                Session code
-              </label>
-              <p style={helperText}>
-                Codes are usually short and shown by the host in the session
-                setup.
-              </p>
-              <input
-                id="session-code"
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="Enter code"
-                autoCapitalize="characters"
-                style={inputStyle}
-              />
-            </div>
-
-            <div style={fieldBlock}>
-              <label style={labelStyle} htmlFor="player-name">
-                Your name
-              </label>
-              <p style={helperText}>
-                This is the name shown to the host and other players in the
-                lobby.
-              </p>
-              <input
-                id="player-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter your name"
-                style={inputStyle}
-              />
-            </div>
-
-            <div style={summaryPanel}>
-              <div style={summaryRow}>
-                <span style={summaryLabel}>Joining as</span>
-                <strong style={summaryValue}>
-                  {name.trim() || "Not set yet"}
-                </strong>
-              </div>
-
-              <div style={summaryRow}>
-                <span style={summaryLabel}>Session code</span>
-                <strong style={summaryValue}>
-                  {code.trim() || "Not entered yet"}
-                </strong>
-              </div>
-            </div>
-
-            {error && <p style={errorText}>{error}</p>}
-
-            <div
+            <button
+              onClick={handleJoinSession}
+              disabled={loading}
               style={{
-                ...actionRow,
-                flexDirection: isPhone ? "column" : "row",
+                ...primaryButton,
+                width: isPhone ? "100%" : "auto",
+                ...(loading ? disabledButton : null),
               }}
             >
-              <button
-                onClick={handleJoinSession}
-                disabled={loading}
-                style={{
-                  ...primaryButton,
-                  width: isPhone ? "100%" : "auto",
-                }}
-              >
-                {loading ? "Joining..." : "Join Session"}
-              </button>
+              {loading ? "Joining..." : "Join Session"}
+            </button>
 
-              <button
-                onClick={() => navigate("/host-session")}
-                style={{
-                  ...secondaryButton,
-                  width: isPhone ? "100%" : "auto",
-                }}
-              >
-                Switch to Host
-              </button>
-            </div>
+            <button
+              onClick={() => navigate("/host-session")}
+              style={{
+                ...secondaryButton,
+                width: isPhone ? "100%" : "auto",
+              }}
+            >
+              Switch to Host
+            </button>
           </div>
         </div>
       </section>
@@ -334,8 +295,14 @@ const logoBox = {
   justifyContent: "center",
   background: "rgba(255,255,255,0.08)",
   border: "1px solid rgba(255,255,255,0.14)",
-  fontSize: 11,
-  fontWeight: 700,
+  overflow: "hidden",
+  padding: 4,
+};
+
+const logoImg = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
 };
 
 const brandText = {
@@ -396,44 +363,11 @@ const heroGlowTwo = {
   right: -80,
 };
 
-const heroBubbleOne = {
-  position: "absolute",
-  width: 120,
-  height: 120,
-  borderRadius: "50%",
-  border: "7px solid rgba(255,220,140,0.12)",
-  top: 120,
-  right: "12%",
-};
-
-const heroBubbleTwo = {
-  position: "absolute",
-  width: 78,
-  height: 78,
-  borderRadius: "50%",
-  border: "6px solid rgba(255,220,140,0.10)",
-  bottom: 120,
-  left: "10%",
-};
-
-const joinLayout = {
+const formCard = {
   position: "relative",
   zIndex: 2,
   width: "100%",
-  maxWidth: 1180,
-  display: "grid",
-  alignItems: "stretch",
-};
-
-const sideCard = {
-  background: "rgba(0, 0, 0, 0.38)",
-  borderRadius: 30,
-  padding: "28px 24px",
-  border: "1px solid rgba(255,255,255,0.1)",
-  boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
-};
-
-const formCard = {
+  maxWidth: 520,
   background: "rgba(0, 0, 0, 0.42)",
   borderRadius: 30,
   border: "1px solid rgba(255,255,255,0.1)",
@@ -457,64 +391,14 @@ const pageTitle = {
 };
 
 const introText = {
-  marginTop: 14,
+  margin: "14px 0 24px",
   fontSize: 17,
-  lineHeight: 1.65,
-  opacity: 0.9,
-};
-
-const tipsCard = {
-  marginTop: 24,
-  padding: 20,
-  borderRadius: 22,
-  background:
-    "linear-gradient(180deg, rgba(244,196,49,0.12), rgba(255,255,255,0.03))",
-  border: "1px solid rgba(255,255,255,0.1)",
-};
-
-const tipsCardAlt = {
-  marginTop: 18,
-  padding: 20,
-  borderRadius: 22,
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.1)",
-};
-
-const smallCardTitle = {
-  margin: "0 0 12px",
-  fontSize: 18,
-};
-
-const tipsList = {
-  margin: 0,
-  paddingLeft: 20,
-  lineHeight: 1.9,
-  fontSize: 15,
-  opacity: 0.9,
-};
-
-const infoText = {
-  margin: 0,
-  fontSize: 15,
-  lineHeight: 1.75,
-  opacity: 0.88,
-};
-
-const formTitle = {
-  margin: "0 0 10px",
-  fontSize: 34,
-  lineHeight: 1.05,
-};
-
-const formIntro = {
-  margin: "0 0 24px",
-  fontSize: 16,
-  lineHeight: 1.6,
+  lineHeight: 1.55,
   opacity: 0.86,
 };
 
 const fieldBlock = {
-  marginBottom: 22,
+  marginBottom: 18,
 };
 
 const labelStyle = {
@@ -522,13 +406,6 @@ const labelStyle = {
   marginBottom: 8,
   fontSize: 16,
   fontWeight: 700,
-};
-
-const helperText = {
-  margin: "0 0 10px",
-  fontSize: 14,
-  lineHeight: 1.5,
-  opacity: 0.76,
 };
 
 const inputStyle = {
@@ -540,6 +417,29 @@ const inputStyle = {
   color: "white",
   fontSize: 17,
   boxSizing: "border-box",
+};
+
+const infoButton = {
+  marginBottom: 16,
+  padding: "8px 12px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+  color: "#f6cf64",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const helpBox = {
+  marginBottom: 18,
+  padding: 14,
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.1)",
+  fontSize: 14,
+  lineHeight: 1.55,
+  opacity: 0.86,
 };
 
 const summaryPanel = {
@@ -604,4 +504,9 @@ const secondaryButton = {
   fontWeight: 700,
   cursor: "pointer",
   minWidth: 170,
+};
+
+const disabledButton = {
+  opacity: 0.65,
+  cursor: "not-allowed",
 };

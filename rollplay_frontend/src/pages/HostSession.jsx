@@ -32,6 +32,7 @@ export default function HostSession({ token }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     function handleResize() {
@@ -43,7 +44,6 @@ export default function HostSession({ token }) {
   }, []);
 
   const isPhone = screenWidth <= 640;
-  const isLaptop = screenWidth <= 1100;
 
   const displayName =
     profile?.displayName ||
@@ -127,8 +127,10 @@ export default function HostSession({ token }) {
             justifyContent: isPhone ? "center" : "flex-start",
           }}
         >
-          <div style={logoBox}>LOGO</div>
-          <div style={brandText}>RollPlay</div>
+          <div style={logoBox}>
+            <img src="/branding/RollPay_Logo.png" alt="RollPay" style={logoImg} />
+          </div>
+          <div style={brandText}>RollPay</div>
         </div>
 
         <nav
@@ -140,10 +142,7 @@ export default function HostSession({ token }) {
           <button style={navButton} onClick={() => navigate("/join-session")}>
             Join
           </button>
-          <button
-            style={navButtonActive}
-            onClick={() => navigate("/host-session")}
-          >
+          <button style={navButtonActive} onClick={() => navigate("/host-session")}>
             Host
           </button>
           <button style={navButton} onClick={() => navigate("/profile")}>
@@ -161,110 +160,93 @@ export default function HostSession({ token }) {
       >
         <div style={heroGlowOne} />
         <div style={heroGlowTwo} />
-        {!isPhone && <div style={heroBubbleOne} />}
-        {!isPhone && <div style={heroBubbleTwo} />}
 
         <div
           style={{
-            ...hostLayout,
-            gridTemplateColumns:
-              isPhone || isLaptop
-                ? "1fr"
-                : "minmax(320px, 0.9fr) minmax(0, 1.1fr)",
-            gap: isPhone ? 18 : 24,
+            ...formCard,
+            padding: isPhone ? "24px 16px" : "32px 28px",
           }}
         >
-          <div style={sideCard}>
-            <p style={sectionEyebrow}>Host dashboard</p>
-            <h1
-              style={{
-                ...pageTitle,
-                fontSize: isPhone ? 40 : isLaptop ? 52 : 64,
-              }}
-            >
-              Host a game
-            </h1>
+          <p style={sectionEyebrow}>Host dashboard</p>
 
-            <p style={introText}>
-              Start a new RollPlay session and invite players to join using a
-              session code. Split details are handled in the next step.
-            </p>
+          <h1
+            style={{
+              ...pageTitle,
+              fontSize: isPhone ? 42 : 58,
+            }}
+          >
+            Create session
+          </h1>
 
-            <div style={profileCard}>
-              <div style={avatarCircle}>{initials}</div>
+          <p style={introText}>
+            Start a room, share the code, then set up the split.
+          </p>
 
-              <div style={{ minWidth: 0 }}>
-                <div style={profileLabel}>Signed in as</div>
-                <div style={profileName}>{displayName}</div>
-                <div style={profileSubtext}>Ready to host</div>
-              </div>
-            </div>
+          <div style={profileCard}>
+            <div style={avatarCircle}>{initials}</div>
 
-            <div style={tipsCard}>
-              <h3 style={smallCardTitle}>Before you start</h3>
-              <ul style={tipsList}>
-                <li>Make sure everyone has their own device.</li>
-                <li>Create the room and share the session code.</li>
-                <li>Set up the split details on the next page.</li>
-              </ul>
+            <div style={{ minWidth: 0 }}>
+              <div style={profileLabel}>Signed in as</div>
+              <div style={profileName}>{displayName}</div>
             </div>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setShowHelp((v) => !v)}
+            style={infoButton}
+          >
+            {showHelp ? "Hide help" : "How hosting works"}
+          </button>
+
+          {showHelp && (
+            <div style={helpBox}>
+              Create the session first. RollPay will generate a code for players.
+              Split details, receipt items, and game setup are handled after this.
+            </div>
+          )}
+
+          <div style={summaryPanel}>
+            <div style={summaryRow}>
+              <span style={summaryLabel}>Host</span>
+              <strong style={summaryValue}>{displayName}</strong>
+            </div>
+
+            <div style={summaryRow}>
+              <span style={summaryLabel}>Next step</span>
+              <strong style={summaryValue}>Split Setup</strong>
+            </div>
+          </div>
+
+          {error && <p style={errorText}>{error}</p>}
+
           <div
             style={{
-              ...formCard,
-              padding: isPhone ? "22px 16px" : "28px 24px",
+              ...actionRow,
+              flexDirection: isPhone ? "column" : "row",
             }}
           >
-            <p style={sectionEyebrow}>Session setup</p>
-            <h2 style={formTitle}>Create a new session</h2>
-            <p style={formIntro}>
-              Create the room first, then continue to Split Setup to manage the
-              payment draft, receipt items, or total pot.
-            </p>
-
-            <div style={summaryPanel}>
-              <div style={summaryRow}>
-                <span style={summaryLabel}>Host</span>
-                <strong style={summaryValue}>{displayName}</strong>
-              </div>
-
-              <div style={summaryRow}>
-                <span style={summaryLabel}>Next step</span>
-                <strong style={summaryValue}>Split Setup</strong>
-              </div>
-            </div>
-
-            {error && <p style={errorText}>{error}</p>}
-
-            <div
+            <button
+              onClick={handleCreateSession}
+              disabled={loading}
               style={{
-                ...actionRow,
-                flexDirection: isPhone ? "column" : "row",
+                ...primaryButton,
+                width: isPhone ? "100%" : "auto",
+                ...(loading ? disabledButton : null),
               }}
             >
-              <button
-                onClick={handleCreateSession}
-                disabled={loading}
-                style={{
-                  ...primaryButton,
-                  width: isPhone ? "100%" : "auto",
-                  ...(loading ? disabledButton : null),
-                }}
-              >
-                {loading ? "Creating..." : "Create Session"}
-              </button>
+              {loading ? "Creating..." : "Create Session"}
+            </button>
 
-              <button
-                onClick={() => navigate("/profile")}
-                style={{
-                  ...secondaryButton,
-                  width: isPhone ? "100%" : "auto",
-                }}
-              >
-                Edit Profile
-              </button>
-            </div>
+            <button
+              onClick={() => navigate("/profile")}
+              style={{
+                ...secondaryButton,
+                width: isPhone ? "100%" : "auto",
+              }}
+            >
+              Edit Profile
+            </button>
           </div>
         </div>
       </section>
@@ -308,8 +290,14 @@ const logoBox = {
   justifyContent: "center",
   background: "rgba(255,255,255,0.08)",
   border: "1px solid rgba(255,255,255,0.14)",
-  fontSize: 11,
-  fontWeight: 700,
+  overflow: "hidden",
+  padding: 4,
+};
+
+const logoImg = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
 };
 
 const brandText = {
@@ -370,44 +358,11 @@ const heroGlowTwo = {
   right: -80,
 };
 
-const heroBubbleOne = {
-  position: "absolute",
-  width: 120,
-  height: 120,
-  borderRadius: "50%",
-  border: "7px solid rgba(255,220,140,0.12)",
-  top: 120,
-  right: "12%",
-};
-
-const heroBubbleTwo = {
-  position: "absolute",
-  width: 78,
-  height: 78,
-  borderRadius: "50%",
-  border: "6px solid rgba(255,220,140,0.10)",
-  bottom: 120,
-  left: "10%",
-};
-
-const hostLayout = {
+const formCard = {
   position: "relative",
   zIndex: 2,
   width: "100%",
-  maxWidth: 1180,
-  display: "grid",
-  alignItems: "stretch",
-};
-
-const sideCard = {
-  background: "rgba(0, 0, 0, 0.38)",
-  borderRadius: 30,
-  padding: "28px 24px",
-  border: "1px solid rgba(255,255,255,0.1)",
-  boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
-};
-
-const formCard = {
+  maxWidth: 520,
   background: "rgba(0, 0, 0, 0.42)",
   borderRadius: 30,
   border: "1px solid rgba(255,255,255,0.1)",
@@ -431,14 +386,14 @@ const pageTitle = {
 };
 
 const introText = {
-  marginTop: 14,
+  margin: "14px 0 24px",
   fontSize: 17,
-  lineHeight: 1.65,
-  opacity: 0.9,
+  lineHeight: 1.55,
+  opacity: 0.86,
 };
 
 const profileCard = {
-  marginTop: 24,
+  marginBottom: 18,
   padding: 18,
   borderRadius: 22,
   display: "flex",
@@ -476,44 +431,26 @@ const profileName = {
   textOverflow: "ellipsis",
 };
 
-const profileSubtext = {
-  fontSize: 14,
-  opacity: 0.76,
-  marginTop: 4,
+const infoButton = {
+  marginBottom: 16,
+  padding: "8px 12px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.06)",
+  color: "#f6cf64",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 700,
 };
 
-const tipsCard = {
-  marginTop: 20,
-  padding: 20,
-  borderRadius: 22,
-  background:
-    "linear-gradient(180deg, rgba(244,196,49,0.12), rgba(255,255,255,0.03))",
+const helpBox = {
+  marginBottom: 18,
+  padding: 14,
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.05)",
   border: "1px solid rgba(255,255,255,0.1)",
-};
-
-const smallCardTitle = {
-  margin: "0 0 12px",
-  fontSize: 18,
-};
-
-const tipsList = {
-  margin: 0,
-  paddingLeft: 20,
-  lineHeight: 1.9,
-  fontSize: 15,
-  opacity: 0.9,
-};
-
-const formTitle = {
-  margin: "0 0 10px",
-  fontSize: 34,
-  lineHeight: 1.05,
-};
-
-const formIntro = {
-  margin: "0 0 24px",
-  fontSize: 16,
-  lineHeight: 1.6,
+  fontSize: 14,
+  lineHeight: 1.55,
   opacity: 0.86,
 };
 
