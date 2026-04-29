@@ -1,3 +1,4 @@
+// src/GameContext.jsx
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import { GAME_CATALOGUE } from "./GameList";
@@ -15,11 +16,19 @@ const API_BASE = (
   defaultBase
 ).replace(/\/$/, "");
 
+/* -----------------------------
+   GAME LOCKS
+----------------------------- */
+
 function buildDefaultGameLocks() {
   return Object.fromEntries(
     GAME_CATALOGUE.map((game) => [game.id, game.defaultEnabled !== false])
   );
 }
+
+/* -----------------------------
+   PROVIDER
+----------------------------- */
 
 export function GameProvider({ children }) {
   const [players, setPlayers] = useState([]);
@@ -37,12 +46,53 @@ export function GameProvider({ children }) {
 
   const [profile, setProfile] = useState(null);
 
+  /* -----------------------------
+     💰 CREDITS SYSTEM
+  ----------------------------- */
+
+  const creditsBalance =
+    Number(profile?.creditsBalance ?? profile?.credits_balance ?? 0) || 0;
+
+  function updateCredits(newAmount) {
+    setProfile((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        creditsBalance: newAmount,
+        credits_balance: newAmount,
+      };
+    });
+  }
+
+  function adjustCredits(delta) {
+    setProfile((prev) => {
+      if (!prev) return prev;
+
+      const next = Number(prev.creditsBalance ?? prev.credits_balance ?? 0) + delta;
+
+      return {
+        ...prev,
+        creditsBalance: next,
+        credits_balance: next,
+      };
+    });
+  }
+
+  /* -----------------------------
+     SPLIT SYSTEM
+  ----------------------------- */
+
   const [splitMode, setSplitMode] = useState("items");
   const [sessionPot, setSessionPot] = useState(0);
   const [sessionItems, setSessionItems] = useState([]);
   const [paymentRequired, setPaymentRequired] = useState(true);
 
   const [confirmedSplit, setConfirmedSplit] = useState(null);
+
+  /* -----------------------------
+     GAME LOCKS
+  ----------------------------- */
 
   const [gameLocks, setGameLocks] = useState(buildDefaultGameLocks());
   const [gameLocksLoading, setGameLocksLoading] = useState(false);
@@ -110,6 +160,10 @@ export function GameProvider({ children }) {
     return gameLocks[gameId] !== false;
   }
 
+  /* -----------------------------
+     LOCAL STORAGE RESTORE
+  ----------------------------- */
+
   useEffect(() => {
     const storedCode = localStorage.getItem("session_code");
     const storedId = localStorage.getItem("session_id");
@@ -126,6 +180,7 @@ export function GameProvider({ children }) {
     if (storedIsHost !== null) setIsHost(storedIsHost === "true");
 
     if (storedSplitMode) setSplitMode(storedSplitMode);
+
     if (storedSessionPot !== null && storedSessionPot !== "") {
       setSessionPot(Number(storedSessionPot) || 0);
     }
@@ -151,6 +206,10 @@ export function GameProvider({ children }) {
     }
   }, []);
 
+  /* -----------------------------
+     BACKEND SYNC
+  ----------------------------- */
+
   useEffect(() => {
     async function loadConfirmedSplitFromBackend() {
       const code = sessionCode || localStorage.getItem("session_code");
@@ -169,12 +228,16 @@ export function GameProvider({ children }) {
           JSON.stringify(data.confirmedSplit)
         );
       } catch (err) {
-        console.error("Failed to load confirmed split from backend:", err);
+        console.error("Failed to load confirmed split:", err);
       }
     }
 
     loadConfirmedSplitFromBackend();
   }, [sessionCode]);
+
+  /* -----------------------------
+     SESSION CONTROL
+  ----------------------------- */
 
   function setSessionInfo({ sessionId, sessionCode, isHost }) {
     if (sessionId !== undefined) {
@@ -202,6 +265,10 @@ export function GameProvider({ children }) {
     localStorage.removeItem("session_code");
     localStorage.removeItem("session_is_host");
   }
+
+  /* -----------------------------
+     SPLIT CONTROL
+  ----------------------------- */
 
   function setSplitSetup({
     splitMode,
@@ -256,6 +323,10 @@ export function GameProvider({ children }) {
     localStorage.removeItem("confirmed_split");
   }
 
+  /* -----------------------------
+     FINAL VALUE
+  ----------------------------- */
+
   const games = GAME_CATALOGUE.map((game) => ({
     ...game,
     enabled: gameLocks[game.id] !== false,
@@ -286,6 +357,11 @@ export function GameProvider({ children }) {
 
     profile,
     setProfile,
+
+    /* 💰 credits */
+    creditsBalance,
+    updateCredits,
+    adjustCredits,
 
     splitMode,
     setSplitMode,

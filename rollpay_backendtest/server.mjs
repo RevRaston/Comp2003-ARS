@@ -9,21 +9,18 @@ import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import { fileURLToPath } from "url";
 import http from "http";
+import QRCode from "qrcode";
 
-// ⭐ SESSION LEVELS ROUTES
 import sessionLevelsRoutes from "./routes/sessionLevels.mjs";
-
-// ✅ WebSocket attach
 import { attachWs } from "./wsServer.mjs";
-
-// ✅ Receipt scan route
 import scanReceiptRoutes from "./routes/scanReceipt.mjs";
+import {
+  sendDemoEmail,
+  buildCreditReceiptEmail,
+} from "./email/sendEmail.mjs";
 
 dotenv.config();
 
-/* ---------------------------------------
-   SESSION CODE GENERATOR
------------------------------------------ */
 function generateSessionCode(length = 6) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -33,9 +30,6 @@ function generateSessionCode(length = 6) {
   return code;
 }
 
-/* ---------------------------------------
-   HELPERS
------------------------------------------ */
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -94,6 +88,7 @@ function buildFinalResults(sessionPlayers = [], roundResults = []) {
     }
 
     const scores = safeArray(result?.scores);
+
     if (scores.length > 0) {
       for (const scoreEntry of scores) {
         const candidateKeyRaw =
@@ -109,9 +104,7 @@ function buildFinalResults(sessionPlayers = [], roundResults = []) {
             ? null
             : String(candidateKeyRaw);
 
-        const candidateName =
-          scoreEntry?.playerName || scoreEntry?.name || null;
-
+        const candidateName = scoreEntry?.playerName || scoreEntry?.name || null;
         const numericScore = Number(scoreEntry?.score || 0);
 
         let row = candidateKey ? byKey.get(candidateKey) : null;
@@ -149,59 +142,52 @@ function buildFinalResults(sessionPlayers = [], roundResults = []) {
   }));
 }
 
-/* ---------------------------------------
-   LOCAL GAME STATE (OLD MINI MVP MODE)
------------------------------------------ */
 let currentGame = {
   players: [],
   total_cost: 0,
   rule: "winner_free",
 };
 
-/* ---------------------------------------
-   EXPRESS + SUPABASE SETUP
------------------------------------------ */
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, "public")));
 
-// ✅ Receipt routes
+app.use(express.static(path.join(__dirname, "public")));
 app.use("/", scanReceiptRoutes);
 
-// Regular backend client
 export const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
 
-// ✅ Admin/service-role backend client
 export const adminSupabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 );
 
-// helper for authed Supabase instance
 function supaForRequest(req) {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
     global: { headers: { Authorization: req.headers.authorization || "" } },
   });
 }
 
-/* ---------------------------------------
-   BASIC TEST ROUTE
------------------------------------------ */
+function creditsToPounds(credits) {
+  return Number(credits || 0) / 100;
+}
+
+function poundsToCredits(amount) {
+  return Math.round(Number(amount || 0) * 100);
+}
+
 app.get("/", (req, res) => {
   res.send("✅ RollPay backend is running!");
 });
 
-/* ---------------------------------------
-   AUTH — SIGNUP
------------------------------------------ */
+/* AUTH */
 app.post("/signup", async (req, res) => {
   const { email, password } = req.body;
 
@@ -211,9 +197,6 @@ app.post("/signup", async (req, res) => {
   res.json({ message: "User created!", data });
 });
 
-/* ---------------------------------------
-   AUTH — SIGNIN
------------------------------------------ */
 app.post("/signin", async (req, res) => {
   const { email, password } = req.body;
 
@@ -227,9 +210,7 @@ app.post("/signin", async (req, res) => {
   res.json({ message: "Signed in!", data });
 });
 
-/* ---------------------------------------
-   CARDS
------------------------------------------ */
+/* CARDS */
 app.get("/cards", async (req, res) => {
   const supa = supaForRequest(req);
 
@@ -307,9 +288,219 @@ app.delete("/cards/:id", async (req, res) => {
   res.json({ message: "Card deleted!" });
 });
 
-/* ---------------------------------------
-   MINI-MVP GAME LOGIC (LOCAL ONLY)
------------------------------------------ */
+/* CREDITS */
+app.post("/credits/buy", async (req, res) => {
+  const supa = supaForRequest(req);
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supa.auth.getUser();
+
+  if (userErr || !user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const amount = Number(req.body?.amount || 0);
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "Invalid credit amount" });
+  }
+
+  try {
+    const { data: profile, error: profileErr } = await adminSupabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (profileErr || !profile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    if (!profile.card_brand || !profile.card_last4) {
+      return res.status(400).json({
+        error: "Generate a demo card before buying credits.",
+      });
+    }
+
+    const currentBalance = Number(profile.credits_balance || 0);
+    const newBalance = currentBalance + amount;
+
+    const { data: updated, error: updateErr } = await adminSupabase
+      .from("profiles")
+      .update({ credits_balance: newBalance })
+      .eq("id", user.id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      return res.status(500).json({
+        error: "Failed to update credits balance",
+        detail: updateErr.message,
+      });
+    }
+
+    const email = buildCreditReceiptEmail({
+      displayName: updated.display_name || user.email || "Player",
+      creditsPurchased: amount,
+      newBalance,
+      cardBrand: updated.card_brand,
+      cardLast4: updated.card_last4,
+    });
+
+    await sendDemoEmail({
+      to: user.email,
+      ...email,
+    });
+
+    return res.json({
+      ok: true,
+      creditsPurchased: amount,
+      creditsBalance: newBalance,
+      profile: updated,
+      emailSent: true,
+    });
+  } catch (err) {
+    console.error("[credits/buy] error:", err);
+
+    return res.status(500).json({
+      error: "Failed to buy credits",
+      detail: String(err),
+    });
+  }
+});
+
+app.post("/credits/purchase", async (req, res) => {
+  const supa = supaForRequest(req);
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supa.auth.getUser();
+
+  if (userErr || !user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { amount } = req.body || {};
+  const pounds = Number(amount || 0);
+
+  if (!pounds || pounds <= 0) {
+    return res.status(400).json({ error: "Invalid purchase amount" });
+  }
+
+  const creditsToAdd = poundsToCredits(pounds);
+
+  try {
+    const { data: profile, error: profileErr } = await adminSupabase
+      .from("profiles")
+      .select("id, display_name, credits_balance, card_brand, card_last4")
+      .eq("id", user.id)
+      .single();
+
+    if (profileErr || !profile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    if (!profile.card_brand || !profile.card_last4) {
+      return res.status(400).json({
+        error: "Generate a demo card before buying credits.",
+        requiresCard: true,
+      });
+    }
+
+    const currentBalance = Number(profile.credits_balance || 0);
+    const nextBalance = currentBalance + creditsToAdd;
+
+    const { data: updated, error: updateErr } = await adminSupabase
+      .from("profiles")
+      .update({ credits_balance: nextBalance })
+      .eq("id", user.id)
+      .select("id, display_name, credits_balance, card_brand, card_last4")
+      .single();
+
+    if (updateErr) {
+      return res.status(500).json({
+        error: "Failed to update credit balance",
+        detail: updateErr.message,
+      });
+    }
+
+    const receiptPayload = {
+      type: "credit_purchase",
+      userId: user.id,
+      email: user.email,
+      amountPounds: pounds,
+      creditsAdded: creditsToAdd,
+      newBalance: nextBalance,
+      createdAt: new Date().toISOString(),
+    };
+
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(receiptPayload));
+
+    await sendDemoEmail({
+      to: user.email,
+      subject: "RollPay credits purchase receipt",
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.5">
+          <h2>RollPay Credits Receipt</h2>
+          <p>Hi ${profile.display_name || "Player"},</p>
+          <p>You bought <strong>${creditsToAdd} credits</strong>.</p>
+          <p>Amount: <strong>£${pounds.toFixed(2)}</strong></p>
+          <p>Demo card: <strong>${profile.card_brand} •••• ${profile.card_last4}</strong></p>
+          <p>New balance: <strong>${nextBalance} credits</strong> (£${creditsToPounds(nextBalance).toFixed(2)})</p>
+          <p>QR receipt:</p>
+          <img src="${qrDataUrl}" alt="RollPay receipt QR" style="width:180px;height:180px" />
+        </div>
+      `,
+    });
+
+    res.json({
+      ok: true,
+      creditsAdded: creditsToAdd,
+      creditsBalance: updated.credits_balance,
+      qrDataUrl,
+      profile: updated,
+    });
+  } catch (err) {
+    console.error("[credits purchase] error:", err);
+    res.status(500).json({
+      error: "Failed to purchase credits",
+      detail: String(err),
+    });
+  }
+});
+
+app.get("/credits/balance", async (req, res) => {
+  const supa = supaForRequest(req);
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supa.auth.getUser();
+
+  if (userErr || !user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { data, error } = await adminSupabase
+    .from("profiles")
+    .select("id, display_name, credits_balance, card_brand, card_last4")
+    .eq("id", user.id)
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  res.json({
+    ok: true,
+    creditsBalance: Number(data.credits_balance || 0),
+    poundsValue: creditsToPounds(data.credits_balance || 0),
+    profile: data,
+  });
+});
+
+/* OLD MINI-MVP GAME LOGIC */
 app.post("/game/players", (req, res) => {
   const { players, total_cost, rule } = req.body;
 
@@ -346,6 +537,7 @@ app.post("/game/start", (req, res) => {
   });
 
   let results;
+
   if (rule === "even_split") {
     const share = total_cost / players.length;
     results = shuffled.map((p) => ({
@@ -367,11 +559,7 @@ app.post("/game/start", (req, res) => {
   res.json({ players: results, rule, total_cost });
 });
 
-/* ---------------------------------------
-   SESSION HOSTING (NEW SYSTEM)
------------------------------------------ */
-
-// Host creates session
+/* SESSIONS */
 app.post("/sessions", async (req, res) => {
   const supa = supaForRequest(req);
 
@@ -389,6 +577,7 @@ app.post("/sessions", async (req, res) => {
   }
 
   let code;
+
   for (let i = 0; i < 10; i++) {
     const test = generateSessionCode();
     const { data: exists } = await supa
@@ -441,7 +630,6 @@ app.post("/sessions", async (req, res) => {
   });
 });
 
-// Host starts session
 app.post("/sessions/:code/start", async (req, res) => {
   const { code } = req.params;
   const supa = supaForRequest(req);
@@ -476,27 +664,24 @@ app.post("/sessions/:code/start", async (req, res) => {
   });
 });
 
-// Host starts a specific round
 app.post("/sessions/:code/start-round", async (req, res) => {
   const { code } = req.params;
   const { round_number } = req.body || {};
 
-  const supa = adminSupabase;
   const roundNum = Number(round_number) || 1;
 
   try {
-    const { data: session, error: sessionErr } = await supa
+    const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("*")
       .eq("code", code)
       .single();
 
     if (sessionErr || !session) {
-      console.error("[start-round] session lookup error:", sessionErr);
       return res.status(404).json({ error: "Session not found" });
     }
 
-    const { data: updated, error: updateErr } = await supa
+    const { data: updated, error: updateErr } = await adminSupabase
       .from("sessions")
       .update({ current_round: roundNum })
       .eq("id", session.id)
@@ -504,19 +689,14 @@ app.post("/sessions/:code/start-round", async (req, res) => {
       .single();
 
     if (updateErr) {
-      console.error("[start-round] updateErr:", updateErr);
       return res.status(500).json({
         error: "Failed to update current_round",
         detail: updateErr.message,
       });
     }
 
-    return res.json({
-      ok: true,
-      session: updated,
-    });
+    return res.json({ ok: true, session: updated });
   } catch (err) {
-    console.error("[start-round] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to update current_round",
       detail: String(err),
@@ -524,14 +704,12 @@ app.post("/sessions/:code/start-round", async (req, res) => {
   }
 });
 
-// Save one round result
 app.post("/sessions/:code/round-result", async (req, res) => {
   const { code } = req.params;
   const { roundResult } = req.body || {};
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error: sessionErr } = await supa
+    const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id, code, round_results, current_round")
       .eq("code", code)
@@ -562,17 +740,14 @@ app.post("/sessions/:code/round-result", async (req, res) => {
     nextResults.push(normalizedIncoming);
     nextResults.sort((a, b) => Number(a.round || 0) - Number(b.round || 0));
 
-    const { data: updated, error: updateErr } = await supa
+    const { data: updated, error: updateErr } = await adminSupabase
       .from("sessions")
-      .update({
-        round_results: nextResults,
-      })
+      .update({ round_results: nextResults })
       .eq("id", session.id)
       .select("id, code, round_results")
       .single();
 
     if (updateErr) {
-      console.error("[round-result] update error:", updateErr);
       return res.status(500).json({
         error: "Failed to save round result",
         detail: updateErr.message,
@@ -584,7 +759,6 @@ app.post("/sessions/:code/round-result", async (req, res) => {
       roundResults: updated.round_results || [],
     });
   } catch (err) {
-    console.error("[round-result] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to save round result",
       detail: String(err),
@@ -592,13 +766,11 @@ app.post("/sessions/:code/round-result", async (req, res) => {
   }
 });
 
-// Get round results
 app.get("/sessions/:code/round-results", async (req, res) => {
   const { code } = req.params;
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error } = await supa
+    const { data: session, error } = await adminSupabase
       .from("sessions")
       .select("id, code, round_results")
       .eq("code", code)
@@ -613,7 +785,6 @@ app.get("/sessions/:code/round-results", async (req, res) => {
       roundResults: session.round_results || [],
     });
   } catch (err) {
-    console.error("[get round-results] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to fetch round results",
       detail: String(err),
@@ -621,27 +792,24 @@ app.get("/sessions/:code/round-results", async (req, res) => {
   }
 });
 
-// Host advances to next round
 app.post("/sessions/:code/advance-round", async (req, res) => {
   const { code } = req.params;
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error: sessionErr } = await supa
+    const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id, code, current_round")
       .eq("code", code)
       .single();
 
     if (sessionErr || !session) {
-      console.error("[advance-round] session lookup error:", sessionErr);
       return res.status(404).json({ error: "Session not found" });
     }
 
     const currentRound = Number(session.current_round || 1);
     const nextRound = currentRound + 1;
 
-    const { data: updated, error: updateErr } = await supa
+    const { data: updated, error: updateErr } = await adminSupabase
       .from("sessions")
       .update({ current_round: nextRound })
       .eq("id", session.id)
@@ -649,19 +817,14 @@ app.post("/sessions/:code/advance-round", async (req, res) => {
       .single();
 
     if (updateErr) {
-      console.error("[advance-round] update error:", updateErr);
       return res.status(500).json({
         error: "Failed to advance round",
         detail: updateErr.message,
       });
     }
 
-    return res.json({
-      ok: true,
-      session: updated,
-    });
+    return res.json({ ok: true, session: updated });
   } catch (err) {
-    console.error("[advance-round] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to advance round",
       detail: String(err),
@@ -669,31 +832,27 @@ app.post("/sessions/:code/advance-round", async (req, res) => {
   }
 });
 
-// Host finishes session and computes final results
 app.post("/sessions/:code/finish", async (req, res) => {
   const { code } = req.params;
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error: sessionErr } = await supa
+    const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id, code, status, total_cost, rule, round_results")
       .eq("code", code)
       .single();
 
     if (sessionErr || !session) {
-      console.error("[finish-session] session lookup error:", sessionErr);
       return res.status(404).json({ error: "Session not found" });
     }
 
-    const { data: players, error: playersErr } = await supa
+    const { data: players, error: playersErr } = await adminSupabase
       .from("session_players")
       .select("*")
       .eq("session_id", session.id)
       .order("is_host", { ascending: false });
 
     if (playersErr) {
-      console.error("[finish-session] players lookup error:", playersErr);
       return res.status(500).json({
         error: "Failed to load players for final results",
         detail: playersErr.message,
@@ -707,7 +866,7 @@ app.post("/sessions/:code/finish", async (req, res) => {
 
     if (finalResults.length > 0) {
       if (rule === "even_split") {
-        const share = finalResults.length > 0 ? totalCost / finalResults.length : 0;
+        const share = totalCost / finalResults.length;
         finalResults = finalResults.map((player) => ({
           ...player,
           recommended: Number(share.toFixed(2)),
@@ -723,7 +882,7 @@ app.post("/sessions/:code/finish", async (req, res) => {
       }
     }
 
-    const { data: updated, error: updateErr } = await supa
+    const { data: updated, error: updateErr } = await adminSupabase
       .from("sessions")
       .update({
         status: "finished",
@@ -734,7 +893,6 @@ app.post("/sessions/:code/finish", async (req, res) => {
       .single();
 
     if (updateErr) {
-      console.error("[finish-session] update error:", updateErr);
       return res.status(500).json({
         error: "Failed to finish session",
         detail: updateErr.message,
@@ -747,7 +905,6 @@ app.post("/sessions/:code/finish", async (req, res) => {
       finalResults: updated.final_results || [],
     });
   } catch (err) {
-    console.error("[finish-session] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to finish session",
       detail: String(err),
@@ -755,12 +912,11 @@ app.post("/sessions/:code/finish", async (req, res) => {
   }
 });
 
-// Shared session state
 app.get("/sessions/:code", async (req, res) => {
   const { code } = req.params;
-  const supa = adminSupabase;
 
   let current_user_id = null;
+
   try {
     const authed = supaForRequest(req);
     const {
@@ -771,7 +927,7 @@ app.get("/sessions/:code", async (req, res) => {
     current_user_id = null;
   }
 
-  const { data: session, error } = await supa
+  const { data: session, error } = await adminSupabase
     .from("sessions")
     .select("*")
     .eq("code", code)
@@ -781,7 +937,7 @@ app.get("/sessions/:code", async (req, res) => {
     return res.status(404).json({ error: "Session not found" });
   }
 
-  const { data: players, error: playersErr } = await supa
+  const { data: players, error: playersErr } = await adminSupabase
     .from("session_players")
     .select("*")
     .eq("session_id", session.id)
@@ -800,7 +956,6 @@ app.get("/sessions/:code", async (req, res) => {
   });
 });
 
-// Join session
 app.post("/sessions/:code/join", async (req, res) => {
   const { code } = req.params;
   const { name } = req.body;
@@ -847,18 +1002,13 @@ app.post("/sessions/:code/join", async (req, res) => {
   });
 });
 
-/* ---------------------------------------
-   CONFIRMED SPLIT ROUTES
------------------------------------------ */
-
-// Save confirmed split
+/* CONFIRMED SPLIT */
 app.post("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
   const { confirmedSplit } = req.body || {};
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error: sessionErr } = await supa
+    const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id, code")
       .eq("code", code)
@@ -877,7 +1027,7 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
       saved_at: new Date().toISOString(),
     };
 
-    const { data: updated, error: updateErr } = await supa
+    const { data: updated, error: updateErr } = await adminSupabase
       .from("sessions")
       .update({
         confirmed_split: payload,
@@ -888,7 +1038,6 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
       .single();
 
     if (updateErr) {
-      console.error("[confirmed-split] update error:", updateErr);
       return res.status(500).json({
         error: "Failed to save confirmed split",
         detail: updateErr.message,
@@ -900,7 +1049,6 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
       session: updated,
     });
   } catch (err) {
-    console.error("[confirmed-split] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to save confirmed split",
       detail: String(err),
@@ -908,13 +1056,11 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
   }
 });
 
-// Get confirmed split
 app.get("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error } = await supa
+    const { data: session, error } = await adminSupabase
       .from("sessions")
       .select("id, code, confirmed_split, split_confirmed_at")
       .eq("code", code)
@@ -930,7 +1076,6 @@ app.get("/sessions/:code/confirmed-split", async (req, res) => {
       splitConfirmedAt: session.split_confirmed_at || null,
     });
   } catch (err) {
-    console.error("[get confirmed-split] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to fetch confirmed split",
       detail: String(err),
@@ -938,13 +1083,11 @@ app.get("/sessions/:code/confirmed-split", async (req, res) => {
   }
 });
 
-// Clear confirmed split
 app.delete("/sessions/:code/confirmed-split", async (req, res) => {
   const { code } = req.params;
-  const supa = adminSupabase;
 
   try {
-    const { data: session, error: sessionErr } = await supa
+    const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
       .select("id, code")
       .eq("code", code)
@@ -954,7 +1097,7 @@ app.delete("/sessions/:code/confirmed-split", async (req, res) => {
       return res.status(404).json({ error: "Session not found" });
     }
 
-    const { data: updated, error: updateErr } = await supa
+    const { data: updated, error: updateErr } = await adminSupabase
       .from("sessions")
       .update({
         confirmed_split: null,
@@ -965,7 +1108,6 @@ app.delete("/sessions/:code/confirmed-split", async (req, res) => {
       .single();
 
     if (updateErr) {
-      console.error("[clear confirmed-split] update error:", updateErr);
       return res.status(500).json({
         error: "Failed to clear confirmed split",
         detail: updateErr.message,
@@ -977,7 +1119,6 @@ app.delete("/sessions/:code/confirmed-split", async (req, res) => {
       session: updated,
     });
   } catch (err) {
-    console.error("[clear confirmed-split] unexpected error:", err);
     return res.status(500).json({
       error: "Failed to clear confirmed split",
       detail: String(err),
@@ -985,18 +1126,136 @@ app.delete("/sessions/:code/confirmed-split", async (req, res) => {
   }
 });
 
-/* ---------------------------------------
-   SESSION LEVEL ROUTES
------------------------------------------ */
+app.post("/sessions/:code/send-final-receipt", async (req, res) => {
+  const { code } = req.params;
+  const { confirmedSplit } = req.body || {};
+
+  if (!confirmedSplit || typeof confirmedSplit !== "object") {
+    return res.status(400).json({ error: "Missing confirmedSplit payload" });
+  }
+
+  try {
+    const { data: session, error: sessionErr } = await adminSupabase
+      .from("sessions")
+      .select("id, code, final_results, confirmed_split")
+      .eq("code", code)
+      .single();
+
+    if (sessionErr || !session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const { data: sessionPlayers, error: playersErr } = await adminSupabase
+      .from("session_players")
+      .select("user_id, name")
+      .eq("session_id", session.id);
+
+    if (playersErr) {
+      return res.status(500).json({ error: playersErr.message });
+    }
+
+    const receiptPayload = {
+      type: "final_split",
+      sessionCode: code,
+      rankings: session.final_results || [],
+      confirmedSplit,
+      createdAt: new Date().toISOString(),
+    };
+
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(receiptPayload));
+
+    const allocationRows = (confirmedSplit.finalAllocation || [])
+      .map(
+        (p) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${p.name}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">Rank ${p.rank || "-"}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">£${Number(p.total || 0).toFixed(2)}</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const rankingRows = (session.final_results || [])
+      .map(
+        (p) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #ddd">#${p.rank}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${p.name}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${p.wins || 0} wins</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    let sentCount = 0;
+
+    for (const player of sessionPlayers || []) {
+      if (!player.user_id) continue;
+
+      let email = null;
+
+      try {
+        const { data: authUser } =
+          await adminSupabase.auth.admin.getUserById(player.user_id);
+        email = authUser?.user?.email || null;
+      } catch {
+        email = null;
+      }
+
+      if (!email) continue;
+
+      await sendDemoEmail({
+        to: email,
+        subject: `RollPay final split receipt — ${code}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5">
+            <h2>RollPay Final Split</h2>
+            <p>Session: <strong>${code}</strong></p>
+
+            <h3>Game ranking</h3>
+            <table style="border-collapse:collapse;width:100%;max-width:520px">
+              ${rankingRows || "<tr><td>No rankings available</td></tr>"}
+            </table>
+
+            <h3>Who owes what</h3>
+            <table style="border-collapse:collapse;width:100%;max-width:520px">
+              ${allocationRows || "<tr><td>No split available</td></tr>"}
+            </table>
+
+            <p>Total: <strong>£${Number(confirmedSplit.finalTotal || 0).toFixed(2)}</strong></p>
+
+            <p>QR summary:</p>
+            <img src="${qrDataUrl}" alt="RollPay final split QR" style="width:180px;height:180px" />
+          </div>
+        `,
+      });
+
+      sentCount += 1;
+    }
+
+    res.json({
+      ok: true,
+      sentCount,
+      qrDataUrl,
+    });
+  } catch (err) {
+    console.error("[send final receipt] error:", err);
+
+    res.status(500).json({
+      error: "Failed to send final receipt",
+      detail: String(err),
+    });
+  }
+});
+
+/* SESSION LEVEL ROUTES */
 app.use("/sessions", sessionLevelsRoutes);
 
-/* ---------------------------------------
-   START SERVER (HTTP + WS)
------------------------------------------ */
+/* START SERVER */
 const PORT = Number(process.env.PORT) || 3000;
 const server = http.createServer(app);
 
-// Attach WebSocket server at /ws
 attachWs(server, { path: "/ws" });
 
 server.listen(PORT, () => {

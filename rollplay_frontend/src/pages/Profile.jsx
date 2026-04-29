@@ -1,8 +1,20 @@
+// src/pages/Profile.jsx
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useGame } from "../GameContext";
 import AvatarBuilder from "../components/AvatarBuilder";
+
+const defaultBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://comp2003-ars.onrender.com";
+
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  defaultBase
+).replace(/\/$/, "");
 
 function toAvatarString(value) {
   if (!value) return null;
@@ -19,7 +31,6 @@ function toAvatarString(value) {
 
 function parseAvatarSafely(value) {
   if (!value) return null;
-
   if (typeof value === "object") return value;
 
   if (typeof value === "string") {
@@ -56,14 +67,21 @@ export default function Profile() {
 
   const [cardBrand, setCardBrand] = useState(profile?.cardBrand || "");
   const [cardLast4, setCardLast4] = useState(profile?.cardLast4 || "");
+  const [creditsBalance, setCreditsBalance] = useState(
+    Number(profile?.creditsBalance ?? profile?.credits_balance ?? 0)
+  );
+
   const [loading, setLoading] = useState(false);
   const [savingCard, setSavingCard] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [buyingCredits, setBuyingCredits] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [editingAvatar, setEditingAvatar] = useState(false);
 
   const isHost = !!profile?.canHost;
   const isAdmin = !!profile?.isAdmin;
+  const hasDemoCard = !!cardBrand && !!cardLast4;
 
   useEffect(() => {
     function handleResize() {
@@ -83,8 +101,11 @@ export default function Profile() {
         toAvatarString(profile.avatar_json) ||
         null
     );
-    setCardBrand(profile.cardBrand || "");
-    setCardLast4(profile.cardLast4 || "");
+    setCardBrand(profile.cardBrand || profile.card_brand || "");
+    setCardLast4(profile.cardLast4 || profile.card_last4 || "");
+    setCreditsBalance(
+      Number(profile.creditsBalance ?? profile.credits_balance ?? 0)
+    );
   }, [profile]);
 
   const isPhone = screenWidth <= 640;
@@ -166,8 +187,7 @@ export default function Profile() {
             <p style={sectionEyebrow}>Profile</p>
             <h1 style={pageTitle}>You need to sign in</h1>
             <p style={introText}>
-              Sign in to view or edit your RollPay profile, avatar, and hosting
-              setup.
+              Sign in to view or edit your RollPay profile.
             </p>
             <button style={primaryButton} onClick={() => navigate("/login")}>
               Go to Login
@@ -185,8 +205,43 @@ export default function Profile() {
     return { brand, last4 };
   }
 
+  function buildUpdatedProfile(data, overrides = {}) {
+    const nextTier = data?.tier || profile.tier || "player";
+    const nextCredits = Number(
+      data?.credits_balance ??
+        overrides.creditsBalance ??
+        profile.creditsBalance ??
+        profile.credits_balance ??
+        0
+    );
+
+    return {
+      ...profile,
+      displayName: data?.display_name || displayName.trim(),
+      display_name: data?.display_name || displayName.trim(),
+      avatarJson:
+        toAvatarString(data?.avatar_json) ||
+        toAvatarString(overrides.avatarJson) ||
+        toAvatarString(avatarJson),
+      avatar_json:
+        data?.avatar_json ??
+        parseAvatarSafely(overrides.avatarJson) ??
+        parseAvatarSafely(avatarJson),
+      cardBrand: data?.card_brand || overrides.cardBrand || cardBrand || null,
+      card_brand: data?.card_brand || overrides.cardBrand || cardBrand || null,
+      cardLast4: data?.card_last4 || overrides.cardLast4 || cardLast4 || null,
+      card_last4: data?.card_last4 || overrides.cardLast4 || cardLast4 || null,
+      creditsBalance: nextCredits,
+      credits_balance: nextCredits,
+      tier: nextTier,
+      isAdmin,
+      canHost: nextTier === "host" || isAdmin,
+    };
+  }
+
   async function handleSaveProfile() {
     setError("");
+    setSuccessMessage("");
 
     if (!displayName.trim()) {
       setError("Please enter a display name.");
@@ -210,26 +265,10 @@ export default function Profile() {
 
       if (updateError) throw updateError;
 
-      const updatedAvatarObj = data.avatar_json ?? avatarObject;
-      const updatedAvatarJson = toAvatarString(updatedAvatarObj);
-
-      const updatedProfile = {
-        ...profile,
-        displayName: data.display_name,
-        display_name: data.display_name,
-        avatarJson: updatedAvatarJson,
-        avatar_json: updatedAvatarObj,
-        cardBrand: data.card_brand || profile.cardBrand || null,
-        cardLast4: data.card_last4 || profile.cardLast4 || null,
-        tier: data.tier || profile.tier || "player",
-        isAdmin,
-        canHost: (data.tier || profile.tier) === "host" || isAdmin,
-      };
-
+      const updatedProfile = buildUpdatedProfile(data);
       setProfile(updatedProfile);
       setAvatarJson(updatedProfile.avatarJson);
-      setCardBrand(updatedProfile.cardBrand || "");
-      setCardLast4(updatedProfile.cardLast4 || "");
+      setSuccessMessage("Profile saved.");
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to save profile");
@@ -240,6 +279,7 @@ export default function Profile() {
 
   async function handleGenerateCard() {
     setError("");
+    setSuccessMessage("");
 
     try {
       setSavingCard(true);
@@ -257,23 +297,15 @@ export default function Profile() {
 
       if (updateError) throw updateError;
 
-      const updatedProfile = {
-        ...profile,
-        displayName: data.display_name,
-        display_name: data.display_name,
-        avatarJson:
-          toAvatarString(profile.avatarJson) || toAvatarString(avatarJson),
-        avatar_json: parseAvatarSafely(avatarJson),
-        cardBrand: data.card_brand || null,
-        cardLast4: data.card_last4 || null,
-        tier: data.tier || profile.tier || "player",
-        isAdmin,
-        canHost: (data.tier || profile.tier) === "host" || isAdmin,
-      };
+      const updatedProfile = buildUpdatedProfile(data, {
+        cardBrand: brand,
+        cardLast4: last4,
+      });
 
       setProfile(updatedProfile);
       setCardBrand(updatedProfile.cardBrand || "");
       setCardLast4(updatedProfile.cardLast4 || "");
+      setSuccessMessage("Demo card generated.");
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to generate demo card");
@@ -282,8 +314,60 @@ export default function Profile() {
     }
   }
 
+  async function handleBuyCredits(amount) {
+    setError("");
+    setSuccessMessage("");
+
+    if (!hasDemoCard) {
+      setError("Generate a demo card before buying credits.");
+      return;
+    }
+
+    try {
+      setBuyingCredits(true);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const token = session?.access_token;
+
+      const res = await fetch(`${API_BASE}/credits/buy`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ amount }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to buy credits");
+      }
+
+      const updatedProfile = buildUpdatedProfile(data.profile, {
+        creditsBalance: data.creditsBalance,
+      });
+
+      setProfile(updatedProfile);
+      setCreditsBalance(Number(data.creditsBalance || 0));
+
+      setSuccessMessage(
+        `Purchased ${amount} credits. Receipt email sent to your account email.`
+      );
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to buy credits");
+    } finally {
+      setBuyingCredits(false);
+    }
+  }
+
   async function handleUpgradeToHost() {
     setError("");
+    setSuccessMessage("");
 
     try {
       setUpgrading(true);
@@ -309,26 +393,22 @@ export default function Profile() {
 
       if (updateError) throw updateError;
 
-      const updatedAvatarObj = data.avatar_json ?? avatarObject;
-      const updatedAvatarJson = toAvatarString(updatedAvatarObj);
+      const updatedProfile = buildUpdatedProfile(data, {
+        cardBrand: brand,
+        cardLast4: last4,
+        avatarJson: avatarObject,
+      });
 
-      const updatedProfile = {
-        ...profile,
-        displayName: data.display_name,
-        display_name: data.display_name,
-        avatarJson: updatedAvatarJson,
-        avatar_json: updatedAvatarObj,
-        cardBrand: data.card_brand || null,
-        cardLast4: data.card_last4 || null,
-        tier: data.tier || "host",
-        isAdmin,
+      setProfile({
+        ...updatedProfile,
         canHost: true,
-      };
+        tier: "host",
+      });
 
-      setProfile(updatedProfile);
       setAvatarJson(updatedProfile.avatarJson);
       setCardBrand(updatedProfile.cardBrand || "");
       setCardLast4(updatedProfile.cardLast4 || "");
+      setSuccessMessage("Host access unlocked.");
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to upgrade account");
@@ -436,8 +516,7 @@ export default function Profile() {
             </h1>
 
             <p style={introText}>
-              This profile is used across all sessions, games, and multiplayer
-              lobbies.
+              Manage your RollPay identity, demo card, and credits balance.
             </p>
 
             <div style={profileSummaryCard}>
@@ -460,12 +539,20 @@ export default function Profile() {
               </div>
 
               <div style={statusCard}>
+                <div style={statusLabel}>Credits</div>
+                <div style={statusValue}>{creditsBalance}</div>
+              </div>
+
+              <div style={statusCard}>
                 <div style={statusLabel}>Demo Card</div>
                 <div style={statusValue}>
-                  {cardBrand && cardLast4
-                    ? `${cardBrand} • ${cardLast4}`
-                    : "Not added"}
+                  {hasDemoCard ? `${cardBrand} • ${cardLast4}` : "Not added"}
                 </div>
+              </div>
+
+              <div style={statusCard}>
+                <div style={statusLabel}>Payment Mode</div>
+                <div style={statusValue}>Demo Credits</div>
               </div>
             </div>
 
@@ -474,13 +561,15 @@ export default function Profile() {
               <ul style={tipsList}>
                 <li>Your public display name</li>
                 <li>Your avatar and appearance</li>
-                <li>Your demo card and host status</li>
+                <li>Your demo card</li>
+                <li>Your credits balance</li>
               </ul>
             </div>
           </div>
 
           <div style={mainColumn}>
             {error && <p style={errorText}>{error}</p>}
+            {successMessage && <p style={successText}>{successMessage}</p>}
 
             <div style={contentCard}>
               <p style={sectionEyebrow}>Profile details</p>
@@ -488,9 +577,7 @@ export default function Profile() {
 
               <div style={fieldBlock}>
                 <label style={labelStyle}>Display Name</label>
-                <p style={helperText}>
-                  This is the name shown to other players.
-                </p>
+                <p style={helperText}>This is the name shown to other players.</p>
                 <input
                   style={inputStyle}
                   value={displayName}
@@ -545,9 +632,7 @@ export default function Profile() {
                     <button
                       type="button"
                       style={primaryButton}
-                      onClick={() => {
-                        setEditingAvatar(false);
-                      }}
+                      onClick={() => setEditingAvatar(false)}
                     >
                       Done Editing
                     </button>
@@ -572,6 +657,61 @@ export default function Profile() {
             </div>
 
             <div style={contentCard}>
+              <p style={sectionEyebrow}>Credits</p>
+              <h2 style={cardHeading}>Buy demo credits</h2>
+
+              <p style={infoText}>
+                Credits are the fake currency used for UAT payment flows. A demo
+                card is required before buying credits.
+              </p>
+
+              <div style={summaryPanel}>
+                <div style={summaryRow}>
+                  <span style={summaryLabel}>Current balance</span>
+                  <strong style={summaryValue}>{creditsBalance} credits</strong>
+                </div>
+
+                <div style={summaryRow}>
+                  <span style={summaryLabel}>Payment card</span>
+                  <strong style={summaryValue}>
+                    {hasDemoCard ? `${cardBrand} • **** ${cardLast4}` : "Required"}
+                  </strong>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  ...creditGrid,
+                  gridTemplateColumns: isPhone
+                    ? "1fr"
+                    : "repeat(4, minmax(0, 1fr))",
+                }}
+              >
+                {[100, 250, 500, 1000].map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    disabled={buyingCredits || !hasDemoCard}
+                    onClick={() => handleBuyCredits(amount)}
+                    style={{
+                      ...creditButton,
+                      ...(buyingCredits || !hasDemoCard ? disabledButton : null),
+                    }}
+                  >
+                    +{amount}
+                    <span style={creditButtonSub}>credits</span>
+                  </button>
+                ))}
+              </div>
+
+              {!hasDemoCard && (
+                <p style={warningText}>
+                  Generate a demo card below before buying credits.
+                </p>
+              )}
+            </div>
+
+            <div style={contentCard}>
               <p style={sectionEyebrow}>Hosting</p>
               <h2 style={cardHeading}>Demo card & upgrade</h2>
 
@@ -583,7 +723,7 @@ export default function Profile() {
                 <div style={summaryRow}>
                   <span style={summaryLabel}>Current demo card</span>
                   <strong style={summaryValue}>
-                    {cardBrand && cardLast4
+                    {hasDemoCard
                       ? `${cardBrand} • **** ${cardLast4}`
                       : "No demo card yet"}
                   </strong>
@@ -607,7 +747,10 @@ export default function Profile() {
                   type="button"
                   onClick={handleGenerateCard}
                   disabled={savingCard}
-                  style={secondaryButton}
+                  style={{
+                    ...secondaryButton,
+                    ...(savingCard ? disabledButton : null),
+                  }}
                 >
                   {savingCard ? "Generating..." : "Generate Demo Card"}
                 </button>
@@ -617,7 +760,10 @@ export default function Profile() {
                     type="button"
                     onClick={handleUpgradeToHost}
                     disabled={upgrading}
-                    style={primaryButton}
+                    style={{
+                      ...primaryButton,
+                      ...(upgrading ? disabledButton : null),
+                    }}
                   >
                     {upgrading ? "Processing..." : "Upgrade to Host"}
                   </button>
@@ -636,7 +782,10 @@ export default function Profile() {
                 }}
               >
                 <button
-                  style={primaryButton}
+                  style={{
+                    ...primaryButton,
+                    ...(loading ? disabledButton : null),
+                  }}
                   onClick={handleSaveProfile}
                   disabled={loading}
                 >
@@ -1016,6 +1165,33 @@ const summaryValue = {
   textAlign: "right",
 };
 
+const creditGrid = {
+  display: "grid",
+  gap: 12,
+};
+
+const creditButton = {
+  padding: "16px 14px",
+  borderRadius: 18,
+  border: "1px solid rgba(244,196,49,0.28)",
+  background: "rgba(244,196,49,0.14)",
+  color: "#f6cf64",
+  fontSize: 22,
+  fontWeight: 900,
+  cursor: "pointer",
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  alignItems: "center",
+};
+
+const creditButtonSub = {
+  fontSize: 12,
+  opacity: 0.8,
+  textTransform: "uppercase",
+  letterSpacing: 1,
+};
+
 const buttonGroup = {
   display: "flex",
   gap: 12,
@@ -1027,6 +1203,19 @@ const errorText = {
   color: "#ff9a9a",
   fontWeight: 700,
   marginBottom: 4,
+};
+
+const successText = {
+  color: "#9BE39B",
+  fontWeight: 700,
+  marginBottom: 4,
+};
+
+const warningText = {
+  marginTop: 14,
+  color: "#FFCB8A",
+  fontSize: 14,
+  fontWeight: 700,
 };
 
 const primaryButton = {
@@ -1070,4 +1259,9 @@ const dangerGhostButton = {
   ...ghostButton,
   border: "1px solid rgba(255,120,120,0.4)",
   color: "#ff9a9a",
+};
+
+const disabledButton = {
+  opacity: 0.55,
+  cursor: "not-allowed",
 };

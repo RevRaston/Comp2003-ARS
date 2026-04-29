@@ -13,6 +13,17 @@ const API_BASE = (
   defaultBase
 ).replace(/\/$/, "");
 
+function money(value) {
+  return `${Number(value || 0).toFixed(2)} credits`;
+}
+
+function getModeLabel(mode) {
+  if (mode === "items") return "Specific Items";
+  if (mode === "pot") return "Total Pot";
+  if (mode === "pseudo") return "Pseudo Tab";
+  return "Unknown";
+}
+
 export default function Results() {
   const navigate = useNavigate();
 
@@ -64,6 +75,7 @@ export default function Results() {
   const isLaptop = screenWidth <= 1100;
 
   const activeMode = confirmedSplit?.mode || localSplitMode;
+  const creditBalance = Number(profile?.credits || profile?.credit_balance || 0);
 
   const finalResults = useMemo(() => {
     if (
@@ -93,7 +105,10 @@ export default function Results() {
   }, [sessionItems]);
 
   const itemsDraftOrLiveTotal = useMemo(() => {
-    return itemAssignments.reduce((sum, item) => sum + Number(item.cost || 0), 0);
+    return itemAssignments.reduce(
+      (sum, item) => sum + Number(item.cost || 0),
+      0
+    );
   }, [itemAssignments]);
 
   const effectiveSessionTotal =
@@ -106,14 +121,16 @@ export default function Results() {
 
     if (finalResults.length > 0) {
       return finalResults.map((p, index) => ({
-        name: p.name || `Player ${index + 1}`,
+        name: p.name || p.display_name || `Player ${index + 1}`,
         rank: p.rank || index + 1,
+        score: p.score ?? p.points ?? null,
       }));
     }
 
     return backendPlayers.map((p, index) => ({
       name: p.name || p.display_name || `Player ${index + 1}`,
       rank: index + 1,
+      score: p.score ?? p.points ?? null,
     }));
   }, [finalResults, sessionData]);
 
@@ -229,7 +246,9 @@ export default function Results() {
 
     if (activeMode === "pot") {
       setManualTotals((prev) => {
-        if (prev.length === sessionPlayers.length && prev.length > 0) return prev;
+        if (prev.length === sessionPlayers.length && prev.length > 0) {
+          return prev;
+        }
 
         const nonWinnerCount = Math.max(sessionPlayers.length - 1, 0);
         const splitTotal = Number(sessionPot || 0);
@@ -315,7 +334,6 @@ export default function Results() {
 
   function removeItem(itemId) {
     if (isConfirmed) return;
-
     setItemAssignments((prev) => prev.filter((item) => item.id !== itemId));
   }
 
@@ -469,6 +487,7 @@ export default function Results() {
 
   const unassignedItems = useMemo(() => {
     if (activeMode !== "items") return [];
+
     return itemAssignments.filter(
       (item) => !Array.isArray(item.assignedTo) || item.assignedTo.length === 0
     );
@@ -481,10 +500,30 @@ export default function Results() {
 
   const totalsMatch = useMemo(() => {
     if (activeMode === "pseudo") return true;
+
     return (
-      Math.abs(Number(finalTotal || 0) - Number(effectiveSessionTotal || 0)) < 0.01
+      Math.abs(Number(finalTotal || 0) - Number(effectiveSessionTotal || 0)) <
+      0.01
     );
   }, [activeMode, finalTotal, effectiveSessionTotal]);
+
+  const playerOwes = useMemo(() => {
+    if (!profile) return 0;
+
+    const names = [
+      profile.displayName,
+      profile.display_name,
+      profile.email,
+    ].filter(Boolean);
+
+    const matched = finalAllocation.find((player) =>
+      names.some((name) => String(name) === String(player.name))
+    );
+
+    return Number(matched?.total || 0);
+  }, [finalAllocation, profile]);
+
+  const canAffordOwnShare = creditBalance >= playerOwes;
 
   async function handleConfirm() {
     setSaveError("");
@@ -499,13 +538,35 @@ export default function Results() {
       return;
     }
 
-    const payload = {
+    const receiptId = `RP-${Date.now()}`;
+
+    const qrPayload = {
+      receiptId,
+      sessionCode: code || null,
       mode: activeMode,
+      modeLabel: getModeLabel(activeMode),
       winnerName: winner?.name || null,
+      finalTotal,
+      finalAllocation,
+      confirmedAt: new Date().toISOString(),
+    };
+
+    const payload = {
+      receiptId,
+      mode: activeMode,
+      modeLabel: getModeLabel(activeMode),
+      paymentRequired: activeMode !== "pseudo",
+      currency: "credits",
+      winnerName: winner?.name || null,
+      rankings: sessionPlayers,
+      sessionTotal: effectiveSessionTotal,
       finalAllocation,
       finalTotal,
       itemAssignments,
       manualTotals,
+      qrPayload,
+      receiptEmailStatus: "pending_backend_email_setup",
+      splitEmailStatus: "pending_backend_email_setup",
       confirmedAt: new Date().toISOString(),
     };
 
@@ -607,9 +668,8 @@ export default function Results() {
             </h1>
 
             <p style={introText}>
-              Review the winner, choose the split method, build or scan the
-              receipt, assign items, and confirm the final outcome for everyone
-              in the session.
+              Review the game ranking, build the receipt, assign what everyone
+              owes, and lock the final credit split for the session.
             </p>
 
             <div style={profileCard}>
@@ -628,28 +688,37 @@ export default function Results() {
 
             <div style={summaryPanel}>
               <div style={summaryRow}>
-                <span style={summaryLabel}>Split mode</span>
-                <strong style={summaryValue}>
-                  {activeMode === "items"
-                    ? "Specific Items"
-                    : activeMode === "pot"
-                    ? "Total Pot"
-                    : "Pseudo Tab"}
+                <span style={summaryLabel}>Your credits</span>
+                <strong style={summaryValue}>{money(creditBalance)}</strong>
+              </div>
+
+              <div style={summaryRow}>
+                <span style={summaryLabel}>Your share</span>
+                <strong
+                  style={{
+                    ...summaryValue,
+                    color: playerOwes > 0 && !canAffordOwnShare ? "#FF9A9A" : "#fff",
+                  }}
+                >
+                  {money(playerOwes)}
                 </strong>
+              </div>
+
+              <div style={summaryRow}>
+                <span style={summaryLabel}>Split mode</span>
+                <strong style={summaryValue}>{getModeLabel(activeMode)}</strong>
               </div>
 
               <div style={summaryRow}>
                 <span style={summaryLabel}>Session total</span>
                 <strong style={summaryValue}>
-                  £{Number(effectiveSessionTotal || 0).toFixed(2)}
+                  {money(effectiveSessionTotal)}
                 </strong>
               </div>
 
               <div style={summaryRow}>
                 <span style={summaryLabel}>Current final total</span>
-                <strong style={summaryValue}>
-                  £{Number(finalTotal || 0).toFixed(2)}
-                </strong>
+                <strong style={summaryValue}>{money(finalTotal)}</strong>
               </div>
 
               {activeMode === "items" && (
@@ -666,6 +735,14 @@ export default function Results() {
                 </div>
               )}
             </div>
+
+            {playerOwes > 0 && !canAffordOwnShare && (
+              <div style={warningBanner}>
+                You do not currently have enough credits for your share. Buy
+                more credits from your profile before real payment simulation is
+                enabled.
+              </div>
+            )}
 
             {winner && (
               <div style={winnerCard}>
@@ -686,7 +763,7 @@ export default function Results() {
               <>
                 <div style={contentCard}>
                   <p style={sectionEyebrow}>Rankings</p>
-                  <h2 style={cardHeading}>Leaderboard</h2>
+                  <h2 style={cardHeading}>Game ranking</h2>
 
                   {!sessionPlayers.length ? (
                     <p style={helperIntro}>No rankings available yet.</p>
@@ -705,7 +782,11 @@ export default function Results() {
                             <div>
                               <div style={leaderboardName}>{player.name}</div>
                               <div style={leaderboardMeta}>
-                                {index === 0 ? "Session winner" : "Participant"}
+                                {index === 0
+                                  ? "Session winner"
+                                  : player.score !== null
+                                  ? `Score: ${player.score}`
+                                  : "Participant"}
                               </div>
                             </div>
                           </div>
@@ -723,8 +804,9 @@ export default function Results() {
                   <p style={sectionEyebrow}>Split method</p>
                   <h2 style={cardHeading}>Choose how to split</h2>
                   <p style={helperIntro}>
-                    Pick the final split style for this session. Once confirmed,
-                    all players will see the same saved result.
+                    Everything is counted in RollPay credits. Once confirmed,
+                    the payment summary will hold the receipt skeleton, ranking,
+                    QR payload, and final split.
                   </p>
 
                   <div style={modeGrid}>
@@ -740,18 +822,12 @@ export default function Results() {
                           ...(isConfirmed ? disabledCard : null),
                         }}
                       >
-                        <h3 style={modeTitle}>
-                          {mode === "items"
-                            ? "Specific Items"
-                            : mode === "pot"
-                            ? "Total Pot"
-                            : "Pseudo Tab"}
-                        </h3>
+                        <h3 style={modeTitle}>{getModeLabel(mode)}</h3>
                         <p style={modeText}>
                           {mode === "items"
                             ? "Assign receipt items directly to players."
                             : mode === "pot"
-                            ? "Manually choose how much each player pays."
+                            ? "Manually choose how many credits each player owes."
                             : "No payment required, just keep the results."}
                         </p>
                       </button>
@@ -766,8 +842,7 @@ export default function Results() {
                       <h2 style={cardHeading}>Add or scan items</h2>
                       <p style={helperIntro}>
                         Build the receipt manually or upload a photo to scan it.
-                        You can then edit, delete, auto-assign, or fine-tune
-                        everything below.
+                        Values entered here are treated as credits.
                       </p>
 
                       {!isConfirmed && (
@@ -790,7 +865,7 @@ export default function Results() {
                               type="number"
                               min="0"
                               step="0.01"
-                              placeholder="Cost"
+                              placeholder="Credits"
                               value={newItemCost}
                               onChange={(e) => setNewItemCost(e.target.value)}
                               style={{
@@ -846,9 +921,7 @@ export default function Results() {
                         <p style={successText}>{scanMessage}</p>
                       ) : null}
 
-                      {scanError ? (
-                        <p style={errorText}>{scanError}</p>
-                      ) : null}
+                      {scanError ? <p style={errorText}>{scanError}</p> : null}
 
                       {unassignedItems.length > 0 && (
                         <div style={warningBanner}>
@@ -863,8 +936,8 @@ export default function Results() {
                       <p style={sectionEyebrow}>Item assignment</p>
                       <h2 style={cardHeading}>Assign items to players</h2>
                       <p style={helperIntro}>
-                        Tap the player chips to assign each item. Shared items
-                        split evenly across everyone selected.
+                        Tap player chips to assign each item. Shared items split
+                        evenly across everyone selected.
                       </p>
 
                       {!itemAssignments.length ? (
@@ -883,7 +956,9 @@ export default function Results() {
                                 key={item.id}
                                 style={{
                                   ...assignmentCard,
-                                  ...(isUnassigned ? assignmentCardWarning : null),
+                                  ...(isUnassigned
+                                    ? assignmentCardWarning
+                                    : null),
                                 }}
                               >
                                 {!isConfirmed ? (
@@ -931,7 +1006,7 @@ export default function Results() {
                                         {item.name}
                                       </div>
                                       <div style={assignmentItemCost}>
-                                        £{Number(item.cost || 0).toFixed(2)}
+                                        {money(item.cost)}
                                       </div>
                                     </div>
                                   </div>
@@ -982,10 +1057,10 @@ export default function Results() {
                 {activeMode === "pot" && (
                   <div style={contentCard}>
                     <p style={sectionEyebrow}>Manual totals</p>
-                    <h2 style={cardHeading}>Set contributions</h2>
+                    <h2 style={cardHeading}>Set credit contributions</h2>
                     <p style={helperIntro}>
-                      Adjust how much each player should contribute toward the
-                      overall bill total.
+                      Adjust how many credits each player should contribute
+                      toward the total.
                     </p>
 
                     <div style={manualTotalsList}>
@@ -1018,9 +1093,8 @@ export default function Results() {
                     <p style={sectionEyebrow}>Pseudo tab</p>
                     <h2 style={cardHeading}>No payment required</h2>
                     <p style={helperIntro}>
-                      This session is being treated as a non-payment or demo
-                      result. Rankings are still saved, but contributions stay
-                      at zero.
+                      This session is being treated as a non-payment result.
+                      Rankings are saved, but contributions stay at zero.
                     </p>
                   </div>
                 )}
@@ -1029,8 +1103,8 @@ export default function Results() {
                   <p style={sectionEyebrow}>Final allocation</p>
                   <h2 style={cardHeading}>Preview the split</h2>
                   <p style={helperIntro}>
-                    This is the current final breakdown that will be shared to
-                    the whole session once confirmed.
+                    This is the current final breakdown. The confirmed summary
+                    will include ranking, receipt, credits owed, and QR payload.
                   </p>
 
                   <div style={allocationList}>
@@ -1042,7 +1116,7 @@ export default function Results() {
                             <div style={allocationMeta}>Rank {player.rank}</div>
                           </div>
                           <div style={allocationTotal}>
-                            £{Number(player.total || 0).toFixed(2)}
+                            {money(player.total)}
                           </div>
                         </div>
 
@@ -1059,9 +1133,7 @@ export default function Results() {
                                     ? ` (${item.shareCount} way split)`
                                     : ""}
                                 </span>
-                                <strong>
-                                  £{Number(item.shareValue || 0).toFixed(2)}
-                                </strong>
+                                <strong>{money(item.shareValue)}</strong>
                               </div>
                             ))}
                           </div>
@@ -1094,8 +1166,9 @@ export default function Results() {
                   <p style={sectionEyebrow}>Confirm</p>
                   <h2 style={cardHeading}>Lock the final split</h2>
                   <p style={helperIntro}>
-                    Once confirmed, every player screen will show the same saved
-                    session result.
+                    Once confirmed, everyone will see the same saved split. The
+                    payment summary page will show the skeleton receipt, QR
+                    payload, and email-ready data.
                   </p>
 
                   {saveError ? <p style={errorText}>{saveError}</p> : null}
@@ -1115,17 +1188,28 @@ export default function Results() {
                   ) : (
                     <div style={confirmedBox}>
                       <div style={confirmedText}>Final split confirmed.</div>
-                      <button
-                        type="button"
-                        onClick={unlock}
-                        disabled={saveLoading}
-                        style={{
-                          ...secondaryButton,
-                          ...(saveLoading ? disabledButton : null),
-                        }}
-                      >
-                        {saveLoading ? "Unlocking..." : "Unlock"}
-                      </button>
+
+                      <div style={receiptToolRow}>
+                        <button
+                          type="button"
+                          onClick={() => navigate("/payment-summary")}
+                          style={primaryButton}
+                        >
+                          View Payment Summary
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={unlock}
+                          disabled={saveLoading}
+                          style={{
+                            ...secondaryButton,
+                            ...(saveLoading ? disabledButton : null),
+                          }}
+                        >
+                          {saveLoading ? "Unlocking..." : "Unlock"}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

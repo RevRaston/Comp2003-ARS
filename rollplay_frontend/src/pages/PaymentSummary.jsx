@@ -1,19 +1,33 @@
 // src/pages/PaymentSummary.jsx
+import { useMemo } from "react";
 import { useGame } from "../GameContext";
 import { useNavigate } from "react-router-dom";
 
 export default function PaymentSummary() {
   const navigate = useNavigate();
-  const { confirmedSplit } = useGame();
+  const { confirmedSplit, creditsBalance } = useGame();
+
+  const finalAllocation = Array.isArray(confirmedSplit?.finalAllocation)
+    ? confirmedSplit.finalAllocation
+    : [];
+
+  const paymentRequired =
+    confirmedSplit?.paymentRequired ??
+    confirmedSplit?.mode !== "pseudo";
+
+  const totalDue = useMemo(() => {
+    return finalAllocation.reduce(
+      (sum, player) => sum + Number(player.total || 0),
+      0
+    );
+  }, [finalAllocation]);
 
   if (!confirmedSplit) {
     return (
       <div style={page}>
         <div style={card}>
-          <h1 style={{ marginTop: 0 }}>Payment Summary</h1>
-          <p style={{ opacity: 0.8 }}>
-            No confirmed split has been saved yet.
-          </p>
+          <h1 style={title}>Payment Summary</h1>
+          <p style={muted}>No confirmed split has been saved yet.</p>
 
           <div style={buttonRow}>
             <button onClick={() => navigate("/results")} style={primaryBtn}>
@@ -32,105 +46,100 @@ export default function PaymentSummary() {
     <div style={page}>
       <div style={container}>
         <div style={heroCard}>
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Payment Summary</h1>
-          <p style={{ margin: 0, opacity: 0.82 }}>
-            Final confirmed split for this session
-          </p>
+          <p style={eyebrow}>RollPay receipt</p>
+          <h1 style={title}>Payment Summary</h1>
+          <p style={muted}>Final confirmed split for this session.</p>
         </div>
 
         <div style={summaryGrid}>
-          <div style={summaryCard}>
-            <div style={summaryLabel}>Mode</div>
-            <div style={summaryValue}>{confirmedSplit.modeLabel}</div>
-          </div>
-
-          <div style={summaryCard}>
-            <div style={summaryLabel}>Winner</div>
-            <div style={summaryValue}>{confirmedSplit.winnerName || "N/A"}</div>
-          </div>
-
-          <div style={summaryCard}>
-            <div style={summaryLabel}>Payment Required</div>
-            <div style={summaryValue}>
-              {confirmedSplit.paymentRequired ? "Yes" : "No"}
-            </div>
-          </div>
-
-          <div style={summaryCard}>
-            <div style={summaryLabel}>Session Total</div>
-            <div style={summaryValue}>
-              £{Number(confirmedSplit.sessionTotal || 0).toFixed(2)}
-            </div>
-          </div>
-
-          <div style={summaryCard}>
-            <div style={summaryLabel}>Final Total</div>
-            <div style={summaryValue}>
-              £{Number(confirmedSplit.finalTotal || 0).toFixed(2)}
-            </div>
-          </div>
-
-          <div style={summaryCard}>
-            <div style={summaryLabel}>Confirmed At</div>
-            <div style={summaryValueSmall}>
-              {confirmedSplit.confirmedAt
+          <SummaryCard label="Mode" value={modeLabel(confirmedSplit.mode)} />
+          <SummaryCard label="Winner" value={confirmedSplit.winnerName || "N/A"} />
+          <SummaryCard
+            label="Payment Required"
+            value={paymentRequired ? "Yes" : "No"}
+          />
+          <SummaryCard
+            label="Final Total"
+            value={`${Number(totalDue || confirmedSplit.finalTotal || 0).toFixed(
+              2
+            )} credits`}
+          />
+          <SummaryCard
+            label="Your Credits"
+            value={`${Number(creditsBalance || 0).toFixed(2)} credits`}
+          />
+          <SummaryCard
+            label="Confirmed"
+            value={
+              confirmedSplit.confirmedAt
                 ? new Date(confirmedSplit.confirmedAt).toLocaleString()
-                : "N/A"}
-            </div>
-          </div>
+                : "N/A"
+            }
+            small
+          />
         </div>
 
         <div style={receiptBox}>
           <h2 style={receiptTitle}>Final Receipt</h2>
 
-          {confirmedSplit.finalAllocation.map((player) => (
-            <div key={player.name} style={playerBlock}>
-              <div style={playerHeader}>
-                <span>
-                  {player.name} (Rank {player.rank})
-                </span>
-                <strong>£{Number(player.total || 0).toFixed(2)}</strong>
-              </div>
-
-              {player.items?.length > 0 && (
-                <div style={itemsWrap}>
-                  {player.items.map((item) => (
-                    <div
-                      key={`${player.name}-${item.id}`}
-                      style={itemRow}
-                    >
-                      <span>
-                        {item.name}
-                        {item.shared
-                          ? ` (shared, £${Number(
-                              item.shareValue || 0
-                            ).toFixed(2)} share)`
-                          : ""}
-                      </span>
-                      <span>
-                        £
-                        {Number(
-                          item.shared ? item.shareValue : item.cost || 0
-                        ).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
+          {finalAllocation.length === 0 ? (
+            <p style={muted}>No player allocation found.</p>
+          ) : (
+            finalAllocation.map((player) => (
+              <div key={player.name} style={playerBlock}>
+                <div style={playerHeader}>
+                  <span>
+                    {player.name} {player.rank ? `(Rank ${player.rank})` : ""}
+                  </span>
+                  <strong>{Number(player.total || 0).toFixed(2)} credits</strong>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {player.items?.length > 0 && (
+                  <div style={itemsWrap}>
+                    {player.items.map((item) => (
+                      <div key={`${player.name}-${item.id}`} style={itemRow}>
+                        <span>
+                          {item.name}
+                          {item.shared
+                            ? ` (${item.shareCount || "shared"} way split)`
+                            : ""}
+                        </span>
+                        <span>
+                          {Number(
+                            item.shared ? item.shareValue : item.cost || 0
+                          ).toFixed(2)}{" "}
+                          credits
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
 
           <div style={divider} />
 
           <div style={receiptFooter}>
             <span>Final Total</span>
-            <strong>£{Number(confirmedSplit.finalTotal || 0).toFixed(2)}</strong>
+            <strong>
+              {Number(totalDue || confirmedSplit.finalTotal || 0).toFixed(2)}{" "}
+              credits
+            </strong>
+          </div>
+
+          <div style={qrBox}>
+            <div style={qrPlaceholder}>QR</div>
+            <p style={qrText}>
+              QR receipt placeholder. We’ll wire this to encoded session split
+              data once backend receipts are added.
+            </p>
           </div>
 
           <p style={note}>
-            {confirmedSplit.paymentRequired
-              ? "This session is ready for payment processing."
-              : "This is a pseudo-tab summary only. No real payment is required."}
+            {paymentRequired
+              ? "This is the skeleton payment receipt. Credit deduction and email delivery come next."
+              : "This is a pseudo-tab summary only. No credits are required."}
           </p>
         </div>
 
@@ -147,35 +156,73 @@ export default function PaymentSummary() {
   );
 }
 
+function SummaryCard({ label, value, small = false }) {
+  return (
+    <div style={summaryCard}>
+      <div style={summaryLabel}>{label}</div>
+      <div style={small ? summaryValueSmall : summaryValue}>{value}</div>
+    </div>
+  );
+}
+
+function modeLabel(mode) {
+  if (mode === "items") return "Specific Items";
+  if (mode === "pot") return "Total Pot";
+  if (mode === "pseudo") return "Pseudo Tab";
+  return "Unknown";
+}
+
 const page = {
   minHeight: "100vh",
-  paddingTop: 80,
   color: "white",
+  background:
+    "radial-gradient(circle at top, rgba(255,210,90,0.10), transparent 18%), linear-gradient(180deg, #0d1118 0%, #151b26 35%, #1b2130 100%)",
 };
 
 const container = {
   maxWidth: 1000,
   margin: "0 auto",
-  padding: 20,
+  padding: "42px 16px",
 };
 
 const card = {
   maxWidth: 700,
-  margin: "0 auto",
-  padding: 22,
-  borderRadius: 18,
-  background: "rgba(0,0,0,0.24)",
+  margin: "80px auto 0",
+  padding: 24,
+  borderRadius: 24,
+  background: "rgba(0,0,0,0.42)",
   border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
 };
 
 const heroCard = {
   marginBottom: 20,
-  padding: 20,
-  borderRadius: 18,
-  background: "rgba(0,0,0,0.24)",
+  padding: 24,
+  borderRadius: 28,
+  background: "rgba(0,0,0,0.42)",
   border: "1px solid rgba(255,255,255,0.12)",
   textAlign: "center",
+};
+
+const eyebrow = {
+  margin: "0 0 10px",
+  color: "#f6cf64",
+  textTransform: "uppercase",
+  letterSpacing: 1.5,
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const title = {
+  margin: 0,
+  fontSize: "clamp(2.2rem, 5vw, 3.5rem)",
+  lineHeight: 0.98,
+  fontWeight: 900,
+};
+
+const muted = {
+  marginTop: 12,
+  opacity: 0.82,
+  lineHeight: 1.6,
 };
 
 const summaryGrid = {
@@ -186,8 +233,8 @@ const summaryGrid = {
 };
 
 const summaryCard = {
-  padding: 14,
-  borderRadius: 14,
+  padding: 16,
+  borderRadius: 18,
   background: "rgba(255,255,255,0.06)",
   border: "1px solid rgba(255,255,255,0.1)",
 };
@@ -195,25 +242,28 @@ const summaryCard = {
 const summaryLabel = {
   fontSize: 12,
   opacity: 0.7,
-  marginBottom: 6,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 1,
 };
 
 const summaryValue = {
-  fontSize: 16,
-  fontWeight: 700,
+  fontSize: 17,
+  fontWeight: 800,
 };
 
 const summaryValueSmall = {
   fontSize: 14,
   fontWeight: 700,
+  lineHeight: 1.4,
 };
 
 const receiptBox = {
   marginBottom: 22,
-  padding: 22,
-  borderRadius: 18,
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.18)",
+  padding: 24,
+  borderRadius: 28,
+  background: "rgba(0,0,0,0.42)",
+  border: "1px solid rgba(255,255,255,0.12)",
 };
 
 const receiptTitle = {
@@ -224,6 +274,10 @@ const receiptTitle = {
 
 const playerBlock = {
   marginBottom: 14,
+  padding: 14,
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.08)",
 };
 
 const playerHeader = {
@@ -235,7 +289,6 @@ const playerHeader = {
 
 const itemsWrap = {
   marginTop: 8,
-  marginLeft: 10,
   opacity: 0.86,
 };
 
@@ -243,14 +296,14 @@ const itemRow = {
   display: "flex",
   justifyContent: "space-between",
   gap: 10,
-  padding: "3px 0",
+  padding: "4px 0",
   fontSize: 14,
 };
 
 const divider = {
   height: 1,
   background: "rgba(255,255,255,0.14)",
-  margin: "14px 0",
+  margin: "18px 0",
 };
 
 const receiptFooter = {
@@ -258,12 +311,45 @@ const receiptFooter = {
   justifyContent: "space-between",
   gap: 12,
   padding: "6px 0",
+  fontSize: 18,
+};
+
+const qrBox = {
+  marginTop: 20,
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px dashed rgba(255,255,255,0.18)",
+  display: "flex",
+  gap: 14,
+  alignItems: "center",
+};
+
+const qrPlaceholder = {
+  width: 74,
+  height: 74,
+  borderRadius: 12,
+  background: "white",
+  color: "#111",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const qrText = {
+  margin: 0,
+  opacity: 0.82,
+  lineHeight: 1.5,
+  fontSize: 14,
 };
 
 const note = {
-  marginTop: 16,
+  marginTop: 18,
   opacity: 0.82,
   textAlign: "center",
+  lineHeight: 1.6,
 };
 
 const buttonRow = {
@@ -275,13 +361,23 @@ const buttonRow = {
 };
 
 const primaryBtn = {
-  padding: "10px 18px",
+  padding: "12px 20px",
+  borderRadius: 999,
+  border: "none",
+  background: "#f4c431",
+  color: "#161616",
   fontSize: 16,
+  fontWeight: 800,
   cursor: "pointer",
 };
 
 const secondaryBtn = {
-  padding: "10px 18px",
+  padding: "12px 20px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "rgba(255,255,255,0.06)",
+  color: "white",
   fontSize: 16,
+  fontWeight: 700,
   cursor: "pointer",
 };

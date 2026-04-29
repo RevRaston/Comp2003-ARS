@@ -46,6 +46,10 @@ export default function LevelSelect() {
   const code = sessionCode || localStorage.getItem("session_code");
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     function handleResize() {
       setScreenWidth(window.innerWidth);
     }
