@@ -1,55 +1,70 @@
 // email/sendEmail.mjs
+import nodemailer from "nodemailer";
 
-export async function sendDemoEmail({ to, subject, html, text }) {
-  const recipient = to || "demo-user@rollpay.local";
+function getTransporter() {
+  if (!process.env.SMTP_HOST) {
+    console.warn("SMTP_HOST missing. Email will not send.");
+    return null;
+  }
 
-  console.log("📧 DEMO EMAIL SENT");
-  console.log("To:", recipient);
-  console.log("Subject:", subject);
-  console.log("Text:", text || "");
-  console.log("HTML:", html || "");
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
 
-  return {
-    ok: true,
-    demo: true,
-    to: recipient,
+export async function sendDemoEmail({ to, subject, text = "", html = "" }) {
+  const transporter = getTransporter();
+
+  if (!transporter) {
+    console.log("📧 EMAIL SKIPPED - SMTP not configured", { to, subject });
+    return { skipped: true };
+  }
+
+  if (!to) {
+    console.log("📧 EMAIL SKIPPED - missing recipient", { subject });
+    return { skipped: true };
+  }
+
+  const result = await transporter.sendMail({
+    from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    to,
     subject,
-  };
+    text,
+    html,
+  });
+
+  console.log("✅ REAL EMAIL SENT", {
+    to,
+    subject,
+    messageId: result.messageId,
+  });
+
+  return { sent: true, messageId: result.messageId };
 }
 
 export function buildCreditReceiptEmail({
-  displayName = "Player",
-  creditsPurchased = 0,
-  newBalance = 0,
-  cardBrand = "DemoCard",
-  cardLast4 = "0000",
+  displayName,
+  creditsPurchased,
+  newBalance,
+  cardBrand,
+  cardLast4,
 }) {
-  const subject = `RollPay Credit Receipt — ${creditsPurchased} credits`;
-
-  const text = `
-RollPay Credit Receipt
-
-Hi ${displayName},
-
-You purchased ${creditsPurchased} demo credits.
-
-Paid with: ${cardBrand} ending ${cardLast4}
-New balance: ${newBalance} credits
-
-This is a demo/UAT receipt. No real money was charged.
-`;
-
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-      <h2>RollPay Credit Receipt</h2>
-      <p>Hi <strong>${displayName}</strong>,</p>
-      <p>You purchased <strong>${creditsPurchased}</strong> demo credits.</p>
-      <hr />
-      <p><strong>Paid with:</strong> ${cardBrand} ending ${cardLast4}</p>
-      <p><strong>New balance:</strong> ${newBalance} credits</p>
-      <p style="color:#777;">This is a demo/UAT receipt. No real money was charged.</p>
-    </div>
-  `;
-
-  return { subject, text, html };
+  return {
+    subject: "RollPay credits purchase receipt",
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
+        <h2>RollPay Credits Receipt</h2>
+        <p>Hi ${displayName || "Player"},</p>
+        <p>You purchased <strong>${creditsPurchased} credits</strong>.</p>
+        <p>Demo card: <strong>${cardBrand || "DemoCard"} •••• ${cardLast4 || "0000"}</strong></p>
+        <p>New balance: <strong>${newBalance} credits</strong></p>
+      </div>
+    `,
+  };
 }
