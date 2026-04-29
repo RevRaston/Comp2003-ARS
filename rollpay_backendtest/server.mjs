@@ -341,18 +341,22 @@ app.post("/credits/buy", async (req, res) => {
       });
     }
 
-    const email = buildCreditReceiptEmail({
-      displayName: updated.display_name || user.email || "Player",
-      creditsPurchased: amount,
-      newBalance,
-      cardBrand: updated.card_brand,
-      cardLast4: updated.card_last4,
-    });
+    try {
+      const email = buildCreditReceiptEmail({
+        displayName: updated.display_name || user.email || "Player",
+        creditsPurchased: amount,
+        newBalance,
+        cardBrand: updated.card_brand,
+        cardLast4: updated.card_last4,
+      });
 
-    await sendDemoEmail({
-      to: user.email,
-      ...email,
-    });
+      await sendDemoEmail({
+        to: user.email,
+        ...email,
+      });
+    } catch (emailErr) {
+      console.error("[credits/buy] email skipped/failed:", emailErr);
+    }
 
     return res.json({
       ok: true,
@@ -439,22 +443,30 @@ app.post("/credits/purchase", async (req, res) => {
 
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(receiptPayload));
 
-    await sendDemoEmail({
-      to: user.email,
-      subject: "RollPay credits purchase receipt",
-      html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.5">
-          <h2>RollPay Credits Receipt</h2>
-          <p>Hi ${profile.display_name || "Player"},</p>
-          <p>You bought <strong>${creditsToAdd} credits</strong>.</p>
-          <p>Amount: <strong>£${pounds.toFixed(2)}</strong></p>
-          <p>Demo card: <strong>${profile.card_brand} •••• ${profile.card_last4}</strong></p>
-          <p>New balance: <strong>${nextBalance} credits</strong> (£${creditsToPounds(nextBalance).toFixed(2)})</p>
-          <p>QR receipt:</p>
-          <img src="${qrDataUrl}" alt="RollPay receipt QR" style="width:180px;height:180px" />
-        </div>
-      `,
-    });
+    try {
+      await sendDemoEmail({
+        to: user.email,
+        subject: "RollPay credits purchase receipt",
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5">
+            <h2>RollPay Credits Receipt</h2>
+            <p>Hi ${profile.display_name || "Player"},</p>
+            <p>You bought <strong>${creditsToAdd} credits</strong>.</p>
+            <p>Amount: <strong>£${pounds.toFixed(2)}</strong></p>
+            <p>Demo card: <strong>${profile.card_brand} •••• ${
+          profile.card_last4
+        }</strong></p>
+            <p>New balance: <strong>${nextBalance} credits</strong> (£${creditsToPounds(
+          nextBalance
+        ).toFixed(2)})</p>
+            <p>QR receipt:</p>
+            <img src="${qrDataUrl}" alt="RollPay receipt QR" style="width:180px;height:180px" />
+          </div>
+        `,
+      });
+    } catch (emailErr) {
+      console.error("[credits/purchase] email skipped/failed:", emailErr);
+    }
 
     res.json({
       ok: true,
@@ -1169,8 +1181,12 @@ app.post("/sessions/:code/send-final-receipt", async (req, res) => {
         (p) => `
           <tr>
             <td style="padding:8px;border-bottom:1px solid #ddd">${p.name}</td>
-            <td style="padding:8px;border-bottom:1px solid #ddd">Rank ${p.rank || "-"}</td>
-            <td style="padding:8px;border-bottom:1px solid #ddd">£${Number(p.total || 0).toFixed(2)}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">Rank ${
+              p.rank || "-"
+            }</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">£${Number(
+              p.total || 0
+            ).toFixed(2)}</td>
           </tr>
         `
       )
@@ -1182,7 +1198,9 @@ app.post("/sessions/:code/send-final-receipt", async (req, res) => {
           <tr>
             <td style="padding:8px;border-bottom:1px solid #ddd">#${p.rank}</td>
             <td style="padding:8px;border-bottom:1px solid #ddd">${p.name}</td>
-            <td style="padding:8px;border-bottom:1px solid #ddd">${p.wins || 0} wins</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${
+              p.wins || 0
+            } wins</td>
           </tr>
         `
       )
@@ -1205,33 +1223,39 @@ app.post("/sessions/:code/send-final-receipt", async (req, res) => {
 
       if (!email) continue;
 
-      await sendDemoEmail({
-        to: email,
-        subject: `RollPay final split receipt — ${code}`,
-        html: `
-          <div style="font-family:Arial,sans-serif;line-height:1.5">
-            <h2>RollPay Final Split</h2>
-            <p>Session: <strong>${code}</strong></p>
+      try {
+        await sendDemoEmail({
+          to: email,
+          subject: `RollPay final split receipt — ${code}`,
+          html: `
+            <div style="font-family:Arial,sans-serif;line-height:1.5">
+              <h2>RollPay Final Split</h2>
+              <p>Session: <strong>${code}</strong></p>
 
-            <h3>Game ranking</h3>
-            <table style="border-collapse:collapse;width:100%;max-width:520px">
-              ${rankingRows || "<tr><td>No rankings available</td></tr>"}
-            </table>
+              <h3>Game ranking</h3>
+              <table style="border-collapse:collapse;width:100%;max-width:520px">
+                ${rankingRows || "<tr><td>No rankings available</td></tr>"}
+              </table>
 
-            <h3>Who owes what</h3>
-            <table style="border-collapse:collapse;width:100%;max-width:520px">
-              ${allocationRows || "<tr><td>No split available</td></tr>"}
-            </table>
+              <h3>Who owes what</h3>
+              <table style="border-collapse:collapse;width:100%;max-width:520px">
+                ${allocationRows || "<tr><td>No split available</td></tr>"}
+              </table>
 
-            <p>Total: <strong>£${Number(confirmedSplit.finalTotal || 0).toFixed(2)}</strong></p>
+              <p>Total: <strong>£${Number(
+                confirmedSplit.finalTotal || 0
+              ).toFixed(2)}</strong></p>
 
-            <p>QR summary:</p>
-            <img src="${qrDataUrl}" alt="RollPay final split QR" style="width:180px;height:180px" />
-          </div>
-        `,
-      });
+              <p>QR summary:</p>
+              <img src="${qrDataUrl}" alt="RollPay final split QR" style="width:180px;height:180px" />
+            </div>
+          `,
+        });
 
-      sentCount += 1;
+        sentCount += 1;
+      } catch (emailErr) {
+        console.error("[send-final-receipt] email skipped/failed:", emailErr);
+      }
     }
 
     res.json({
