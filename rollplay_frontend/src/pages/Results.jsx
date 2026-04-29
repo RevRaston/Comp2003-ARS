@@ -654,14 +654,30 @@ export default function Results() {
 
       if (code) {
         const res = await fetch(`${API_BASE}/sessions/${code}/confirmed-split`, {
-          method: "DELETE",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            confirmedSplit: payload,
+          }),
         });
 
         const data = await res.json().catch(() => null);
 
         if (!res.ok) {
-          throw new Error(data?.error || "Failed to unlock split");
+          throw new Error(data?.error || "Failed to save confirmed split");
         }
+
+        await fetch(`${API_BASE}/sessions/${code}/send-final-receipt`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            confirmedSplit: payload,
+          }),
+        });
       }
 
       clearConfirmedSplit();
