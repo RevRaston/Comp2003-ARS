@@ -1022,7 +1022,7 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
   try {
     const { data: session, error: sessionErr } = await adminSupabase
       .from("sessions")
-      .select("id, code")
+      .select("id, code, final_results")
       .eq("code", code)
       .single();
 
@@ -1034,8 +1034,23 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
       return res.status(400).json({ error: "Missing confirmedSplit payload" });
     }
 
+    const receiptPayload = {
+      type: "rollpay_final_receipt",
+      sessionCode: code,
+      winnerName: confirmedSplit.winnerName || null,
+      mode: confirmedSplit.mode,
+      finalTotal: Number(confirmedSplit.finalTotal || 0),
+      finalAllocation: confirmedSplit.finalAllocation || [],
+      rankings: session.final_results || [],
+      confirmedAt: new Date().toISOString(),
+    };
+
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(receiptPayload));
+
     const payload = {
       ...confirmedSplit,
+      receiptPayload,
+      qrDataUrl,
       saved_at: new Date().toISOString(),
     };
 
@@ -1056,11 +1071,87 @@ app.post("/sessions/:code/confirmed-split", async (req, res) => {
       });
     }
 
+    const { data: sessionPlayers } = await adminSupabase
+      .from("session_players")
+      .select("user_id, name")
+      .eq("session_id", session.id);
+
+    const allocationRows = (payload.finalAllocation || [])
+      .map(
+        (p) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${p.name}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">Rank ${p.rank || "-"}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${Number(p.total || 0).toFixed(2)} credits</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const rankingRows = (session.final_results || [])
+      .map(
+        (p) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #ddd">#${p.rank}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${p.name}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd">${p.wins || 0} wins</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    let sentCount = 0;
+
+    for (const player of sessionPlayers || []) {
+      if (!player.user_id) continue;
+
+      const { data: authUser } =
+        await adminSupabase.auth.admin.getUserById(player.user_id);
+
+      const email = authUser?.user?.email;
+      if (!email) continue;
+
+      await sendDemoEmail({
+        to: email,
+        subject: `RollPay receipt — Session ${code}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
+            <h2>RollPay Final Receipt</h2>
+            <p>Session: <strong>${code}</strong></p>
+            <p>Winner: <strong>${payload.winnerName || "N/A"}</strong></p>
+
+            <h3>Game Ranking</h3>
+            <table style="border-collapse:collapse;width:100%;max-width:560px">
+              ${rankingRows || "<tr><td>No rankings available</td></tr>"}
+            </table>
+
+            <h3>Restaurant Split Receipt</h3>
+            <table style="border-collapse:collapse;width:100%;max-width:560px">
+              ${allocationRows || "<tr><td>No split available</td></tr>"}
+            </table>
+
+            <p>Total: <strong>${Number(payload.finalTotal || 0).toFixed(2)} credits</strong></p>
+
+            <h3>QR Receipt</h3>
+            <p>This QR contains the same receipt data for restaurant check splitting.</p>
+            <img src="${qrDataUrl}" alt="RollPay receipt QR" style="width:190px;height:190px" />
+          </div>
+        `,
+      });
+
+      sentCount += 1;
+    }
+
     return res.json({
       ok: true,
       session: updated,
+      confirmedSplit: payload,
+      sentCount,
+      qrDataUrl,
     });
   } catch (err) {
+    console.error("[confirmed-split] error:", err);
+
     return res.status(500).json({
       error: "Failed to save confirmed split",
       detail: String(err),

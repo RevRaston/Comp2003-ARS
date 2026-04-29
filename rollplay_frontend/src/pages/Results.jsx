@@ -538,20 +538,10 @@ export default function Results() {
       return;
     }
 
+    const confirmedAt = new Date().toISOString();
     const receiptId = `RP-${Date.now()}`;
 
-    const qrPayload = {
-      receiptId,
-      sessionCode: code || null,
-      mode: activeMode,
-      modeLabel: getModeLabel(activeMode),
-      winnerName: winner?.name || null,
-      finalTotal,
-      finalAllocation,
-      confirmedAt: new Date().toISOString(),
-    };
-
-    const payload = {
+    const basePayload = {
       receiptId,
       mode: activeMode,
       modeLabel: getModeLabel(activeMode),
@@ -559,24 +549,41 @@ export default function Results() {
       currency: "credits",
       winnerName: winner?.name || null,
       rankings: sessionPlayers,
+      sessionCode: code || null,
       sessionTotal: effectiveSessionTotal,
       finalAllocation,
       finalTotal,
       itemAssignments,
       manualTotals,
+      confirmedAt,
+    };
+
+    const qrPayload = {
+      type: "rollpay_final_split_receipt",
+      receiptId,
+      sessionCode: code || null,
+      mode: activeMode,
+      modeLabel: getModeLabel(activeMode),
+      winnerName: winner?.name || null,
+      rankings: sessionPlayers,
+      finalTotal,
+      finalAllocation,
+      confirmedAt,
+    };
+
+    let payload = {
+      ...basePayload,
       qrPayload,
-      receiptEmailStatus: "pending_backend_email_setup",
-      splitEmailStatus: "pending_backend_email_setup",
-      confirmedAt: new Date().toISOString(),
+      qrDataUrl: null,
+      receiptEmailStatus: "pending",
+      splitEmailStatus: "pending",
     };
 
     try {
       setSaveLoading(true);
 
-      saveConfirmedSplit(payload);
-
       if (code) {
-        const res = await fetch(`${API_BASE}/sessions/${code}/confirmed-split`, {
+        const saveRes = await fetch(`${API_BASE}/sessions/${code}/confirmed-split`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -586,13 +593,51 @@ export default function Results() {
           }),
         });
 
-        const data = await res.json().catch(() => null);
+        const saveData = await saveRes.json().catch(() => null);
 
-        if (!res.ok) {
-          throw new Error(data?.error || "Failed to save confirmed split");
+        if (!saveRes.ok) {
+          throw new Error(saveData?.error || "Failed to save confirmed split");
         }
+
+        const emailRes = await fetch(
+          `${API_BASE}/sessions/${code}/send-final-receipt`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              confirmedSplit: payload,
+            }),
+          }
+        );
+
+        const emailData = await emailRes.json().catch(() => null);
+
+        if (!emailRes.ok) {
+          throw new Error(emailData?.error || "Failed to send receipt email");
+        }
+
+        payload = {
+          ...payload,
+          qrDataUrl: emailData?.qrDataUrl || null,
+          receiptEmailStatus: "sent",
+          splitEmailStatus: "sent",
+          emailSentCount: emailData?.sentCount || 0,
+        };
+
+        await fetch(`${API_BASE}/sessions/${code}/confirmed-split`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            confirmedSplit: payload,
+          }),
+        });
       }
 
+      saveConfirmedSplit(payload);
       setIsConfirmed(true);
     } catch (err) {
       console.error(err);

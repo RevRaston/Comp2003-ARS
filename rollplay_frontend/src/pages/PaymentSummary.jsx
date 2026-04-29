@@ -12,8 +12,7 @@ export default function PaymentSummary() {
     : [];
 
   const paymentRequired =
-    confirmedSplit?.paymentRequired ??
-    confirmedSplit?.mode !== "pseudo";
+    confirmedSplit?.paymentRequired ?? confirmedSplit?.mode !== "pseudo";
 
   const totalDue = useMemo(() => {
     return finalAllocation.reduce(
@@ -71,8 +70,10 @@ export default function PaymentSummary() {
           <SummaryCard
             label="Confirmed"
             value={
-              confirmedSplit.confirmedAt
-                ? new Date(confirmedSplit.confirmedAt).toLocaleString()
+              confirmedSplit.confirmedAt || confirmedSplit.saved_at
+                ? new Date(
+                    confirmedSplit.confirmedAt || confirmedSplit.saved_at
+                  ).toLocaleString()
                 : "N/A"
             }
             small
@@ -129,16 +130,25 @@ export default function PaymentSummary() {
           </div>
 
           <div style={qrBox}>
-            <div style={qrPlaceholder}>QR</div>
+            {confirmedSplit.qrDataUrl ? (
+              <img
+                src={confirmedSplit.qrDataUrl}
+                alt="RollPay receipt QR"
+                style={qrImage}
+              />
+            ) : (
+              <div style={qrPlaceholder}>QR</div>
+            )}
+
             <p style={qrText}>
-              QR receipt placeholder. We’ll wire this to encoded session split
-              data once backend receipts are added.
+              Scan this QR to view the restaurant split receipt. It contains the
+              same session, ranking, and “who owes what” data as the email.
             </p>
           </div>
 
           <p style={note}>
             {paymentRequired
-              ? "This is the skeleton payment receipt. Credit deduction and email delivery come next."
+              ? "This receipt is ready for restaurant check splitting and player payment tracking."
               : "This is a pseudo-tab summary only. No credits are required."}
           </p>
         </div>
@@ -323,6 +333,15 @@ const qrBox = {
   display: "flex",
   gap: 14,
   alignItems: "center",
+};
+
+const qrImage = {
+  width: 120,
+  height: 120,
+  borderRadius: 16,
+  background: "white",
+  padding: 10,
+  flexShrink: 0,
 };
 
 const qrPlaceholder = {
