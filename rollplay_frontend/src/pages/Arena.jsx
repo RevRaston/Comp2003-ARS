@@ -43,6 +43,7 @@ const GAME_COMPONENTS = {
 
 export default function Arena() {
   const navigate = useNavigate();
+  const gameAreaRef = useRef(null);
 
   const {
     players,
@@ -82,6 +83,19 @@ export default function Arena() {
   const isTablet = screenWidth <= 1100;
 
   useEffect(() => {
+    if (!isPhone) return;
+
+    const timeout = setTimeout(() => {
+      gameAreaRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [isPhone]);
+
+  useEffect(() => {
     if (!code) return;
 
     let cancelled = false;
@@ -116,6 +130,13 @@ export default function Arena() {
           setRoundComplete(false);
           setRoundActionError("");
           setAdvancingRound(false);
+
+          setTimeout(() => {
+            gameAreaRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }, 250);
         }
 
         lastServerRoundRef.current = serverRound;
@@ -273,6 +294,7 @@ export default function Arena() {
         p?.id;
       if (key && String(key) === uid) return i;
     }
+
     return -1;
   }, [myUserId, slotPlayers]);
 
@@ -286,8 +308,11 @@ export default function Arena() {
   const currentLevel = currentLevelEntry?.level || null;
   const currentLevelId = currentLevel?.id || "sumo";
   const currentLevelName = currentLevel?.name || "Sumo";
+
   const currentPackName =
-    PACK_LOOKUP?.[currentLevel?.pack]?.name || currentLevel?.pack || "Game Pack";
+    PACK_LOOKUP?.[currentLevel?.pack]?.name ||
+    currentLevel?.pack ||
+    "Game Pack";
 
   const CurrentGameComponent = GAME_COMPONENTS[currentLevelId] || SumoGame;
 
@@ -329,8 +354,7 @@ export default function Arena() {
         round: currentRound,
         gameId: currentLevelId,
         winnerKey: payload?.winnerKey === undefined ? null : payload.winnerKey,
-        winnerName:
-          winnerPlayer?.display_name || winnerPlayer?.name || null,
+        winnerName: winnerPlayer?.display_name || winnerPlayer?.name || null,
         scores: Array.isArray(payload?.scores) ? payload.scores : [],
         createdAt: new Date().toISOString(),
       };
@@ -386,7 +410,9 @@ export default function Arena() {
         isGameEnabled &&
         !isGameEnabled(nextRoundEntry.level.id)
       ) {
-        throw new Error(`${nextRoundEntry.level.name} is locked. Choose another game.`);
+        throw new Error(
+          `${nextRoundEntry.level.name} is locked. Choose another game.`
+        );
       }
 
       const res = await fetch(`${API_BASE}/sessions/${code}/advance-round`, {
@@ -432,6 +458,7 @@ export default function Arena() {
         >
           <div style={{ flex: 1 }}>
             <p style={eyebrow}>Live game arena</p>
+
             <h1
               style={{
                 ...title,
@@ -440,6 +467,7 @@ export default function Arena() {
             >
               {currentLevelName}
             </h1>
+
             <p
               style={{
                 ...subtitle,
@@ -461,12 +489,15 @@ export default function Arena() {
                 Round <strong>{currentRound}</strong> of{" "}
                 <strong>{maxRounds}</strong>
               </div>
+
               <div style={metaPill}>
                 Pack <strong>{currentPackName}</strong>
               </div>
+
               <div style={metaPill}>
                 Session <strong>{code || "N/A"}</strong>
               </div>
+
               <div style={{ ...metaPill, ...(isHost ? hostPill : playerPill) }}>
                 {isHost ? "Host controls active" : "Player view"}
               </div>
@@ -480,21 +511,16 @@ export default function Arena() {
             }}
           >
             <div style={legendTitle}>Quick notes</div>
-            <div style={legendText}>
-              Your avatar is shown around the arena.
-            </div>
-            <div style={legendText}>
-              The host controls round progression.
-            </div>
-            <div style={legendText}>
-              Locked games cannot be played.
-            </div>
+            <div style={legendText}>Your avatar is shown around the arena.</div>
+            <div style={legendText}>The host controls round progression.</div>
+            <div style={legendText}>Locked games cannot be played.</div>
           </div>
         </section>
 
         {isTablet && (
           <section style={{ marginTop: 16 }}>
             <div style={mobilePlayersHeader}>Players</div>
+
             <div
               style={{
                 ...mobilePlayersGrid,
@@ -517,6 +543,7 @@ export default function Arena() {
         )}
 
         <section
+          ref={gameAreaRef}
           style={{
             ...arenaShell,
             gridTemplateColumns: isTablet
@@ -524,6 +551,7 @@ export default function Arena() {
               : "180px minmax(0, 1fr) 180px",
             gap: isPhone ? 14 : 20,
             marginTop: 18,
+            scrollMarginTop: isPhone ? 12 : 24,
           }}
         >
           {!isTablet && (
@@ -533,6 +561,7 @@ export default function Arena() {
                 label="P1"
                 highlightMe={mySeatIndex === 0}
               />
+
               <ArenaSlot
                 player={slotPlayers[2]}
                 label="P3"
@@ -552,6 +581,7 @@ export default function Arena() {
             >
               <div>
                 <div style={gameHeaderTitle}>{currentLevelName}</div>
+
                 <div style={gameHeaderText}>
                   {isHost
                     ? "Run the round, finish the simulation, then move the session on."
@@ -634,6 +664,7 @@ export default function Arena() {
                 label="P2"
                 highlightMe={mySeatIndex === 1}
               />
+
               <ArenaSlot
                 player={slotPlayers[3]}
                 label="P4"
@@ -674,7 +705,9 @@ function ArenaSlot({ player, label, compact = false, highlightMe = false }) {
         }}
       >
         {!isEmpty ? (
-          <AvatarPreview avatarJson={avatarJson} displayName={name} />
+          <div style={avatarCenter}>
+            <AvatarPreview avatarJson={avatarJson} displayName={name} />
+          </div>
         ) : (
           <div style={emptyInner} />
         )}
@@ -969,6 +1002,10 @@ const slotCard = {
     "linear-gradient(145deg, rgba(3,3,15,0.9), rgba(40,30,80,0.95))",
   boxShadow: "0 18px 40px rgba(0,0,0,0.55)",
   border: "1px solid rgba(255,255,255,0.08)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  overflow: "hidden",
 };
 
 const compactSlotCard = {
@@ -978,6 +1015,16 @@ const compactSlotCard = {
 
 const mySlotCard = {
   boxShadow: "0 0 0 2px rgba(122,162,255,0.55), 0 18px 40px rgba(0,0,0,0.55)",
+};
+
+const avatarCenter = {
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  overflow: "hidden",
+  borderRadius: 18,
 };
 
 const emptyInner = {

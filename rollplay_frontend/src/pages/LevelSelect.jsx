@@ -15,6 +15,22 @@ const API_BASE = (
   defaultBase
 ).replace(/\/$/, "");
 
+function getPackEffects(packId) {
+  const id = String(packId || "").toLowerCase();
+
+  if (id.includes("bar")) return ["🫧", "🍺", "🫧", "🍻", "🫧"];
+  if (id.includes("restaurant") || id.includes("food"))
+    return ["🍕", "🍔", "🍟", "🌮", "🍜"];
+  if (id.includes("board") || id.includes("chess"))
+    return ["♟️", "♜", "♞", "♛", "♟️"];
+  if (id.includes("casino") || id.includes("card"))
+    return ["🃏", "♠️", "♥️", "♦️", "♣️"];
+  if (id.includes("reaction") || id.includes("speed"))
+    return ["⏱️", "⚡", "⏰", "💥", "⏱️"];
+
+  return ["✨", "⭐", "✨", "⭐", "✨"];
+}
+
 export default function LevelSelect() {
   const navigate = useNavigate();
 
@@ -39,6 +55,8 @@ export default function LevelSelect() {
   const [activePack, setActivePack] = useState(GAME_PACKS[0]?.id || "bar");
   const [localSelections, setLocalSelections] = useState(selectedLevels || []);
   const [isSpinning, setIsSpinning] = useState(false);
+  const [packBurst, setPackBurst] = useState(null);
+
   const [screenWidth, setScreenWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1280
   );
@@ -147,6 +165,18 @@ export default function LevelSelect() {
     };
   }, [isHost, code, navigate]);
 
+  function triggerPackBurst(packId) {
+    setPackBurst({
+      id: Date.now(),
+      packId,
+      icons: getPackEffects(packId),
+    });
+
+    setTimeout(() => {
+      setPackBurst(null);
+    }, 850);
+  }
+
   async function saveLevelToBackend(roundNumber, levelId) {
     if (!code) return;
 
@@ -176,7 +206,10 @@ export default function LevelSelect() {
     if (!isHost) return;
     if (isSpinning) return;
 
-    const locked = isGameEnabled ? !isGameEnabled(level.id) : level.enabled === false;
+    const locked = isGameEnabled
+      ? !isGameEnabled(level.id)
+      : level.enabled === false;
+
     if (locked) return;
 
     const newSet = [...localSelections];
@@ -204,7 +237,9 @@ export default function LevelSelect() {
 
     const packGames = games.filter((g) => g.pack === activePack);
     const available = packGames.filter(
-      (g) => !chosenIds.includes(g.id) && (isGameEnabled ? isGameEnabled(g.id) : g.enabled !== false)
+      (g) =>
+        !chosenIds.includes(g.id) &&
+        (isGameEnabled ? isGameEnabled(g.id) : g.enabled !== false)
     );
 
     if (!available.length) return;
@@ -233,7 +268,9 @@ export default function LevelSelect() {
     );
 
     if (lockedRound) {
-      alert(`${lockedRound.level.name} is currently locked. Replace it before starting.`);
+      alert(
+        `${lockedRound.level.name} is currently locked. Replace it before starting.`
+      );
       return;
     }
 
@@ -249,6 +286,7 @@ export default function LevelSelect() {
         });
 
         const data = await res.json().catch(() => null);
+
         if (!res.ok) {
           console.error(
             "[HOST] Failed to mark round start:",
@@ -272,6 +310,30 @@ export default function LevelSelect() {
 
   return (
     <div style={page}>
+      <style>
+        {`
+          @keyframes pack-pop {
+            0% {
+              transform: translate(-50%, -50%) scale(0.4) rotate(0deg);
+              opacity: 0;
+            }
+            20% {
+              opacity: 1;
+            }
+            100% {
+              transform: translate(var(--x), var(--y)) scale(1.25) rotate(var(--r));
+              opacity: 0;
+            }
+          }
+
+          @keyframes tab-press {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.98); }
+            100% { transform: scale(1); }
+          }
+        `}
+      </style>
+
       <div style={topGlow} />
       <div style={sideGlow} />
 
@@ -299,6 +361,7 @@ export default function LevelSelect() {
             >
               Choose game order
             </h1>
+
             <p
               style={{
                 ...subtitle,
@@ -319,6 +382,7 @@ export default function LevelSelect() {
               <div style={heroMetaPill}>
                 Session <strong>{code || "N/A"}</strong>
               </div>
+
               <div
                 style={{
                   ...heroMetaPill,
@@ -327,10 +391,12 @@ export default function LevelSelect() {
               >
                 {isHost ? "Host controls active" : "Player view only"}
               </div>
+
               <div style={heroMetaPill}>
                 Round <strong>{Math.min(round, MAX_ROUNDS)}</strong> of{" "}
                 <strong>{MAX_ROUNDS}</strong>
               </div>
+
               {isAdmin && <div style={adminPill}>Admin game locks enabled</div>}
             </div>
           </div>
@@ -345,18 +411,22 @@ export default function LevelSelect() {
               <span style={sessionLabel}>Players in lobby</span>
               <span style={sessionValue}>{players?.length || 0}</span>
             </div>
+
             <div style={sessionRow}>
               <span style={sessionLabel}>Chosen rounds</span>
               <span style={sessionValue}>
                 {localSelections.length}/{MAX_ROUNDS}
               </span>
             </div>
+
             <div style={sessionRow}>
               <span style={sessionLabel}>Current pack</span>
               <span style={sessionValue}>
-                {GAME_PACKS.find((p) => p.id === activePack)?.name || activePack}
+                {GAME_PACKS.find((p) => p.id === activePack)?.name ||
+                  activePack}
               </span>
             </div>
+
             <div style={sessionRow}>
               <span style={sessionLabel}>Current round slot</span>
               <span style={sessionValue}>
@@ -404,6 +474,7 @@ export default function LevelSelect() {
               <p style={panelEyebrow}>Game packs</p>
               <h2 style={packsTitle}>Choose a pack</h2>
             </div>
+
             <div style={miniStat}>{GAME_PACKS.length} packs available</div>
           </div>
 
@@ -418,12 +489,54 @@ export default function LevelSelect() {
             {GAME_PACKS.map((pack) => (
               <button
                 key={pack.id}
-                onClick={() => setActivePack(pack.id)}
+                onClick={() => {
+                  setActivePack(pack.id);
+                  triggerPackBurst(pack.id);
+                }}
                 style={{
                   ...packButton,
                   ...(activePack === pack.id ? packButtonActive : null),
+                  animation:
+                    packBurst?.packId === pack.id
+                      ? "tab-press 0.22s ease"
+                      : "none",
                 }}
               >
+                {packBurst?.packId === pack.id && (
+                  <div style={burstLayer}>
+                    {packBurst.icons.map((icon, index) => {
+                      const positions = [
+                        ["-70px", "-42px", "-28deg"],
+                        ["64px", "-48px", "24deg"],
+                        ["-55px", "36px", "18deg"],
+                        ["72px", "38px", "-18deg"],
+                        ["0px", "-72px", "32deg"],
+                      ];
+
+                      const [x, y, r] = positions[index] || [
+                        "0px",
+                        "-60px",
+                        "0deg",
+                      ];
+
+                      return (
+                        <span
+                          key={`${packBurst.id}-${index}`}
+                          style={{
+                            ...burstIcon,
+                            "--x": x,
+                            "--y": y,
+                            "--r": r,
+                            animationDelay: `${index * 35}ms`,
+                          }}
+                        >
+                          {icon}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div style={packName}>{pack.name}</div>
                 <div style={packDesc}>{pack.description}</div>
               </button>
@@ -447,6 +560,7 @@ export default function LevelSelect() {
                 <p style={panelEyebrow}>Catalogue</p>
                 <h2 style={panelTitle}>Games in this pack</h2>
               </div>
+
               <div style={miniStat}>{visibleGames.length} in pack</div>
             </div>
 
@@ -492,7 +606,11 @@ export default function LevelSelect() {
                         ...gameCard,
                         ...(chosenEntry ? chosenCard : {}),
                         ...(locked ? lockedGameCard : {}),
-                        opacity: locked ? 0.42 : disabled && !chosenEntry ? 0.72 : 1,
+                        opacity: locked
+                          ? 0.42
+                          : disabled && !chosenEntry
+                          ? 0.72
+                          : 1,
                         cursor: disabled ? "not-allowed" : "pointer",
                         filter: locked ? "grayscale(1)" : "none",
                       }}
@@ -573,10 +691,12 @@ export default function LevelSelect() {
                     }}
                   >
                     <div style={roundNumber}>{i + 1}</div>
+
                     <div style={{ flex: 1 }}>
                       <div style={roundName}>
                         {entry ? entry.level.name : "Not chosen yet"}
                       </div>
+
                       <div style={roundMeta}>
                         {entry
                           ? `${entry.level.pack || "Game pack"} selected`
@@ -825,6 +945,8 @@ const packsRow = {
 };
 
 const packButton = {
+  position: "relative",
+  overflow: "hidden",
   textAlign: "left",
   padding: 16,
   borderRadius: 20,
@@ -841,13 +963,34 @@ const packButtonActive = {
   boxShadow: "0 0 0 1px rgba(244,196,49,0.12)",
 };
 
+const burstLayer = {
+  position: "absolute",
+  inset: 0,
+  pointerEvents: "none",
+  overflow: "hidden",
+  zIndex: 3,
+};
+
+const burstIcon = {
+  position: "absolute",
+  left: "50%",
+  top: "50%",
+  fontSize: 24,
+  animation: "pack-pop 0.75s ease-out forwards",
+  filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.35))",
+};
+
 const packName = {
+  position: "relative",
+  zIndex: 4,
   fontWeight: 800,
   fontSize: 20,
   marginBottom: 6,
 };
 
 const packDesc = {
+  position: "relative",
+  zIndex: 4,
   fontSize: 14,
   opacity: 0.8,
   lineHeight: 1.5,

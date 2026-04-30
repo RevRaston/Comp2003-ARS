@@ -38,6 +38,7 @@ export default function SplitSetup() {
   const [itemCost, setItemCost] = useState("");
   const [localItems, setLocalItems] = useState(sessionItems || []);
 
+  const [showReceiptScan, setShowReceiptScan] = useState(false);
   const [receiptFile, setReceiptFile] = useState(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
@@ -274,9 +275,8 @@ export default function SplitSetup() {
             </h1>
 
             <p style={introText}>
-              You no longer need to set up splitting before the games begin.
-              This page is optional and can be used to prepare a bill draft in
-              advance.
+              This page is optional. You can prepare a bill draft now or skip it
+              and sort payment after the game.
             </p>
 
             <div style={profileCard}>
@@ -287,18 +287,20 @@ export default function SplitSetup() {
               <div style={{ minWidth: 0 }}>
                 <div style={profileLabel}>Session host</div>
                 <div style={profileName}>{displayName}</div>
-                <div style={profileSubtext}>
-                  Session code: {sessionCode || "Not available"}
+
+                <div style={sessionCodeWrap}>
+                  <span style={sessionCodeLabel}>Session code</span>
+                  <div style={sessionCodeBox}>{sessionCode || "------"}</div>
                 </div>
               </div>
             </div>
 
             <div style={tipsCard}>
-              <h3 style={smallCardTitle}>How this works now</h3>
+              <h3 style={smallCardTitle}>How this works</h3>
               <ul style={tipsList}>
                 <li>Games can start without payment setup</li>
                 <li>Final splitting happens on the Results page</li>
-                <li>You can scan a receipt now or later</li>
+                <li>Receipt scanning is optional</li>
               </ul>
             </div>
 
@@ -338,8 +340,8 @@ export default function SplitSetup() {
               <p style={sectionEyebrow}>Draft mode</p>
               <h2 style={cardHeading}>Choose a draft type</h2>
               <p style={helperIntro}>
-                This does not lock the session into one split method anymore.
-                It just saves a starting point that can be edited later.
+                This only saves a starting point. You can still edit the final
+                split later.
               </p>
 
               <div style={modeGrid}>
@@ -352,8 +354,7 @@ export default function SplitSetup() {
                 >
                   <h3 style={modeTitle}>Specific Items / Receipt</h3>
                   <p style={modeText}>
-                    Add or scan food and drink items now if you already have the
-                    bill.
+                    Add food and drink items now if you already have the bill.
                   </p>
                 </button>
 
@@ -388,64 +389,73 @@ export default function SplitSetup() {
             {localMode === "items" && (
               <>
                 <div style={contentCard}>
-                  <p style={sectionEyebrow}>Receipt scan</p>
-                  <h2 style={cardHeading}>Scan a receipt draft</h2>
-                  <p style={helperIntro}>
-                    Upload a photo of the receipt and RollPlay will try to pull
-                    out item names and prices for you.
-                  </p>
-
-                  <div
-                    style={{
-                      ...uploadRow,
-                      flexDirection: isPhone ? "column" : "row",
-                    }}
+                  <button
+                    onClick={() => setShowReceiptScan((prev) => !prev)}
+                    style={collapseHeader}
+                    type="button"
                   >
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        setReceiptFile(e.target.files?.[0] || null);
-                        setScanError("");
-                        setScanInfo("");
-                      }}
-                      style={fileInputStyle}
-                    />
+                    <span>Add receipt scan optional</span>
+                    <span style={collapseIcon}>
+                      {showReceiptScan ? "−" : "+"}
+                    </span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={handleScanReceipt}
-                      disabled={scanLoading}
-                      style={{
-                        ...primaryButton,
-                        width: isPhone ? "100%" : "auto",
-                      }}
-                    >
-                      {scanLoading ? "Scanning..." : "Scan Receipt"}
-                    </button>
-                  </div>
+                  {showReceiptScan && (
+                    <>
+                      <p style={helperIntro}>
+                        Upload a photo and RollPlay will try to pull out item
+                        names and prices for you.
+                      </p>
 
-                  {receiptFile && (
-                    <p style={mutedInfoText}>
-                      Selected file: {receiptFile.name}
-                    </p>
+                      <div
+                        style={{
+                          ...uploadRow,
+                          flexDirection: isPhone ? "column" : "row",
+                        }}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            setReceiptFile(e.target.files?.[0] || null);
+                            setScanError("");
+                            setScanInfo("");
+                          }}
+                          style={fileInputStyle}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={handleScanReceipt}
+                          disabled={scanLoading}
+                          style={{
+                            ...primaryButton,
+                            width: isPhone ? "100%" : "auto",
+                            opacity: scanLoading ? 0.75 : 1,
+                          }}
+                        >
+                          {scanLoading ? "Scanning..." : "Scan Receipt"}
+                        </button>
+                      </div>
+
+                      {receiptFile && (
+                        <p style={mutedInfoText}>
+                          Selected file: {receiptFile.name}
+                        </p>
+                      )}
+
+                      {scanInfo ? <p style={successText}>{scanInfo}</p> : null}
+                      {scanError ? <p style={errorText}>{scanError}</p> : null}
+                    </>
                   )}
-
-                  {scanInfo ? (
-                    <p style={successText}>{scanInfo}</p>
-                  ) : null}
-
-                  {scanError ? (
-                    <p style={errorText}>{scanError}</p>
-                  ) : null}
                 </div>
 
                 <div style={contentCard}>
                   <p style={sectionEyebrow}>Draft items</p>
                   <h2 style={cardHeading}>Add or edit items</h2>
                   <p style={helperIntro}>
-                    You can manually add items, edit scanned ones, or leave the
-                    full adjustment for the Results page.
+                    Manually add items now, or leave this empty and sort the
+                    final split later.
                   </p>
 
                   <div
@@ -567,8 +577,8 @@ export default function SplitSetup() {
               <p style={sectionEyebrow}>Next step</p>
               <h2 style={cardHeading}>Continue to game order</h2>
               <p style={helperIntro}>
-                Save this as a draft or skip it entirely and configure the final
-                split after the session.
+                Save this draft or skip it and configure the final split after
+                the session.
               </p>
 
               <div
@@ -829,10 +839,29 @@ const profileName = {
   textOverflow: "ellipsis",
 };
 
-const profileSubtext = {
-  fontSize: 14,
-  opacity: 0.76,
-  marginTop: 4,
+const sessionCodeWrap = {
+  marginTop: 10,
+};
+
+const sessionCodeLabel = {
+  fontSize: 12,
+  opacity: 0.65,
+  display: "block",
+  marginBottom: 6,
+  letterSpacing: 1,
+  textTransform: "uppercase",
+};
+
+const sessionCodeBox = {
+  display: "inline-block",
+  padding: "10px 14px",
+  borderRadius: 12,
+  background: "rgba(244,196,49,0.12)",
+  border: "1px solid rgba(244,196,49,0.35)",
+  fontSize: 18,
+  fontWeight: 900,
+  letterSpacing: 2,
+  color: "#f4c431",
 };
 
 const tipsCard = {
@@ -914,6 +943,37 @@ const modeText = {
   opacity: 0.82,
   lineHeight: 1.55,
   fontSize: 15,
+};
+
+const collapseHeader = {
+  width: "100%",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 16,
+  background: "transparent",
+  border: "none",
+  color: "white",
+  fontSize: 22,
+  fontWeight: 800,
+  cursor: "pointer",
+  padding: 0,
+  textAlign: "left",
+};
+
+const collapseIcon = {
+  width: 34,
+  height: 34,
+  borderRadius: "50%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "#f4c431",
+  fontSize: 24,
+  lineHeight: 1,
+  flexShrink: 0,
 };
 
 const uploadRow = {
