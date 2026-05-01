@@ -73,6 +73,7 @@ export default function Profile() {
 
   const [creditInput, setCreditInput] = useState("");
   const [creditsExpanded, setCreditsExpanded] = useState(false);
+  const [walletAdded, setWalletAdded] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [savingCard, setSavingCard] = useState(false);
@@ -111,6 +112,40 @@ export default function Profile() {
       Number(profile.creditsBalance ?? profile.credits_balance ?? 0)
     );
   }, [profile]);
+
+  function buildUpdatedProfile(data, overrides = {}) {
+    const nextTier = data?.tier || profile.tier || "player";
+    const nextCredits = Number(
+      data?.credits_balance ??
+        overrides.creditsBalance ??
+        profile.creditsBalance ??
+        profile.credits_balance ??
+        0
+    );
+
+    return {
+      ...profile,
+      displayName: data?.display_name || displayName.trim(),
+      display_name: data?.display_name || displayName.trim(),
+      avatarJson:
+        toAvatarString(data?.avatar_json) ||
+        toAvatarString(overrides.avatarJson) ||
+        toAvatarString(avatarJson),
+      avatar_json:
+        data?.avatar_json ??
+        parseAvatarSafely(overrides.avatarJson) ??
+        parseAvatarSafely(avatarJson),
+      cardBrand: data?.card_brand || overrides.cardBrand || cardBrand || null,
+      card_brand: data?.card_brand || overrides.cardBrand || cardBrand || null,
+      cardLast4: data?.card_last4 || overrides.cardLast4 || cardLast4 || null,
+      card_last4: data?.card_last4 || overrides.cardLast4 || cardLast4 || null,
+      creditsBalance: nextCredits,
+      credits_balance: nextCredits,
+      tier: nextTier,
+      isAdmin,
+      canHost: nextTier === "host" || isAdmin,
+    };
+  }
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -247,40 +282,6 @@ export default function Profile() {
     const brand = brands[Math.floor(Math.random() * brands.length)];
     const last4 = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
     return { brand, last4 };
-  }
-
-  function buildUpdatedProfile(data, overrides = {}) {
-    const nextTier = data?.tier || profile.tier || "player";
-    const nextCredits = Number(
-      data?.credits_balance ??
-        overrides.creditsBalance ??
-        profile.creditsBalance ??
-        profile.credits_balance ??
-        0
-    );
-
-    return {
-      ...profile,
-      displayName: data?.display_name || displayName.trim(),
-      display_name: data?.display_name || displayName.trim(),
-      avatarJson:
-        toAvatarString(data?.avatar_json) ||
-        toAvatarString(overrides.avatarJson) ||
-        toAvatarString(avatarJson),
-      avatar_json:
-        data?.avatar_json ??
-        parseAvatarSafely(overrides.avatarJson) ??
-        parseAvatarSafely(avatarJson),
-      cardBrand: data?.card_brand || overrides.cardBrand || cardBrand || null,
-      card_brand: data?.card_brand || overrides.cardBrand || cardBrand || null,
-      cardLast4: data?.card_last4 || overrides.cardLast4 || cardLast4 || null,
-      card_last4: data?.card_last4 || overrides.cardLast4 || cardLast4 || null,
-      creditsBalance: nextCredits,
-      credits_balance: nextCredits,
-      tier: nextTier,
-      isAdmin,
-      canHost: nextTier === "host" || isAdmin,
-    };
   }
 
   async function handleSaveProfile() {
@@ -617,16 +618,6 @@ export default function Profile() {
                 <div style={statusValue}>Demo Credits</div>
               </div>
             </div>
-
-            <div style={tipsCard}>
-              <h3 style={smallCardTitle}>What this page controls</h3>
-              <ul style={tipsList}>
-                <li>Your public display name</li>
-                <li>Your avatar and appearance</li>
-                <li>Your demo card</li>
-                <li>Your credits balance</li>
-              </ul>
-            </div>
           </div>
 
           <div style={mainColumn}>
@@ -738,6 +729,36 @@ export default function Profile() {
                 1 credit = £1. Credits are demo-only for testing RollPay payment
                 flows.
               </p>
+
+              <div style={walletCard}>
+                <div style={walletTopRow}>
+                  <span style={walletBrand}>RollPay</span>
+                  <span style={walletBadge}>Demo Wallet</span>
+                </div>
+
+                <div style={walletBalance}>£{creditsBalance}</div>
+
+                <div style={walletSubtext}>{shownName} · 1 credit = £1</div>
+
+                <div style={walletDivider} />
+
+                <div style={walletBottomRow}>
+                  <span>Credits</span>
+                  <strong>{creditsBalance}</strong>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                style={primaryButton}
+                onClick={() => setWalletAdded(true)}
+              >
+                Add to Apple Wallet Demo
+              </button>
+
+              {walletAdded && (
+                <div style={walletToast}>Added to Apple Wallet demo ✅</div>
+              )}
 
               <div style={summaryPanel}>
                 <div style={summaryRow}>
@@ -1257,28 +1278,6 @@ const statusValue = {
   lineHeight: 1.4,
 };
 
-const tipsCard = {
-  marginTop: 20,
-  padding: 20,
-  borderRadius: 22,
-  background:
-    "linear-gradient(180deg, rgba(244,196,49,0.12), rgba(255,255,255,0.03))",
-  border: "1px solid rgba(255,255,255,0.1)",
-};
-
-const smallCardTitle = {
-  margin: "0 0 12px",
-  fontSize: 18,
-};
-
-const tipsList = {
-  margin: 0,
-  paddingLeft: 20,
-  lineHeight: 1.9,
-  fontSize: 15,
-  opacity: 0.9,
-};
-
 const fieldBlock = {
   marginBottom: 8,
 };
@@ -1323,7 +1322,7 @@ const infoText = {
 };
 
 const summaryPanel = {
-  marginTop: 8,
+  marginTop: 18,
   marginBottom: 22,
   padding: 18,
   borderRadius: 20,
@@ -1374,6 +1373,75 @@ const creditButtonSub = {
   opacity: 0.8,
   textTransform: "uppercase",
   letterSpacing: 1,
+};
+
+const walletCard = {
+  marginTop: 18,
+  marginBottom: 18,
+  padding: 22,
+  borderRadius: 28,
+  background:
+    "linear-gradient(145deg, rgba(12,12,18,0.96), rgba(42,34,18,0.96))",
+  border: "1px solid rgba(244,196,49,0.28)",
+  boxShadow: "0 22px 55px rgba(0,0,0,0.35)",
+};
+
+const walletTopRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const walletBrand = {
+  fontSize: 22,
+  fontWeight: 900,
+};
+
+const walletBadge = {
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(244,196,49,0.14)",
+  color: "#f6cf64",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const walletBalance = {
+  marginTop: 24,
+  fontSize: 54,
+  fontWeight: 950,
+  lineHeight: 1,
+  color: "#f4c431",
+};
+
+const walletSubtext = {
+  marginTop: 10,
+  opacity: 0.82,
+  fontSize: 15,
+};
+
+const walletDivider = {
+  height: 1,
+  background: "rgba(255,255,255,0.12)",
+  margin: "22px 0 14px",
+};
+
+const walletBottomRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  fontSize: 15,
+};
+
+const walletToast = {
+  marginTop: 12,
+  padding: 14,
+  borderRadius: 16,
+  background: "rgba(155,227,155,0.12)",
+  border: "1px solid rgba(155,227,155,0.28)",
+  color: "#9BE39B",
+  fontWeight: 800,
 };
 
 const buttonGroup = {
