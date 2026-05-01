@@ -341,36 +341,6 @@ export default function DartsGame({
     syncUiFromState();
   }
 
-  function handleNextPlayer() {
-    if (!isHost) return;
-
-    const s = stateRef.current;
-    if (!s.finished || s.roundFinished) return;
-
-    const nextIndex = s.currentPlayerIndex + 1;
-
-    if (nextIndex >= playerNames.length) {
-      s.roundFinished = true;
-      s.msg = "Round complete! All players have taken a turn.";
-      syncUiFromState();
-
-      if (
-        !announcedRef.current &&
-        typeof onRoundCompleteRef.current === "function"
-      ) {
-        announcedRef.current = true;
-        onRoundCompleteRef.current({
-          winnerKey: null,
-          scores: s.turnScores,
-        });
-      }
-      return;
-    }
-
-    s.currentPlayerIndex = nextIndex;
-    resetTurnStateForCurrentPlayer();
-  }
-
   useEffect(() => {
     if (!turnFinished || roundFinished) return;
 
@@ -399,7 +369,33 @@ export default function DartsGame({
         setTurnChanging(false);
 
         if (isHost) {
-          handleNextPlayer();
+          const latest = stateRef.current;
+
+          if (!latest.finished || latest.roundFinished) return;
+
+          const nextPlayerIndex = latest.currentPlayerIndex + 1;
+
+          if (nextPlayerIndex >= playerNames.length) {
+            latest.roundFinished = true;
+            latest.msg = "Round complete! All players have taken a turn.";
+            syncUiFromState();
+
+            if (
+              !announcedRef.current &&
+              typeof onRoundCompleteRef.current === "function"
+            ) {
+              announcedRef.current = true;
+              onRoundCompleteRef.current({
+                winnerKey: null,
+                scores: latest.turnScores,
+              });
+            }
+
+            return;
+          }
+
+          latest.currentPlayerIndex = nextPlayerIndex;
+          resetTurnStateForCurrentPlayer();
         }
       }
     }, 1000);
@@ -410,7 +406,7 @@ export default function DartsGame({
         turnTransitionRef.current = null;
       }
     };
-  }, [turnFinished, roundFinished, currentPlayerIndex, isHost]);
+  }, [turnFinished, roundFinished, isHost, playerNames.length]);
 
   useEffect(() => {
     if (runningRef.current) return;
@@ -1120,7 +1116,9 @@ export default function DartsGame({
 
             <div className="darts-turn-overlay-text">
               {currentPlayerIndex < playerNames.length - 1
-                ? `${playerNames[currentPlayerIndex + 1] || "Next player"} getting ready...`
+                ? `${
+                    playerNames[currentPlayerIndex + 1] || "Next player"
+                  } getting ready...`
                 : "Calculating final scores..."}
             </div>
           </div>
