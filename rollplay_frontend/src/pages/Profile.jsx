@@ -71,10 +71,14 @@ export default function Profile() {
     Number(profile?.creditsBalance ?? profile?.credits_balance ?? 0)
   );
 
+  const [creditInput, setCreditInput] = useState("");
+  const [creditsExpanded, setCreditsExpanded] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [savingCard, setSavingCard] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [buyingCredits, setBuyingCredits] = useState(false);
+  const [loadingCredits, setLoadingCredits] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [editingAvatar, setEditingAvatar] = useState(false);
@@ -107,6 +111,46 @@ export default function Profile() {
       Number(profile.creditsBalance ?? profile.credits_balance ?? 0)
     );
   }, [profile]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    let cancelled = false;
+
+    async function loadFreshProfileBalance() {
+      try {
+        setLoadingCredits(true);
+
+        const { data, error: profileError } = await supabase
+          .from("profiles")
+          .select(
+            "id, display_name, avatar_json, card_brand, card_last4, credits_balance, tier"
+          )
+          .eq("id", profile.id)
+          .single();
+
+        if (profileError) throw profileError;
+        if (cancelled || !data) return;
+
+        const updatedProfile = buildUpdatedProfile(data);
+        setProfile(updatedProfile);
+        setCreditsBalance(Number(data.credits_balance ?? 0));
+        setCardBrand(data.card_brand || "");
+        setCardLast4(data.card_last4 || "");
+      } catch (err) {
+        console.error("Failed to load fresh profile balance:", err);
+      } finally {
+        if (!cancelled) setLoadingCredits(false);
+      }
+    }
+
+    loadFreshProfileBalance();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   const isPhone = screenWidth <= 640;
   const isLaptop = screenWidth <= 1100;
@@ -315,8 +359,20 @@ export default function Profile() {
   }
 
   async function handleBuyCredits(amount) {
+    const cleanAmount = Number(amount);
+
     setError("");
     setSuccessMessage("");
+
+    if (!cleanAmount || cleanAmount <= 0) {
+      setError("Enter a credit amount first.");
+      return;
+    }
+
+    if (!Number.isInteger(cleanAmount)) {
+      setError("Credits must be a whole number.");
+      return;
+    }
 
     if (!hasDemoCard) {
       setError("Generate a demo card before buying credits.");
@@ -338,7 +394,7 @@ export default function Profile() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ amount: cleanAmount }),
       });
 
       const data = await res.json().catch(() => null);
@@ -353,9 +409,10 @@ export default function Profile() {
 
       setProfile(updatedProfile);
       setCreditsBalance(Number(data.creditsBalance || 0));
+      setCreditInput("");
 
       setSuccessMessage(
-        `Purchased ${amount} credits. Receipt email sent to your account email.`
+        `Added ${cleanAmount} credits (£${cleanAmount}) to your demo balance.`
       );
     } catch (err) {
       console.error(err);
@@ -433,6 +490,9 @@ export default function Profile() {
     setProfile(null);
     navigate("/login");
   }
+
+  const quickCreditAmounts = [5, 10, 20, 50, 100];
+  const customCreditAmount = Number(creditInput || 0);
 
   return (
     <div style={page}>
@@ -540,7 +600,9 @@ export default function Profile() {
 
               <div style={statusCard}>
                 <div style={statusLabel}>Credits</div>
-                <div style={statusValue}>{creditsBalance}</div>
+                <div style={statusValue}>
+                  {loadingCredits ? "Loading..." : creditsBalance}
+                </div>
               </div>
 
               <div style={statusCard}>
@@ -657,57 +719,129 @@ export default function Profile() {
             </div>
 
             <div style={contentCard}>
-              <p style={sectionEyebrow}>Credits</p>
-              <h2 style={cardHeading}>Buy demo credits</h2>
+              <button
+                type="button"
+                onClick={() => setCreditsExpanded((v) => !v)}
+                style={collapseHeader}
+              >
+                <span>
+                  <span style={sectionEyebrowInline}>Credits</span>
+                  <span style={collapseTitle}>Demo balance</span>
+                </span>
+
+                <span style={collapseRight}>
+                  {creditsBalance} credits {creditsExpanded ? "−" : "+"}
+                </span>
+              </button>
 
               <p style={infoText}>
-                Credits are the fake currency used for UAT payment flows. A demo
-                card is required before buying credits.
+                1 credit = £1. Credits are demo-only for testing RollPay payment
+                flows.
               </p>
 
               <div style={summaryPanel}>
                 <div style={summaryRow}>
                   <span style={summaryLabel}>Current balance</span>
-                  <strong style={summaryValue}>{creditsBalance} credits</strong>
+                  <strong style={summaryValue}>
+                    {loadingCredits
+                      ? "Loading..."
+                      : `${creditsBalance} credits (£${creditsBalance})`}
+                  </strong>
                 </div>
 
                 <div style={summaryRow}>
                   <span style={summaryLabel}>Payment card</span>
                   <strong style={summaryValue}>
-                    {hasDemoCard ? `${cardBrand} • **** ${cardLast4}` : "Required"}
+                    {hasDemoCard
+                      ? `${cardBrand} • **** ${cardLast4}`
+                      : "Required"}
                   </strong>
                 </div>
               </div>
 
-              <div
-                style={{
-                  ...creditGrid,
-                  gridTemplateColumns: isPhone
-                    ? "1fr"
-                    : "repeat(4, minmax(0, 1fr))",
-                }}
-              >
-                {[100, 250, 500, 1000].map((amount) => (
-                  <button
-                    key={amount}
-                    type="button"
-                    disabled={buyingCredits || !hasDemoCard}
-                    onClick={() => handleBuyCredits(amount)}
+              {creditsExpanded && (
+                <>
+                  <div style={fieldBlock}>
+                    <label style={labelStyle}>Add custom amount</label>
+                    <p style={helperText}>
+                      Enter how many credits you want to add. For now, this is a
+                      demo top-up.
+                    </p>
+
+                    <div
+                      style={{
+                        ...creditInputRow,
+                        flexDirection: isPhone ? "column" : "row",
+                      }}
+                    >
+                      <input
+                        style={inputStyle}
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={creditInput}
+                        onChange={(e) => setCreditInput(e.target.value)}
+                        placeholder="Enter amount, e.g. 15"
+                      />
+
+                      <button
+                        type="button"
+                        disabled={
+                          buyingCredits ||
+                          !hasDemoCard ||
+                          !customCreditAmount ||
+                          customCreditAmount <= 0
+                        }
+                        onClick={() => handleBuyCredits(customCreditAmount)}
+                        style={{
+                          ...primaryButton,
+                          width: isPhone ? "100%" : "auto",
+                          ...(buyingCredits ||
+                          !hasDemoCard ||
+                          !customCreditAmount ||
+                          customCreditAmount <= 0
+                            ? disabledButton
+                            : null),
+                        }}
+                      >
+                        {buyingCredits ? "Adding..." : "Add Credits"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
                     style={{
-                      ...creditButton,
-                      ...(buyingCredits || !hasDemoCard ? disabledButton : null),
+                      ...creditGrid,
+                      gridTemplateColumns: isPhone
+                        ? "repeat(2, minmax(0, 1fr))"
+                        : "repeat(5, minmax(0, 1fr))",
                     }}
                   >
-                    +{amount}
-                    <span style={creditButtonSub}>credits</span>
-                  </button>
-                ))}
-              </div>
+                    {quickCreditAmounts.map((amount) => (
+                      <button
+                        key={amount}
+                        type="button"
+                        disabled={buyingCredits || !hasDemoCard}
+                        onClick={() => handleBuyCredits(amount)}
+                        style={{
+                          ...creditButton,
+                          ...(buyingCredits || !hasDemoCard
+                            ? disabledButton
+                            : null),
+                        }}
+                      >
+                        +£{amount}
+                        <span style={creditButtonSub}>{amount} credits</span>
+                      </button>
+                    ))}
+                  </div>
 
-              {!hasDemoCard && (
-                <p style={warningText}>
-                  Generate a demo card below before buying credits.
-                </p>
+                  {!hasDemoCard && (
+                    <p style={warningText}>
+                      Generate a demo card below before adding credits.
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -988,6 +1122,16 @@ const sectionEyebrow = {
   fontWeight: 700,
 };
 
+const sectionEyebrowInline = {
+  display: "block",
+  color: "#f6cf64",
+  textTransform: "uppercase",
+  letterSpacing: 1.5,
+  fontSize: 13,
+  fontWeight: 700,
+  marginBottom: 8,
+};
+
 const pageTitle = {
   margin: 0,
   lineHeight: 0.98,
@@ -998,6 +1142,39 @@ const cardHeading = {
   margin: "0 0 16px",
   fontSize: 30,
   lineHeight: 1.05,
+};
+
+const collapseTitle = {
+  display: "block",
+  fontSize: 30,
+  lineHeight: 1.05,
+  fontWeight: 900,
+};
+
+const collapseHeader = {
+  width: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 16,
+  background: "transparent",
+  border: "none",
+  color: "white",
+  textAlign: "left",
+  padding: 0,
+  cursor: "pointer",
+  marginBottom: 16,
+};
+
+const collapseRight = {
+  padding: "9px 13px",
+  borderRadius: 999,
+  background: "rgba(244,196,49,0.14)",
+  border: "1px solid rgba(244,196,49,0.28)",
+  color: "#f6cf64",
+  fontSize: 13,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
 };
 
 const introText = {
@@ -1129,6 +1306,13 @@ const inputStyle = {
   color: "white",
   fontSize: 17,
   boxSizing: "border-box",
+};
+
+const creditInputRow = {
+  display: "flex",
+  gap: 12,
+  alignItems: "stretch",
+  marginBottom: 18,
 };
 
 const infoText = {

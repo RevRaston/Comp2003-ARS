@@ -44,6 +44,7 @@ export default function HostSession({ token }) {
   }, []);
 
   const isPhone = screenWidth <= 640;
+  const isLaptop = screenWidth <= 1100;
 
   const displayName =
     profile?.displayName ||
@@ -128,7 +129,11 @@ export default function HostSession({ token }) {
           }}
         >
           <div style={logoBox}>
-            <img src="/branding/RollPay_Logo.png" alt="RollPay" style={logoImg} />
+            <img
+              src="/branding/RollPay_Logo.png"
+              alt="RollPay"
+              style={logoImg}
+            />
           </div>
           <div style={brandText}>RollPay</div>
         </div>
@@ -142,7 +147,10 @@ export default function HostSession({ token }) {
           <button style={navButton} onClick={() => navigate("/join-session")}>
             Join
           </button>
-          <button style={navButtonActive} onClick={() => navigate("/host-session")}>
+          <button
+            style={navButtonActive}
+            onClick={() => navigate("/host-session")}
+          >
             Host
           </button>
           <button style={navButton} onClick={() => navigate("/profile")}>
@@ -155,7 +163,11 @@ export default function HostSession({ token }) {
         style={{
           ...heroSection,
           minHeight: isPhone ? "auto" : "calc(100vh - 76px)",
-          padding: isPhone ? "28px 14px 40px" : "42px 20px 52px",
+          padding: isPhone
+            ? "28px 14px 40px"
+            : isLaptop
+            ? "42px 20px 52px"
+            : "64px 40px 72px",
         }}
       >
         <div style={heroGlowOne} />
@@ -164,7 +176,12 @@ export default function HostSession({ token }) {
         <div
           style={{
             ...formCard,
-            padding: isPhone ? "24px 16px" : "32px 28px",
+            maxWidth: isPhone ? 520 : isLaptop ? 560 : 760,
+            padding: isPhone
+              ? "24px 16px"
+              : isLaptop
+              ? "32px 28px"
+              : "42px 44px",
           }}
         >
           <p style={sectionEyebrow}>Host dashboard</p>
@@ -172,7 +189,7 @@ export default function HostSession({ token }) {
           <h1
             style={{
               ...pageTitle,
-              fontSize: isPhone ? 42 : 58,
+              fontSize: isPhone ? 42 : isLaptop ? 58 : 72,
             }}
           >
             Create session
@@ -201,8 +218,9 @@ export default function HostSession({ token }) {
 
           {showHelp && (
             <div style={helpBox}>
-              Create the session first. RollPay will generate a code for players.
-              Split details, receipt items, and game setup are handled after this.
+              Create the session first. RollPay will generate a code for
+              players. Split details, receipt items, and game setup are handled
+              after this.
             </div>
           )}
 
@@ -362,7 +380,6 @@ const formCard = {
   position: "relative",
   zIndex: 2,
   width: "100%",
-  maxWidth: 520,
   background: "rgba(0, 0, 0, 0.42)",
   borderRadius: 30,
   border: "1px solid rgba(255,255,255,0.1)",
