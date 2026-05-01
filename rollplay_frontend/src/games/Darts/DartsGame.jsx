@@ -125,6 +125,7 @@ export default function DartsGame({
   const handImageCacheRef = useRef({});
   const dartImageCacheRef = useRef({});
   const throwAnimUntilRef = useRef(0);
+  const turnTransitionRef = useRef(null);
 
   useEffect(() => {
     onRoundCompleteRef.current = onRoundComplete;
@@ -140,6 +141,9 @@ export default function DartsGame({
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [turnScores, setTurnScores] = useState([]);
   const [roundFinished, setRoundFinished] = useState(false);
+
+  const [turnChanging, setTurnChanging] = useState(false);
+  const [turnChangeCountdown, setTurnChangeCountdown] = useState(3);
 
   const code = sessionCode || localStorage.getItem("session_code") || "local";
   const myUserId = String(localStorage.getItem("user_id") || "");
@@ -167,12 +171,6 @@ export default function DartsGame({
 
   const activePlayer = orderedPlayers[currentPlayerIndex] || null;
   const activeThrowSet = getThrowSet(activePlayer);
-
-  console.log(
-    "throwStyle in use:",
-    safeParseAvatar(activePlayer)?.throwStyle,
-    activeThrowSet
-  );
 
   const stateRef = useRef({
     score: 0,
@@ -217,6 +215,17 @@ export default function DartsGame({
     }
 
     return cache[src];
+  }
+
+  function preloadNextPlayerAssets(nextIndex) {
+    const nextPlayer = orderedPlayers[nextIndex];
+    if (!nextPlayer) return;
+
+    const nextThrowSet = getThrowSet(nextPlayer);
+
+    getImageFromCache(handImageCacheRef.current, nextThrowSet.openSrc);
+    getImageFromCache(handImageCacheRef.current, nextThrowSet.closedSrc);
+    getImageFromCache(dartImageCacheRef.current, nextThrowSet.dartSrc);
   }
 
   function drawImageCentered(ctx, img, x, y, w, h, rotation = 0, scale = 1) {
@@ -283,6 +292,7 @@ export default function DartsGame({
     if (s.finished) return;
     if (s.dart.fired) return;
     if (s.dartsLeft <= 0) return;
+    if (turnChanging) return;
     if (myPlayerIndex !== s.currentPlayerIndex) return;
 
     if (isHost) {
@@ -362,6 +372,47 @@ export default function DartsGame({
   }
 
   useEffect(() => {
+    if (!turnFinished || roundFinished) return;
+
+    const s = stateRef.current;
+    if (!s.finished || s.roundFinished) return;
+
+    const nextIndex = s.currentPlayerIndex + 1;
+
+    setTurnChanging(true);
+    setTurnChangeCountdown(3);
+    preloadNextPlayerAssets(nextIndex);
+
+    if (turnTransitionRef.current) {
+      clearInterval(turnTransitionRef.current);
+    }
+
+    let count = 3;
+
+    turnTransitionRef.current = setInterval(() => {
+      count -= 1;
+      setTurnChangeCountdown(count);
+
+      if (count <= 0) {
+        clearInterval(turnTransitionRef.current);
+        turnTransitionRef.current = null;
+        setTurnChanging(false);
+
+        if (isHost) {
+          handleNextPlayer();
+        }
+      }
+    }, 1000);
+
+    return () => {
+      if (turnTransitionRef.current) {
+        clearInterval(turnTransitionRef.current);
+        turnTransitionRef.current = null;
+      }
+    };
+  }, [turnFinished, roundFinished, currentPlayerIndex, isHost]);
+
+  useEffect(() => {
     if (runningRef.current) return;
     runningRef.current = true;
     announcedRef.current = false;
@@ -408,6 +459,26 @@ export default function DartsGame({
 
         const payload = msg.payload;
         if (!payload) return;
+
+        const previousPlayerIndex = stateRef.current.currentPlayerIndex;
+        const incomingPlayerIndex = Number(
+          payload.currentPlayerIndex ?? previousPlayerIndex
+        );
+
+        if (
+          payload.finished &&
+          !payload.roundFinished &&
+          !stateRef.current.finished
+        ) {
+          setTurnChanging(true);
+          setTurnChangeCountdown(3);
+          preloadNextPlayerAssets(incomingPlayerIndex + 1);
+        }
+
+        if (incomingPlayerIndex !== previousPlayerIndex) {
+          setTurnChanging(false);
+          setTurnChangeCountdown(3);
+        }
 
         stateRef.current = {
           ...stateRef.current,
@@ -528,7 +599,6 @@ export default function DartsGame({
     function addStuckDart(hitX, hitY, style) {
       const offsetX = hitX - s.target.x;
       const offsetY = hitY - s.target.y;
-
       const angle = clamp((offsetX / s.target.radius) * 0.75, -0.75, 0.75);
 
       s.stuckDarts.push({
@@ -710,13 +780,11 @@ export default function DartsGame({
       if (s.dart.fired) return;
 
       const pulse = 0.12 + ((Math.sin(now / 220) + 1) / 2) * 0.1;
-
       const startX = s.dart.x;
       const startY = s.dart.y - 8;
       const endY = 118;
 
       ctx.save();
-
       ctx.strokeStyle = `rgba(255, 237, 198, ${pulse})`;
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 10]);
@@ -787,6 +855,7 @@ export default function DartsGame({
         dartImageCacheRef.current,
         `${DART_ASSET_BASE}/${d.style}_dart.png`
       );
+
       const drawn = drawImageCentered(
         ctx,
         dartImg,
@@ -811,6 +880,7 @@ export default function DartsGame({
           dartImageCacheRef.current,
           `${DART_ASSET_BASE}/${dart.style}_dart.png`
         );
+
         const drawn = drawImageCentered(
           ctx,
           dartImg,
@@ -911,46 +981,6 @@ export default function DartsGame({
       ctx.fillRect(0, 488, canvas.width, 3);
     }
 
-    function drawFallbackHand(now) {
-      const isOpenRelease = now < throwAnimUntilRef.current;
-      const anticipation = !isOpenRelease && !s.dart.fired;
-      const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
-      const scale = anticipation ? 0.985 + Math.sin(now / 140) * 0.008 : 1;
-
-      const handX = 338;
-      const handY = 472 + bob;
-
-      ctx.save();
-      ctx.translate(handX, handY);
-      ctx.scale(scale, scale);
-
-      ctx.beginPath();
-      ctx.ellipse(10, 18, 104, 36, -0.14, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.18)";
-      ctx.fill();
-
-      ctx.fillStyle = "#f2c7a5";
-
-      if (isOpenRelease) {
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 34, 22, -0.12, 0, Math.PI * 2);
-        ctx.fill();
-
-        const fingerOffsets = [-18, -5, 8, 20];
-        fingerOffsets.forEach((offset, i) => {
-          ctx.beginPath();
-          ctx.ellipse(offset, -18 - i * 1.5, 8, 18, -0.06, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      } else {
-        ctx.beginPath();
-        ctx.ellipse(0, 2, 36, 24, -0.18, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-
     function drawHandLauncher(now) {
       const isOpenRelease = now < throwAnimUntilRef.current;
       const handSrc = isOpenRelease
@@ -961,9 +991,7 @@ export default function DartsGame({
 
       const anticipation = !isOpenRelease && !s.dart.fired;
       const bob = anticipation ? Math.sin(now / 140) * 5 : 0;
-      const scale = anticipation
-        ? 0.985 + Math.sin(now / 140) * 0.008
-        : 1;
+      const scale = anticipation ? 0.985 + Math.sin(now / 140) * 0.008 : 1;
 
       const drawn = drawImageCentered(
         ctx,
@@ -976,9 +1004,6 @@ export default function DartsGame({
         scale
       );
 
-      //if (!drawn) {
-      //  drawFallbackHand(now);
-      //}
       if (!drawn) {
         ctx.save();
         ctx.fillStyle = "rgba(255, 80, 80, 0.95)";
@@ -986,7 +1011,6 @@ export default function DartsGame({
         ctx.fillText(`HAND LOAD FAIL: ${activeThrowSet.handType}`, 120, 520);
         ctx.restore();
       }
-
     }
 
     let timerInterval = null;
@@ -1081,6 +1105,28 @@ export default function DartsGame({
 
   return (
     <div className="darts-shell darts-shell--themed">
+      {turnChanging && !roundFinished && (
+        <div className="darts-turn-overlay">
+          <div className="darts-turn-overlay-card">
+            <div className="darts-turn-overlay-label">
+              {currentPlayerIndex < playerNames.length - 1
+                ? "Next player"
+                : "Finishing round"}
+            </div>
+
+            <div className="darts-turn-overlay-count">
+              {turnChangeCountdown}
+            </div>
+
+            <div className="darts-turn-overlay-text">
+              {currentPlayerIndex < playerNames.length - 1
+                ? `${playerNames[currentPlayerIndex + 1] || "Next player"} getting ready...`
+                : "Calculating final scores..."}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="darts-top-info">
         <div className="darts-info-block">
           <div className="darts-info-label">Game</div>
@@ -1121,7 +1167,10 @@ export default function DartsGame({
           onClick={fireDart}
           className="fire-btn"
           disabled={
-            turnFinished || roundFinished || myPlayerIndex !== currentPlayerIndex
+            turnFinished ||
+            roundFinished ||
+            turnChanging ||
+            myPlayerIndex !== currentPlayerIndex
           }
         >
           {myPlayerIndex === currentPlayerIndex ? "Throw Dart" : "Not your turn"}
@@ -1163,21 +1212,12 @@ export default function DartsGame({
         </div>
       </div>
 
-      {turnFinished && !roundFinished && (
+      {turnFinished && !roundFinished && !turnChanging && (
         <div className="turn-finished-panel">
           <p>
             Turn finished — {activePlayerName} scored {score}
           </p>
-
-          {isHost ? (
-            <button className="next-btn" onClick={handleNextPlayer}>
-              {currentPlayerIndex < playerNames.length - 1
-                ? "Next Player"
-                : "Finish Round"}
-            </button>
-          ) : (
-            <p className="waiting-text">Waiting for host…</p>
-          )}
+          <p className="waiting-text">Changing turn...</p>
         </div>
       )}
 

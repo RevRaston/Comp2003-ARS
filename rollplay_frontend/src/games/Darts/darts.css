@@ -243,6 +243,81 @@
   opacity: 0.8;
 }
 
+/* Turn change overlay */
+
+.darts-turn-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at center, rgba(244, 196, 49, 0.2), transparent 36%),
+    rgba(3, 4, 10, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.darts-turn-overlay-card {
+  width: min(360px, 100%);
+  padding: 28px 24px;
+  border-radius: 28px;
+  text-align: center;
+  background: rgba(8, 10, 16, 0.92);
+  border: 1px solid rgba(244, 196, 49, 0.28);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+.darts-turn-overlay-label {
+  color: #f4c431;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.darts-turn-overlay-count {
+  width: 104px;
+  height: 104px;
+  margin: 20px auto 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f4c431;
+  font-size: 54px;
+  font-weight: 900;
+  background: rgba(244, 196, 49, 0.12);
+  border: 2px solid rgba(244, 196, 49, 0.5);
+  box-shadow: 0 0 34px rgba(244, 196, 49, 0.24);
+  animation: darts-count-pop 1s ease infinite;
+}
+
+.darts-turn-overlay-text {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+@keyframes darts-count-pop {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+
+  45% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+}
+
 @media (max-width: 640px) {
   .darts-title {
     font-size: 2rem;
@@ -267,5 +342,15 @@
 
   #dartsCanvas {
     max-width: 100%;
+  }
+
+  .darts-turn-overlay-card {
+    padding: 24px 20px;
+  }
+
+  .darts-turn-overlay-count {
+    width: 92px;
+    height: 92px;
+    font-size: 48px;
   }
 }
