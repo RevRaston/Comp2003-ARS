@@ -1,8 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+const defaultWsBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "ws://localhost:3000/ws"
+    : "wss://comp2003-ars.onrender.com/ws";
+
+const WS_URL = (
+  import.meta.env.VITE_WS_URL ||
+  import.meta.env.VITE_BACKEND_WS_URL ||
+  defaultWsBase
+).replace(/\/$/, "");
 
 const SUITS = ["♠", "♥", "♦", "♣"];
 const VALS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const RED = new Set(["♥", "♦"]);
+
+function getPlayerKey(player) {
+  if (!player) return "";
+  return String(
+    player.user_id ??
+      player.userId ??
+      player.id ??
+      player.profile_id ??
+      player.profileId ??
+      player.name ??
+      ""
+  );
+}
 
 function buildDeck() {
   const deck = [];
@@ -57,34 +81,47 @@ function draw(deck) {
   };
 }
 
+function makeSafePlayers(players) {
+  const usable =
+    Array.isArray(players) && players.length > 0
+      ? players.slice(0, 4)
+      : [{ name: "Player 1" }, { name: "Player 2" }];
+
+  return usable.map((p, index) => ({
+    id: getPlayerKey(p) || `p${index + 1}`,
+    name: p.display_name || p.name || `Player ${index + 1}`,
+    balance: 1000,
+    bet: 50,
+    betConfirmed: false,
+    hand: [],
+    splitHand: [],
+    splitBet: 0,
+    splitActive: false,
+    playingSplit: false,
+    done: false,
+    result: null,
+    net: 0,
+  }));
+}
+
 export default function BlackjackGame({
+  sessionCode,
   players = [],
   isHost = false,
+  myUserId,
   onRoundComplete,
 }) {
-  const initialPlayers = useMemo(() => {
-    const usable =
-      players.length > 0
-        ? players.slice(0, 4)
-        : [{ name: "Player 1" }, { name: "Player 2" }];
+  const wsRef = useRef(null);
+  const runningRef = useRef(false);
+  const onRoundCompleteRef = useRef(onRoundComplete);
+  const announcedRef = useRef(false);
 
-    return usable.map((p, index) => ({
-      id: p.user_id || p.userId || p.id || `p${index + 1}`,
-      name: p.display_name || p.name || `Player ${index + 1}`,
-      balance: 1000,
-      bet: 50,
-      betConfirmed: false,
-      hand: [],
-      splitHand: [],
-      splitBet: 0,
-      splitActive: false,
-      playingSplit: false,
-      done: false,
-      result: null,
-      net: 0,
-    }));
-  }, [players]);
+  const code = sessionCode || localStorage.getItem("session_code") || "local";
+  const localUserId = String(myUserId || localStorage.getItem("user_id") || "");
 
+  const initialPlayers = useMemo(() => makeSafePlayers(players), [players]);
+
+  const [connLine, setConnLine] = useState("disconnected");
   const [screen, setScreen] = useState("setup");
   const [phase, setPhase] = useState("setup");
   const [deck, setDeck] = useState(buildDeck());
@@ -96,11 +133,24 @@ export default function BlackjackGame({
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    setGamePlayers(initialPlayers);
-  }, [initialPlayers]);
+    onRoundCompleteRef.current = onRoundComplete;
+  }, [onRoundComplete]);
+
+  const myPlayerIndex = useMemo(() => {
+    if (!localUserId) return -1;
+    return gamePlayers.findIndex((p) => String(p.id) === String(localUserId));
+  }, [gamePlayers, localUserId]);
 
   const currentPlayer = gamePlayers[currentPlayerIdx];
   const bettingPlayer = gamePlayers[bettingIdx];
+  const isMyBettingTurn = myPlayerIndex === bettingIdx;
+  const isMyPlayingTurn = myPlayerIndex === currentPlayerIdx;
+
+  function wsSend(obj) {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(obj));
+  }
 
   function resetRoundPlayers(basePlayers) {
     return basePlayers.map((p) => ({
@@ -118,73 +168,128 @@ export default function BlackjackGame({
     }));
   }
 
-  function startGame() {
-    const reset = resetRoundPlayers(initialPlayers);
-    setGamePlayers(reset);
-    setDeck(buildDeck());
-    setDealerHand([]);
-    setScreen("game");
-    setPhase("betting");
-    setBettingIdx(0);
-    setCurrentPlayerIdx(0);
-    setDealerHidden(true);
-    setMessage(`${reset[0]?.name || "Player 1"} — set your bet.`);
+  function buildState(overrides = {}) {
+    return {
+      screen,
+      phase,
+      deck,
+      dealerHand,
+      gamePlayers,
+      bettingIdx,
+      currentPlayerIdx,
+      dealerHidden,
+      message,
+      ...overrides,
+    };
   }
 
-  function goMenu() {
-    setScreen("setup");
-    setPhase("setup");
-    setDealerHand([]);
-    setDealerHidden(true);
-    setMessage("");
-  }
+  function applyState(payload) {
+    if (!payload) return;
 
-  function updatePlayer(index, updater) {
-    setGamePlayers((prev) =>
-      prev.map((p, i) => (i === index ? updater(p) : p))
+    setScreen(payload.screen ?? "setup");
+    setPhase(payload.phase ?? "setup");
+    setDeck(Array.isArray(payload.deck) ? payload.deck : buildDeck());
+    setDealerHand(Array.isArray(payload.dealerHand) ? payload.dealerHand : []);
+    setGamePlayers(
+      Array.isArray(payload.gamePlayers) ? payload.gamePlayers : initialPlayers
     );
+    setBettingIdx(Number(payload.bettingIdx || 0));
+    setCurrentPlayerIdx(Number(payload.currentPlayerIdx || 0));
+    setDealerHidden(payload.dealerHidden !== false);
+    setMessage(payload.message || "");
   }
 
-  function addBet(amount) {
-    if (phase !== "betting") return;
+  function broadcastState(nextState = {}) {
+    if (!isHost) return;
 
-    updatePlayer(bettingIdx, (p) => {
-      if (p.bet + amount > p.balance) {
-        setMessage("Not enough balance.");
-        return p;
-      }
-
-      return { ...p, bet: p.bet + amount };
+    wsSend({
+      type: "blackjack_state",
+      sessionCode: code,
+      payload: buildState(nextState),
     });
   }
 
-  function clearBet() {
-    if (phase !== "betting") return;
-    updatePlayer(bettingIdx, (p) => ({ ...p, bet: 0 }));
+  function setAndBroadcast(nextState) {
+    applyState(nextState);
+    setTimeout(() => broadcastState(nextState), 0);
   }
 
-  function handleDealButton() {
-    if (phase !== "betting") return;
+  function startGame() {
+    if (!isHost) return;
 
-    const p = gamePlayers[bettingIdx];
+    const reset = resetRoundPlayers(initialPlayers);
+
+    announcedRef.current = false;
+
+    setAndBroadcast({
+      screen: "game",
+      phase: "betting",
+      deck: buildDeck(),
+      dealerHand: [],
+      gamePlayers: reset,
+      bettingIdx: 0,
+      currentPlayerIdx: 0,
+      dealerHidden: true,
+      message: `${reset[0]?.name || "Player 1"} — set your bet.`,
+    });
+  }
+
+  function hostUpdateBet(playerId, action, amount = 0) {
+    if (!isHost || phase !== "betting") return;
+
+    const targetIdx = gamePlayers.findIndex((p) => String(p.id) === String(playerId));
+    if (targetIdx !== bettingIdx) return;
+
+    const updated = gamePlayers.map((p, index) => {
+      if (index !== targetIdx) return p;
+
+      if (action === "clear") {
+        return { ...p, bet: 0 };
+      }
+
+      const nextBet = p.bet + Number(amount || 0);
+      if (nextBet > p.balance) return p;
+
+      return { ...p, bet: nextBet };
+    });
+
+    setAndBroadcast({
+      gamePlayers: updated,
+      message:
+        updated[targetIdx].bet > updated[targetIdx].balance
+          ? "Not enough balance."
+          : `${updated[targetIdx].name} — set your bet.`,
+    });
+  }
+
+  function hostConfirmBet(playerId) {
+    if (!isHost || phase !== "betting") return;
+
+    const targetIdx = gamePlayers.findIndex((p) => String(p.id) === String(playerId));
+    if (targetIdx !== bettingIdx) return;
+
+    const p = gamePlayers[targetIdx];
+
     if (!p || p.bet <= 0) {
-      setMessage("Bet must be more than 0.");
+      setAndBroadcast({ message: "Bet must be more than 0." });
       return;
     }
 
     if (p.bet > p.balance) {
-      setMessage("Not enough balance.");
+      setAndBroadcast({ message: "Not enough balance." });
       return;
     }
 
     const nextPlayers = gamePlayers.map((player, index) =>
-      index === bettingIdx ? { ...player, betConfirmed: true } : player
+      index === targetIdx ? { ...player, betConfirmed: true } : player
     );
 
-    if (bettingIdx < gamePlayers.length - 1) {
-      setGamePlayers(nextPlayers);
-      setBettingIdx((v) => v + 1);
-      setMessage(`${nextPlayers[bettingIdx + 1].name} — set your bet.`);
+    if (targetIdx < gamePlayers.length - 1) {
+      setAndBroadcast({
+        gamePlayers: nextPlayers,
+        bettingIdx: targetIdx + 1,
+        message: `${nextPlayers[targetIdx + 1].name} — set your bet.`,
+      });
       return;
     }
 
@@ -192,6 +297,8 @@ export default function BlackjackGame({
   }
 
   function dealAll(playersReady) {
+    if (!isHost) return;
+
     let d = [...deck];
 
     const dealtPlayers = playersReady.map((p) => {
@@ -215,102 +322,152 @@ export default function BlackjackGame({
     const dealerSecond = draw(d);
     d = dealerSecond.deck;
 
-    setDeck(d);
-    setGamePlayers(dealtPlayers);
-    setDealerHand([dealerFirst.card, dealerSecond.card].filter(Boolean));
-    setDealerHidden(true);
-    setPhase("playing");
-    setCurrentPlayerIdx(0);
-    setMessage("");
+    const nextState = {
+      screen: "game",
+      phase: "playing",
+      deck: d,
+      dealerHand: [dealerFirst.card, dealerSecond.card].filter(Boolean),
+      gamePlayers: dealtPlayers,
+      bettingIdx,
+      currentPlayerIdx: 0,
+      dealerHidden: true,
+      message: `${dealtPlayers[0]?.name || "Player 1"}'s turn.`,
+    };
 
-    setTimeout(() => startPlayerTurn(0, dealtPlayers), 100);
+    setAndBroadcast(nextState);
+
+    setTimeout(() => {
+      const firstPlayer = dealtPlayers[0];
+      if (firstPlayer && score(firstPlayer.hand) === 21 && firstPlayer.hand.length === 2) {
+        handleNaturalBlackjack(0, dealtPlayers, nextState.dealerHand, d);
+      }
+    }, 250);
   }
 
-  function startPlayerTurn(index, sourcePlayers = gamePlayers) {
+  function handleNaturalBlackjack(index, sourcePlayers, sourceDealerHand, sourceDeck) {
+    if (!isHost) return;
+
     const p = sourcePlayers[index];
     if (!p) return;
 
-    setCurrentPlayerIdx(index);
+    const updated = sourcePlayers.map((player, i) =>
+      i === index ? { ...player, done: true } : player
+    );
 
-    if (score(p.hand) === 21 && p.hand.length === 2) {
-      setMessage(`${p.name} has Blackjack.`);
-      const updated = sourcePlayers.map((player, i) =>
-        i === index ? { ...player, done: true } : player
-      );
-      setGamePlayers(updated);
-      setTimeout(() => nextPlayer(updated), 600);
+    const next = index + 1;
+
+    if (next < updated.length) {
+      setAndBroadcast({
+        phase: "playing",
+        deck: sourceDeck,
+        dealerHand: sourceDealerHand,
+        gamePlayers: updated,
+        currentPlayerIdx: next,
+        dealerHidden: true,
+        message: `${p.name} has Blackjack. ${updated[next].name}'s turn.`,
+      });
       return;
     }
 
-    setMessage(`${p.name}'s turn.`);
+    dealerPlay(updated, sourceDealerHand, sourceDeck);
   }
 
-  function hit() {
-    if (phase !== "playing") return;
+  function hostHit(playerId) {
+    if (!isHost || phase !== "playing") return;
+
+    const active = gamePlayers[currentPlayerIdx];
+    if (!active || String(active.id) !== String(playerId)) return;
 
     let d = [...deck];
     const drawn = draw(d);
     d = drawn.deck;
-    const card = drawn.card;
 
     const updated = gamePlayers.map((p, index) => {
       if (index !== currentPlayerIdx) return p;
 
       if (p.playingSplit) {
-        const splitHand = [...p.splitHand, card].filter(Boolean);
-        return { ...p, splitHand };
+        return {
+          ...p,
+          splitHand: [...p.splitHand, drawn.card].filter(Boolean),
+        };
       }
 
-      const hand = [...p.hand, card].filter(Boolean);
-      return { ...p, hand };
+      return {
+        ...p,
+        hand: [...p.hand, drawn.card].filter(Boolean),
+      };
     });
-
-    setDeck(d);
-    setGamePlayers(updated);
 
     const p = updated[currentPlayerIdx];
     const activeScore = p.playingSplit ? score(p.splitHand) : score(p.hand);
 
     if (activeScore > 21) {
       if (p.splitActive && !p.playingSplit) {
-        setMessage("Bust. Now play split hand.");
-        setTimeout(() => switchToSplit(updated), 600);
-      } else {
-        setMessage("Bust.");
-        const donePlayers = updated.map((player, index) =>
-          index === currentPlayerIdx
-            ? { ...player, done: true, playingSplit: false }
-            : player
+        const splitPlayers = updated.map((player, index) =>
+          index === currentPlayerIdx ? { ...player, playingSplit: true } : player
         );
-        setGamePlayers(donePlayers);
-        setTimeout(() => nextPlayer(donePlayers), 600);
+
+        setAndBroadcast({
+          deck: d,
+          gamePlayers: splitPlayers,
+          message: "Bust. Now playing split hand.",
+        });
+        return;
       }
-    } else if (activeScore === 21) {
-      setMessage("21.");
-    }
-  }
 
-  function stand() {
-    if (phase !== "playing") return;
-    const p = gamePlayers[currentPlayerIdx];
+      const donePlayers = updated.map((player, index) =>
+        index === currentPlayerIdx
+          ? { ...player, done: true, playingSplit: false }
+          : player
+      );
 
-    if (p?.splitActive && !p.playingSplit) {
-      switchToSplit(gamePlayers);
+      moveToNextPlayer(donePlayers, d, dealerHand, "Bust.");
       return;
     }
 
-    const updated = gamePlayers.map((player, index) =>
-      index === currentPlayerIdx
-        ? { ...player, done: true, playingSplit: false }
-        : player
-    );
-
-    setGamePlayers(updated);
-    nextPlayer(updated);
+    setAndBroadcast({
+      deck: d,
+      gamePlayers: updated,
+      message: activeScore === 21 ? "21." : `${active.name} hits.`,
+    });
   }
 
-  function doubleDown() {
-    if (phase !== "playing") return;
+  function hostStand(playerId) {
+    if (!isHost || phase !== "playing") return;
+
+    const active = gamePlayers[currentPlayerIdx];
+    if (!active || String(active.id) !== String(playerId)) return;
+
+    if (active.splitActive && !active.playingSplit) {
+      const splitPlayers = gamePlayers.map((p, index) =>
+        index === currentPlayerIdx ? { ...p, playingSplit: true } : p
+      );
+
+      setAndBroadcast({
+        gamePlayers: splitPlayers,
+        message: "Now playing split hand.",
+      });
+      return;
+    }
+
+    const updated = gamePlayers.map((p, index) =>
+      index === currentPlayerIdx ? { ...p, done: true, playingSplit: false } : p
+    );
+
+    moveToNextPlayer(updated, deck, dealerHand, `${active.name} stands.`);
+  }
+
+  function hostDouble(playerId) {
+    if (!isHost || phase !== "playing") return;
+
+    const active = gamePlayers[currentPlayerIdx];
+    if (!active || String(active.id) !== String(playerId)) return;
+
+    const activeHand = active.playingSplit ? active.splitHand : active.hand;
+    if (activeHand.length !== 2) return;
+
+    const requiredBet = active.playingSplit ? active.splitBet : active.bet;
+    if (active.balance < requiredBet) return;
 
     let d = [...deck];
     const drawn = draw(d);
@@ -318,9 +475,6 @@ export default function BlackjackGame({
 
     const updated = gamePlayers.map((p, index) => {
       if (index !== currentPlayerIdx) return p;
-
-      const activeHand = p.playingSplit ? p.splitHand : p.hand;
-      if (activeHand.length !== 2 || p.balance < p.bet) return p;
 
       if (p.playingSplit) {
         return {
@@ -339,41 +493,49 @@ export default function BlackjackGame({
       };
     });
 
-    setDeck(d);
-    setGamePlayers(updated);
-
     const p = updated[currentPlayerIdx];
 
-    setTimeout(() => {
-      if (p.splitActive && !p.playingSplit) {
-        switchToSplit(updated);
-      } else {
-        const donePlayers = updated.map((player, index) =>
-          index === currentPlayerIdx
-            ? { ...player, done: true, playingSplit: false }
-            : player
-        );
-        setGamePlayers(donePlayers);
-        nextPlayer(donePlayers);
-      }
-    }, 600);
+    if (p.splitActive && !p.playingSplit) {
+      const splitPlayers = updated.map((player, index) =>
+        index === currentPlayerIdx ? { ...player, playingSplit: true } : player
+      );
+
+      setAndBroadcast({
+        deck: d,
+        gamePlayers: splitPlayers,
+        message: "Double complete. Now playing split hand.",
+      });
+      return;
+    }
+
+    const donePlayers = updated.map((player, index) =>
+      index === currentPlayerIdx
+        ? { ...player, done: true, playingSplit: false }
+        : player
+    );
+
+    moveToNextPlayer(donePlayers, d, dealerHand, "Double complete.");
   }
 
-  function splitHand() {
-    if (phase !== "playing") return;
+  function hostSplit(playerId) {
+    if (!isHost || phase !== "playing") return;
+
+    const active = gamePlayers[currentPlayerIdx];
+    if (!active || String(active.id) !== String(playerId)) return;
+
+    if (
+      active.splitActive ||
+      active.hand.length !== 2 ||
+      active.hand[0].value !== active.hand[1].value ||
+      active.balance < active.bet
+    ) {
+      return;
+    }
 
     let d = [...deck];
 
     const updated = gamePlayers.map((p, index) => {
       if (index !== currentPlayerIdx) return p;
-      if (
-        p.splitActive ||
-        p.hand.length !== 2 ||
-        p.hand[0].value !== p.hand[1].value ||
-        p.balance < p.bet
-      ) {
-        return p;
-      }
 
       const splitCard = p.hand[1];
       const firstHand = [p.hand[0]];
@@ -392,20 +554,14 @@ export default function BlackjackGame({
       };
     });
 
-    setDeck(d);
-    setGamePlayers(updated);
-    setMessage("Split created. Playing first hand.");
+    setAndBroadcast({
+      deck: d,
+      gamePlayers: updated,
+      message: "Split created. Playing first hand.",
+    });
   }
 
-  function switchToSplit(sourcePlayers) {
-    const updated = sourcePlayers.map((p, index) =>
-      index === currentPlayerIdx ? { ...p, playingSplit: true } : p
-    );
-    setGamePlayers(updated);
-    setMessage("Now playing split hand.");
-  }
-
-  function nextPlayer(sourcePlayers) {
+  function moveToNextPlayer(sourcePlayers, sourceDeck, sourceDealerHand, msg = "") {
     let next = currentPlayerIdx + 1;
 
     while (next < sourcePlayers.length && sourcePlayers[next].done) {
@@ -413,20 +569,33 @@ export default function BlackjackGame({
     }
 
     if (next < sourcePlayers.length) {
-      startPlayerTurn(next, sourcePlayers);
+      const nextPlayer = sourcePlayers[next];
+
+      if (score(nextPlayer.hand) === 21 && nextPlayer.hand.length === 2) {
+        handleNaturalBlackjack(next, sourcePlayers, sourceDealerHand, sourceDeck);
+        return;
+      }
+
+      setAndBroadcast({
+        phase: "playing",
+        deck: sourceDeck,
+        dealerHand: sourceDealerHand,
+        gamePlayers: sourcePlayers,
+        currentPlayerIdx: next,
+        dealerHidden: true,
+        message: `${msg} ${nextPlayer.name}'s turn.`,
+      });
       return;
     }
 
-    dealerPlay(sourcePlayers);
+    dealerPlay(sourcePlayers, sourceDealerHand, sourceDeck);
   }
 
-  function dealerPlay(sourcePlayers) {
-    setPhase("dealer");
-    setDealerHidden(false);
-    setMessage("Dealer's turn.");
+  function dealerPlay(sourcePlayers, sourceDealerHand = dealerHand, sourceDeck = deck) {
+    if (!isHost) return;
 
-    let d = [...deck];
-    let dealer = [...dealerHand];
+    let d = [...sourceDeck];
+    let dealer = [...sourceDealerHand];
 
     while (score(dealer) < 17 || isSoft17(dealer)) {
       const drawn = draw(d);
@@ -434,13 +603,21 @@ export default function BlackjackGame({
       if (drawn.card) dealer.push(drawn.card);
     }
 
-    setDeck(d);
-    setDealerHand(dealer);
+    setAndBroadcast({
+      phase: "dealer",
+      deck: d,
+      dealerHand: dealer,
+      gamePlayers: sourcePlayers,
+      dealerHidden: false,
+      message: "Dealer's turn.",
+    });
 
-    setTimeout(() => resolveAll(sourcePlayers, dealer), 800);
+    setTimeout(() => resolveAll(sourcePlayers, dealer, d), 800);
   }
 
-  function resolveAll(sourcePlayers, dealer) {
+  function resolveAll(sourcePlayers, dealer, sourceDeck) {
+    if (!isHost) return;
+
     const dealerScore = score(dealer);
     const dealerBust = dealerScore > 21;
     const dealerBlackjack = dealer.length === 2 && dealerScore === 21;
@@ -498,34 +675,143 @@ export default function BlackjackGame({
       };
     });
 
-    setGamePlayers(resolved);
-    setPhase("results");
-    setMessage("Round over.");
-
     const ranked = [...resolved].sort((a, b) => b.net - a.net);
     const winnerPlayer = ranked[0];
 
-    onRoundComplete?.({
-      winnerKey: winnerPlayer?.id || null,
-      scores: ranked.map((p) => ({
-        playerId: p.id,
-        name: p.name,
-        score: p.net,
-        result: p.result,
-      })),
+    setAndBroadcast({
+      phase: "results",
+      deck: sourceDeck,
+      dealerHand: dealer,
+      gamePlayers: resolved,
+      dealerHidden: false,
+      message: "Round over.",
+    });
+
+    if (!announcedRef.current && typeof onRoundCompleteRef.current === "function") {
+      announcedRef.current = true;
+
+      onRoundCompleteRef.current({
+        winnerKey: winnerPlayer?.id || null,
+        scores: ranked.map((p) => ({
+          playerId: p.id,
+          name: p.name,
+          score: p.net,
+          result: p.result,
+        })),
+      });
+    }
+  }
+
+  function hostNextRound() {
+    if (!isHost || phase !== "results") return;
+
+    const reset = resetRoundPlayers(gamePlayers);
+
+    announcedRef.current = false;
+
+    setAndBroadcast({
+      screen: "game",
+      phase: "betting",
+      deck: buildDeck(),
+      dealerHand: [],
+      gamePlayers: reset,
+      bettingIdx: 0,
+      currentPlayerIdx: 0,
+      dealerHidden: true,
+      message: `${reset[0]?.name || "Player 1"} — set your bet.`,
     });
   }
 
-  function nextRound() {
-    const reset = resetRoundPlayers(gamePlayers);
-    setGamePlayers(reset);
-    setDealerHand([]);
-    setDealerHidden(true);
-    setPhase("betting");
-    setBettingIdx(0);
-    setCurrentPlayerIdx(0);
-    setMessage(`${reset[0]?.name || "Player 1"} — set your bet.`);
+  function sendAction(action, amount = 0) {
+    const player = gamePlayers[myPlayerIndex];
+    if (!player) return;
+
+    if (isHost) {
+      if (action === "bet_add") hostUpdateBet(player.id, "add", amount);
+      if (action === "bet_clear") hostUpdateBet(player.id, "clear");
+      if (action === "bet_confirm") hostConfirmBet(player.id);
+      if (action === "hit") hostHit(player.id);
+      if (action === "stand") hostStand(player.id);
+      if (action === "double") hostDouble(player.id);
+      if (action === "split") hostSplit(player.id);
+      return;
+    }
+
+    wsSend({
+      type: "blackjack_action",
+      sessionCode: code,
+      payload: {
+        playerId: player.id,
+        action,
+        amount,
+      },
+    });
   }
+
+  useEffect(() => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+
+    setConnLine("connecting...");
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setConnLine("connected");
+      wsSend({ type: "join", sessionCode: code });
+
+      if (isHost) {
+        setTimeout(() => broadcastState(), 150);
+      }
+    };
+
+    ws.onclose = () => setConnLine("disconnected");
+    ws.onerror = () => setConnLine("error");
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+
+      if (!msg || msg.sessionCode !== code) return;
+
+      if (msg.type === "blackjack_action" && isHost) {
+        const { playerId, action, amount } = msg.payload || {};
+
+        if (action === "bet_add") hostUpdateBet(playerId, "add", amount);
+        if (action === "bet_clear") hostUpdateBet(playerId, "clear");
+        if (action === "bet_confirm") hostConfirmBet(playerId);
+        if (action === "hit") hostHit(playerId);
+        if (action === "stand") hostStand(playerId);
+        if (action === "double") hostDouble(playerId);
+        if (action === "split") hostSplit(playerId);
+
+        return;
+      }
+
+      if (msg.type === "blackjack_state") {
+        if (isHost) return;
+        applyState(msg.payload);
+      }
+    };
+
+    return () => {
+      try {
+        wsRef.current?.close();
+      } catch {}
+      wsRef.current = null;
+      runningRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, isHost]);
+
+  useEffect(() => {
+    if (screen !== "setup") return;
+    setGamePlayers(initialPlayers);
+  }, [initialPlayers, screen]);
 
   const activeHand = currentPlayer?.playingSplit
     ? currentPlayer?.splitHand || []
@@ -533,11 +819,14 @@ export default function BlackjackGame({
 
   const canDouble =
     phase === "playing" &&
+    isMyPlayingTurn &&
     activeHand.length === 2 &&
-    currentPlayer?.balance >= currentPlayer?.bet;
+    currentPlayer?.balance >=
+      (currentPlayer?.playingSplit ? currentPlayer?.splitBet : currentPlayer?.bet);
 
   const canSplit =
     phase === "playing" &&
+    isMyPlayingTurn &&
     !currentPlayer?.splitActive &&
     currentPlayer?.hand?.length === 2 &&
     currentPlayer?.hand?.[0]?.value === currentPlayer?.hand?.[1]?.value &&
@@ -547,47 +836,103 @@ export default function BlackjackGame({
     <div style={wrap}>
       <div style={header}>
         <div style={headerSide}>
-          {phase === "betting" ? (
-            <button style={dealButton} onClick={handleDealButton}>
-              {bettingIdx === gamePlayers.length - 1 ? "Deal All" : "Next Bettor"}
+          {phase === "setup" ? (
+            <button
+              style={{
+                ...dealButton,
+                opacity: isHost ? 1 : 0.45,
+                cursor: isHost ? "pointer" : "not-allowed",
+              }}
+              disabled={!isHost}
+              onClick={startGame}
+            >
+              Start
+            </button>
+          ) : phase === "betting" ? (
+            <button
+              style={{
+                ...dealButton,
+                opacity: isMyBettingTurn ? 1 : 0.45,
+                cursor: isMyBettingTurn ? "pointer" : "not-allowed",
+              }}
+              disabled={!isMyBettingTurn}
+              onClick={() => sendAction("bet_confirm")}
+            >
+              {bettingIdx === gamePlayers.length - 1 ? "Deal All" : "Confirm Bet"}
             </button>
           ) : phase === "results" ? (
-            <button style={dealButton} onClick={nextRound}>
+            <button
+              style={{
+                ...dealButton,
+                opacity: isHost ? 1 : 0.45,
+                cursor: isHost ? "pointer" : "not-allowed",
+              }}
+              disabled={!isHost}
+              onClick={hostNextRound}
+            >
               Next Round
             </button>
           ) : (
-            <button style={hitButton} disabled={phase !== "playing"} onClick={hit}>
+            <button
+              style={{
+                ...hitButton,
+                opacity: isMyPlayingTurn && phase === "playing" ? 1 : 0.45,
+                cursor:
+                  isMyPlayingTurn && phase === "playing" ? "pointer" : "not-allowed",
+              }}
+              disabled={!isMyPlayingTurn || phase !== "playing"}
+              onClick={() => sendAction("hit")}
+            >
               Hit
             </button>
           )}
-
-          <button style={menuButton} onClick={goMenu}>
-            Menu
-          </button>
         </div>
 
         <div style={{ textAlign: "center" }}>
           <div style={title}>♠ BJ ♠</div>
-          <div style={subtitle}>Blackjack</div>
+          <div style={subtitle}>Blackjack · {connLine}</div>
         </div>
 
         <div style={headerSideRight}>
-          <button style={standButton} disabled={phase !== "playing"} onClick={stand}>
+          <button
+            style={{
+              ...standButton,
+              opacity: isMyPlayingTurn && phase === "playing" ? 1 : 0.45,
+              cursor:
+                isMyPlayingTurn && phase === "playing" ? "pointer" : "not-allowed",
+            }}
+            disabled={!isMyPlayingTurn || phase !== "playing"}
+            onClick={() => sendAction("stand")}
+          >
             Stand
           </button>
-          <button style={doubleButton} disabled={!canDouble} onClick={doubleDown}>
+          <button
+            style={{
+              ...doubleButton,
+              opacity: canDouble ? 1 : 0.45,
+              cursor: canDouble ? "pointer" : "not-allowed",
+            }}
+            disabled={!canDouble}
+            onClick={() => sendAction("double")}
+          >
             Double
           </button>
-          <button style={splitButton} disabled={!canSplit} onClick={splitHand}>
+          <button
+            style={{
+              ...splitButton,
+              opacity: canSplit ? 1 : 0.45,
+              cursor: canSplit ? "pointer" : "not-allowed",
+            }}
+            disabled={!canSplit}
+            onClick={() => sendAction("split")}
+          >
             Split
           </button>
         </div>
       </div>
 
-      {!isHost && (
-        <div style={notice}>
-          This version is host-led/pass-and-play for the showcase.
-        </div>
+      {!isHost && screen === "setup" && (
+        <div style={notice}>Waiting for the host to start Blackjack.</div>
       )}
 
       {screen === "setup" && (
@@ -605,9 +950,13 @@ export default function BlackjackGame({
             ))}
           </div>
 
-          <button style={startButton} onClick={startGame}>
-            Start Game
-          </button>
+          {isHost ? (
+            <button style={startButton} onClick={startGame}>
+              Start Game
+            </button>
+          ) : (
+            <p style={setupText}>The host controls the table from the Arena.</p>
+          )}
         </div>
       )}
 
@@ -617,7 +966,9 @@ export default function BlackjackGame({
             <div style={areaLabel}>
               <span>Dealer</span>
               <span style={scoreBadge}>
-                {dealerHidden && dealerHand.length ? cardVal(dealerHand[0]) : score(dealerHand) || "?"}
+                {dealerHidden && dealerHand.length
+                  ? cardVal(dealerHand[0])
+                  : score(dealerHand) || "?"}
               </span>
             </div>
 
@@ -649,6 +1000,7 @@ export default function BlackjackGame({
               const s = score(p.hand);
               const bust = s > 21;
               const active = phase === "playing" && index === currentPlayerIdx;
+              const betting = phase === "betting" && index === bettingIdx;
               const winner = phase === "results" && p.net > 0;
               const loser = phase === "results" && p.net < 0;
 
@@ -657,13 +1009,16 @@ export default function BlackjackGame({
                   key={p.id}
                   style={{
                     ...playerBox,
-                    ...(active ? activePlayerBox : null),
+                    ...(active || betting ? activePlayerBox : null),
                     ...(winner ? winnerBox : null),
                     ...(loser || bust ? bustBox : null),
                   }}
                 >
                   <div style={playerNameRow}>
-                    <span style={playerName}>{p.name}</span>
+                    <span style={playerName}>
+                      {p.name}
+                      {index === myPlayerIndex ? " (You)" : ""}
+                    </span>
                     <span style={playerInfo}>
                       ${p.balance}
                       {phase !== "betting" ? ` | Bet: $${p.bet}` : ""}
@@ -748,13 +1103,26 @@ export default function BlackjackGame({
                 {[5, 25, 50, 100].map((amount) => (
                   <button
                     key={amount}
-                    style={chipButton}
-                    onClick={() => addBet(amount)}
+                    style={{
+                      ...chipButton,
+                      opacity: isMyBettingTurn ? 1 : 0.45,
+                      cursor: isMyBettingTurn ? "pointer" : "not-allowed",
+                    }}
+                    disabled={!isMyBettingTurn}
+                    onClick={() => sendAction("bet_add", amount)}
                   >
                     +${amount}
                   </button>
                 ))}
-                <button style={chipButton} onClick={clearBet}>
+                <button
+                  style={{
+                    ...chipButton,
+                    opacity: isMyBettingTurn ? 1 : 0.45,
+                    cursor: isMyBettingTurn ? "pointer" : "not-allowed",
+                  }}
+                  disabled={!isMyBettingTurn}
+                  onClick={() => sendAction("bet_clear")}
+                >
                   Clear
                 </button>
               </div>
@@ -777,9 +1145,17 @@ function Card({ card, faceDown = false }) {
 
   return (
     <div style={{ ...cardStyle, color: isRed ? "#c0392b" : "#1a1a1a" }}>
-      <span style={cardTop}>{card.value}<br />{card.suit}</span>
+      <span style={cardTop}>
+        {card.value}
+        <br />
+        {card.suit}
+      </span>
       <span style={cardSuit}>{card.suit}</span>
-      <span style={cardBottom}>{card.value}<br />{card.suit}</span>
+      <span style={cardBottom}>
+        {card.value}
+        <br />
+        {card.suit}
+      </span>
     </div>
   );
 }
@@ -838,7 +1214,6 @@ const baseButton = {
   borderRadius: 8,
   padding: "8px 12px",
   fontWeight: 800,
-  cursor: "pointer",
 };
 
 const dealButton = {
@@ -869,13 +1244,6 @@ const splitButton = {
   ...baseButton,
   background: "#9b59b6",
   color: "#fff",
-};
-
-const menuButton = {
-  ...baseButton,
-  background: "rgba(255,255,255,0.1)",
-  color: "#f0e8d0",
-  border: "1px solid rgba(255,255,255,0.2)",
 };
 
 const notice = {
@@ -1117,7 +1485,6 @@ const chipButton = {
   borderRadius: 6,
   fontSize: 11,
   fontWeight: 700,
-  cursor: "pointer",
   padding: "5px 8px",
 };
 

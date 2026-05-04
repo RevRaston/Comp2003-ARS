@@ -1,4 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+const defaultWsBase =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "ws://localhost:3000/ws"
+    : "wss://comp2003-ars.onrender.com/ws";
+
+const WS_URL = (
+  import.meta.env.VITE_WS_URL ||
+  import.meta.env.VITE_BACKEND_WS_URL ||
+  defaultWsBase
+).replace(/\/$/, "");
 
 const SUITS = ["♠", "♥", "♦", "♣"];
 const VALS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
@@ -33,24 +44,50 @@ function popCard(deck) {
   return deck.slice(0, -1);
 }
 
+function getPlayerKey(player) {
+  if (!player) return "";
+  return String(
+    player.user_id ??
+      player.userId ??
+      player.id ??
+      player.profile_id ??
+      player.profileId ??
+      player.name ??
+      ""
+  );
+}
+
+function makeSafePlayers(players) {
+  const usable =
+    Array.isArray(players) && players.length >= 2
+      ? players.slice(0, 4)
+      : [{ name: "Player 1" }, { name: "Player 2" }];
+
+  return usable.map((p, index) => ({
+    id: getPlayerKey(p) || `p${index + 1}`,
+    name: p.display_name || p.name || `Player ${index + 1}`,
+    hand: [],
+  }));
+}
+
 export default function NinetyNineGame({
+  sessionCode,
   players = [],
   isHost = false,
+  myUserId,
   onRoundComplete,
 }) {
-  const initialPlayers = useMemo(() => {
-    const usable = players.length >= 2 ? players.slice(0, 4) : [
-      { name: "Player 1" },
-      { name: "Player 2" },
-    ];
+  const wsRef = useRef(null);
+  const runningRef = useRef(false);
+  const onRoundCompleteRef = useRef(onRoundComplete);
+  const announcedRef = useRef(false);
 
-    return usable.map((p, index) => ({
-      id: p.user_id || p.userId || p.id || `p${index + 1}`,
-      name: p.display_name || p.name || `Player ${index + 1}`,
-      hand: [],
-    }));
-  }, [players]);
+  const code = sessionCode || localStorage.getItem("session_code") || "local";
+  const localUserId = String(myUserId || localStorage.getItem("user_id") || "");
 
+  const initialPlayers = useMemo(() => makeSafePlayers(players), [players]);
+
+  const [connLine, setConnLine] = useState("disconnected");
   const [screen, setScreen] = useState("setup");
   const [deck, setDeck] = useState([]);
   const [gamePlayers, setGamePlayers] = useState(initialPlayers);
@@ -59,13 +96,70 @@ export default function NinetyNineGame({
   const [selectedCardIdx, setSelectedCardIdx] = useState(-1);
   const [lastPlayed, setLastPlayed] = useState(null);
   const [winner, setWinner] = useState(null);
-  const [passContext, setPassContext] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
-    setGamePlayers(initialPlayers);
-  }, [initialPlayers]);
+    onRoundCompleteRef.current = onRoundComplete;
+  }, [onRoundComplete]);
+
+  const myPlayerIndex = useMemo(() => {
+    if (!localUserId) return -1;
+    return gamePlayers.findIndex((p) => String(p.id) === String(localUserId));
+  }, [gamePlayers, localUserId]);
+
+  const activePlayer = gamePlayers[currentIdx];
+  const activePlayerName = activePlayer?.name || `Player ${currentIdx + 1}`;
+  const isMyTurn = myPlayerIndex === currentIdx;
+  const selectedCard =
+    selectedCardIdx >= 0 ? gamePlayers?.[myPlayerIndex]?.hand?.[selectedCardIdx] : null;
+
+  function wsSend(obj) {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(obj));
+  }
+
+  function buildPublicState(overrides = {}) {
+    return {
+      screen,
+      deck,
+      gamePlayers,
+      total,
+      currentIdx,
+      lastPlayed,
+      winner,
+      statusMessage,
+      ...overrides,
+    };
+  }
+
+  function broadcastState(nextState = {}) {
+    if (!isHost) return;
+
+    wsSend({
+      type: "ninety_nine_state",
+      sessionCode: code,
+      payload: buildPublicState(nextState),
+    });
+  }
+
+  function applyState(payload) {
+    if (!payload) return;
+
+    setScreen(payload.screen ?? "setup");
+    setDeck(Array.isArray(payload.deck) ? payload.deck : []);
+    setGamePlayers(Array.isArray(payload.gamePlayers) ? payload.gamePlayers : initialPlayers);
+    setTotal(Number(payload.total || 0));
+    setCurrentIdx(Number(payload.currentIdx || 0));
+    setSelectedCardIdx(-1);
+    setLastPlayed(payload.lastPlayed || null);
+    setWinner(payload.winner || null);
+    setStatusMessage(payload.statusMessage || "");
+  }
 
   function startGame() {
+    if (!isHost) return;
+
     let freshDeck = buildDeck();
 
     const dealtPlayers = initialPlayers.map((p) => {
@@ -82,32 +176,62 @@ export default function NinetyNineGame({
       return { ...p, hand };
     });
 
-    setDeck(freshDeck);
-    setGamePlayers(dealtPlayers);
-    setTotal(0);
-    setCurrentIdx(0);
-    setSelectedCardIdx(-1);
-    setLastPlayed(null);
-    setWinner(null);
-    setPassContext("");
-    setScreen("game");
+    const nextState = {
+      screen: "game",
+      deck: freshDeck,
+      gamePlayers: dealtPlayers,
+      total: 0,
+      currentIdx: 0,
+      lastPlayed: null,
+      winner: null,
+      statusMessage: `${dealtPlayers[0]?.name || "Player 1"} starts.`,
+    };
+
+    announcedRef.current = false;
+    applyState(nextState);
+    setTimeout(() => broadcastState(nextState), 0);
   }
 
-  function resetToSetup() {
-    setScreen("setup");
-    setSelectedCardIdx(-1);
-    setWinner(null);
+  function finishRound(played, nextPlayers, nextTotal) {
+    const nextState = {
+      screen: "win",
+      deck,
+      gamePlayers: nextPlayers,
+      total: nextTotal,
+      currentIdx,
+      lastPlayed: played,
+      winner: played,
+      statusMessage: `${played.playerName} reached 99 and wins.`,
+    };
+
+    applyState(nextState);
+    setTimeout(() => broadcastState(nextState), 0);
+
+    if (!announcedRef.current && typeof onRoundCompleteRef.current === "function") {
+      announcedRef.current = true;
+
+      onRoundCompleteRef.current({
+        winnerKey: played.playerId,
+        scores: nextPlayers.map((p) => ({
+          playerId: p.id,
+          name: p.name,
+          score: p.id === played.playerId ? 99 : nextTotal,
+        })),
+      });
+    }
   }
 
-  function revealNextPlayer() {
-    setScreen("game");
-  }
+  function hostPlayCard(playerId, cardIndex) {
+    if (!isHost) return;
 
-  function playSelected() {
-    if (selectedCardIdx < 0) return;
+    const active = gamePlayers[currentIdx];
+    if (!active) return;
+    if (String(active.id) !== String(playerId)) return;
+    if (screen !== "game") return;
 
-    const activePlayer = gamePlayers[currentIdx];
-    const card = activePlayer.hand[selectedCardIdx];
+    const card = active.hand[cardIndex];
+    if (!card) return;
+
     const value = cardValue(card);
     const nextTotal = total + value;
 
@@ -116,7 +240,7 @@ export default function NinetyNineGame({
       if (index !== currentIdx) return p;
 
       const nextHand = [...p.hand];
-      nextHand.splice(selectedCardIdx, 1);
+      nextHand.splice(cardIndex, 1);
 
       const newCard = drawCard(nextDeck);
       if (newCard) {
@@ -127,53 +251,146 @@ export default function NinetyNineGame({
       return { ...p, hand: nextHand };
     });
 
-    setDeck(nextDeck);
-    setGamePlayers(nextPlayers);
-    setTotal(nextTotal);
-    setSelectedCardIdx(-1);
-
     const played = {
-      playerName: activePlayer.name,
-      playerId: activePlayer.id,
+      playerName: active.name,
+      playerId: active.id,
       card,
       value,
       total: nextTotal,
     };
 
-    setLastPlayed(played);
-
     if (nextTotal >= 99) {
-      setWinner(played);
-      setScreen("win");
-
-      onRoundComplete?.({
-        winnerKey: activePlayer.id,
-        scores: nextPlayers.map((p) => ({
-          playerId: p.id,
-          name: p.name,
-          score: p.id === activePlayer.id ? 99 : nextTotal,
-        })),
-      });
-
+      setDeck(nextDeck);
+      finishRound(played, nextPlayers, nextTotal);
       return;
     }
 
     const nextIdx = (currentIdx + 1) % gamePlayers.length;
-    setCurrentIdx(nextIdx);
-    setPassContext(
-      `${activePlayer.name} played ${card.value}${card.suit} (+${value}). Total is now ${nextTotal}.`
-    );
-    setScreen("pass");
+
+    const nextState = {
+      screen: "game",
+      deck: nextDeck,
+      gamePlayers: nextPlayers,
+      total: nextTotal,
+      currentIdx: nextIdx,
+      lastPlayed: played,
+      winner: null,
+      statusMessage: `${active.name} played ${card.value}${card.suit}. ${
+        nextPlayers[nextIdx]?.name || "Next player"
+      }'s turn.`,
+    };
+
+    applyState(nextState);
+    setTimeout(() => broadcastState(nextState), 0);
   }
 
-  const activePlayer = gamePlayers[currentIdx];
-  const selectedCard =
-    selectedCardIdx >= 0 ? activePlayer?.hand?.[selectedCardIdx] : null;
+  function playSelected() {
+    if (selectedCardIdx < 0) return;
+
+    const player = gamePlayers[myPlayerIndex];
+    if (!player) return;
+    if (!isMyTurn) return;
+
+    if (isHost) {
+      hostPlayCard(player.id, selectedCardIdx);
+      return;
+    }
+
+    wsSend({
+      type: "ninety_nine_play_card",
+      sessionCode: code,
+      payload: {
+        playerId: player.id,
+        cardIndex: selectedCardIdx,
+      },
+    });
+
+    setSelectedCardIdx(-1);
+    setStatusMessage("Card played. Waiting for host sync...");
+  }
+
+  useEffect(() => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+
+    setConnLine("connecting...");
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setConnLine("connected");
+      wsSend({ type: "join", sessionCode: code });
+
+      if (isHost) {
+        setTimeout(() => broadcastState(), 150);
+      }
+    };
+
+    ws.onclose = () => setConnLine("disconnected");
+    ws.onerror = () => setConnLine("error");
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+
+      if (!msg || msg.sessionCode !== code) return;
+
+      if (msg.type === "ninety_nine_play_card" && isHost) {
+        const playerId = msg.payload?.playerId;
+        const cardIndex = Number(msg.payload?.cardIndex);
+        hostPlayCard(playerId, cardIndex);
+        return;
+      }
+
+      if (msg.type === "ninety_nine_state") {
+        if (isHost) return;
+        applyState(msg.payload);
+      }
+    };
+
+    return () => {
+      try {
+        wsRef.current?.close();
+      } catch {}
+      wsRef.current = null;
+      runningRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, isHost]);
+
+  useEffect(() => {
+    if (screen !== "setup") return;
+    setGamePlayers(initialPlayers);
+  }, [initialPlayers, screen]);
+
+  const visibleHand =
+    isHost && myPlayerIndex === -1
+      ? activePlayer?.hand || []
+      : gamePlayers?.[myPlayerIndex]?.hand || [];
+
+  const visibleHandTitle =
+    isHost && myPlayerIndex === -1
+      ? `${activePlayerName}'s hand`
+      : myPlayerIndex >= 0
+      ? "Your hand"
+      : "Spectator view";
 
   return (
     <div style={wrap}>
       <div style={header}>
-        <button style={topButton} onClick={startGame}>
+        <button
+          style={{
+            ...topButton,
+            opacity: isHost && screen === "setup" ? 1 : 0.45,
+            cursor: isHost && screen === "setup" ? "pointer" : "not-allowed",
+          }}
+          disabled={!isHost || screen !== "setup"}
+          onClick={startGame}
+        >
           Start
         </button>
 
@@ -182,15 +399,11 @@ export default function NinetyNineGame({
           <div style={subtitle}>Card Game</div>
         </div>
 
-        <button style={ghostButton} onClick={resetToSetup}>
-          Menu
-        </button>
+        <div style={connPill}>{connLine}</div>
       </div>
 
-      {!isHost && (
-        <div style={notice}>
-          This version is pass-and-play. The host should control the round for the showcase.
-        </div>
+      {!isHost && screen === "setup" && (
+        <div style={notice}>Waiting for the host to start 99.</div>
       )}
 
       {screen === "setup" && (
@@ -211,22 +424,13 @@ export default function NinetyNineGame({
             ))}
           </div>
 
-          <button style={startButton} onClick={startGame}>
-            Start Game
-          </button>
-        </div>
-      )}
-
-      {screen === "pass" && (
-        <div style={passScreen}>
-          <div style={passIcon}>🎴</div>
-          <h3 style={passTitle}>Hand it to {activePlayer?.name}</h3>
-          <p style={muted}>Pass the device before revealing their cards.</p>
-          <p style={contextText}>{passContext}</p>
-
-          <button style={startButton} onClick={revealNextPlayer}>
-            I'm ready — show my cards
-          </button>
+          {isHost ? (
+            <button style={startButton} onClick={startGame}>
+              Start Game
+            </button>
+          ) : (
+            <p style={muted}>The host controls the round from the Arena.</p>
+          )}
         </div>
       )}
 
@@ -238,14 +442,18 @@ export default function NinetyNineGame({
               <div
                 style={{
                   ...totalValue,
-                  color: total >= 95 ? "#e74c3c" : total >= 88 ? "#e67e22" : "#f5d76e",
+                  color:
+                    total >= 95 ? "#e74c3c" : total >= 88 ? "#e67e22" : "#f5d76e",
                 }}
               >
                 {total}
               </div>
             </div>
 
-            <div style={turnBadge}>{activePlayer?.name}'s turn</div>
+            <div style={turnBadge}>
+              {activePlayerName}'s turn
+              {isMyTurn ? " · YOU" : ""}
+            </div>
 
             <div>
               <div style={label}>Deck Left</div>
@@ -268,7 +476,11 @@ export default function NinetyNineGame({
                   ...(index === currentIdx ? activeChip : null),
                 }}
               >
-                <span>{p.name}{index === currentIdx ? " ★" : ""}</span>
+                <span>
+                  {p.name}
+                  {index === currentIdx ? " ★" : ""}
+                  {index === myPlayerIndex ? " (You)" : ""}
+                </span>
                 <span>{p.hand.length} cards</span>
               </div>
             ))}
@@ -289,51 +501,72 @@ export default function NinetyNineGame({
 
           <div style={handArea}>
             <div style={handLabel}>
-              <span>{activePlayer?.name}'s hand</span>
-              <span>{activePlayer?.hand?.length || 0} cards</span>
+              <span>{visibleHandTitle}</span>
+              <span>{visibleHand.length} cards</span>
             </div>
 
-            <div style={handCards}>
-              {activePlayer?.hand?.map((card, index) => (
-                <button
-                  key={`${card.value}-${card.suit}-${index}`}
-                  style={{
-                    ...cardButton,
-                    ...(RED.has(card.suit) ? redCard : blackCard),
-                    ...(selectedCardIdx === index ? selectedCard : null),
-                  }}
-                  onClick={() => setSelectedCardIdx(index)}
-                >
-                  <span style={cardTop}>{card.value}<br />{card.suit}</span>
-                  <span style={cardSuit}>{card.suit}</span>
-                  <span style={cardBottom}>{card.value}<br />{card.suit}</span>
-                  {["J", "Q", "K"].includes(card.value) && (
-                    <span style={cardValueSmall}>= 10</span>
-                  )}
-                </button>
-              ))}
-            </div>
+            {myPlayerIndex === -1 && !isHost ? (
+              <div style={spectatorBox}>Spectating — player hands are hidden.</div>
+            ) : (
+              <div style={handCards}>
+                {visibleHand.map((card, index) => (
+                  <button
+                    key={`${card.value}-${card.suit}-${index}`}
+                    style={{
+                      ...cardButton,
+                      ...(RED.has(card.suit) ? redCard : blackCard),
+                      ...(selectedCardIdx === index ? selectedCardStyle : null),
+                      opacity: isMyTurn || (isHost && myPlayerIndex === -1) ? 1 : 0.55,
+                    }}
+                    disabled={!isMyTurn && !(isHost && myPlayerIndex === -1)}
+                    onClick={() => setSelectedCardIdx(index)}
+                  >
+                    <span style={cardTop}>
+                      {card.value}
+                      <br />
+                      {card.suit}
+                    </span>
+                    <span style={cardSuit}>{card.suit}</span>
+                    <span style={cardBottom}>
+                      {card.value}
+                      <br />
+                      {card.suit}
+                    </span>
+                    {["J", "Q", "K"].includes(card.value) && (
+                      <span style={cardValueSmall}>= 10</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={controls}>
             <div style={{ color: "#f5d76e", fontFamily: "serif" }}>
               {selectedCard
-                ? `Playing ${selectedCard.value}${selectedCard.suit} (+${cardValue(selectedCard)}) — total will be ${total + cardValue(selectedCard)}`
-                : "Select a card to play"}
+                ? `Playing ${selectedCard.value}${selectedCard.suit} (+${cardValue(
+                    selectedCard
+                  )}) — total will be ${total + cardValue(selectedCard)}`
+                : isMyTurn
+                ? "Select a card to play"
+                : `Waiting for ${activePlayerName}`}
             </div>
 
             <button
               style={{
                 ...playButton,
-                opacity: selectedCardIdx < 0 ? 0.35 : 1,
-                cursor: selectedCardIdx < 0 ? "not-allowed" : "pointer",
+                opacity: selectedCardIdx < 0 || !isMyTurn ? 0.35 : 1,
+                cursor:
+                  selectedCardIdx < 0 || !isMyTurn ? "not-allowed" : "pointer",
               }}
-              disabled={selectedCardIdx < 0}
+              disabled={selectedCardIdx < 0 || !isMyTurn}
               onClick={playSelected}
             >
               Play Card
             </button>
           </div>
+
+          {statusMessage && <div style={statusBox}>{statusMessage}</div>}
         </>
       )}
 
@@ -344,17 +577,17 @@ export default function NinetyNineGame({
           <p style={muted}>Their card pushed the total to</p>
           <div style={winTotal}>{winner.total}</div>
           <p style={contextText}>
-            They played {winner.card.value}{winner.card.suit} (+{winner.value})
+            They played {winner.card.value}
+            {winner.card.suit} (+{winner.value})
           </p>
 
-          <div style={winButtons}>
+          {isHost ? (
             <button style={startButton} onClick={startGame}>
               Play Again
             </button>
-            <button style={ghostButtonLarge} onClick={resetToSetup}>
-              Change Players
-            </button>
-          </div>
+          ) : (
+            <p style={muted}>Waiting for the host to continue...</p>
+          )}
         </div>
       )}
     </div>
@@ -369,9 +602,17 @@ function MiniCard({ card }) {
         ...(RED.has(card.suit) ? redCard : blackCard),
       }}
     >
-      <span style={miniTop}>{card.value}<br />{card.suit}</span>
+      <span style={miniTop}>
+        {card.value}
+        <br />
+        {card.suit}
+      </span>
       <span style={miniSuit}>{card.suit}</span>
-      <span style={miniBottom}>{card.value}<br />{card.suit}</span>
+      <span style={miniBottom}>
+        {card.value}
+        <br />
+        {card.suit}
+      </span>
     </div>
   );
 }
@@ -419,18 +660,17 @@ const topButton = {
   background: "#f5d76e",
   color: "#1a1a1a",
   fontWeight: 800,
-  cursor: "pointer",
 };
 
-const ghostButton = {
+const connPill = {
   justifySelf: "end",
-  borderRadius: 8,
+  borderRadius: 999,
   padding: "8px 12px",
   background: "rgba(255,255,255,0.1)",
   color: "#f0e8d0",
   border: "1px solid rgba(255,255,255,0.2)",
   fontWeight: 700,
-  cursor: "pointer",
+  fontSize: 12,
 };
 
 const notice = {
@@ -489,11 +729,6 @@ const startButton = {
   fontSize: 14,
   fontWeight: 900,
   cursor: "pointer",
-};
-
-const passScreen = {
-  textAlign: "center",
-  padding: "46px 20px",
 };
 
 const passIcon = {
@@ -614,6 +849,15 @@ const handCards = {
   minHeight: 70,
 };
 
+const spectatorBox = {
+  minHeight: 70,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#a8c8a0",
+  fontSize: 13,
+};
+
 const cardButton = {
   width: 48,
   height: 66,
@@ -628,7 +872,7 @@ const cardButton = {
 const redCard = { color: "#c0392b" };
 const blackCard = { color: "#1a1a1a" };
 
-const selectedCard = {
+const selectedCardStyle = {
   transform: "translateY(-8px)",
   border: "2px solid #f5d76e",
   boxShadow: "0 0 12px rgba(245,215,110,0.5)",
@@ -688,6 +932,15 @@ const playButton = {
   fontWeight: 800,
 };
 
+const statusBox = {
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 10,
+  background: "rgba(0,0,0,0.25)",
+  color: "#f5d76e",
+  fontSize: 12,
+};
+
 const winScreen = {
   textAlign: "center",
   padding: "40px 20px",
@@ -698,19 +951,6 @@ const winTotal = {
   fontSize: 56,
   color: "#f5d76e",
   margin: "12px 0",
-};
-
-const winButtons = {
-  display: "flex",
-  gap: 10,
-  justifyContent: "center",
-  flexWrap: "wrap",
-};
-
-const ghostButtonLarge = {
-  ...ghostButton,
-  justifySelf: "auto",
-  padding: "12px 24px",
 };
 
 const miniCard = {

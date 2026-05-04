@@ -17,10 +17,10 @@ function labelForValue(v) {
   return names[v] || String(v);
 }
 
-function getUserKey(p) {
-  if (!p) return "";
-  const k = p.user_id ?? p.userId ?? p.id;
-  return k ? String(k) : "";
+function getUserKey(p, fallback = "") {
+  if (!p) return fallback;
+  const k = p.user_id ?? p.userId ?? p.id ?? p.profile_id ?? p.profileId;
+  return k ? String(k) : fallback;
 }
 
 function getSeatClass(index, total) {
@@ -40,10 +40,26 @@ function getSeatClass(index, total) {
   );
 }
 
+function makeSafePlayers(players) {
+  const usable =
+    Array.isArray(players) && players.length > 0
+      ? players.slice(0, 4)
+      : [{ id: "p1", name: "Player 1" }, { id: "p2", name: "Player 2" }];
+
+  return usable.map((p, idx) => ({
+    id: getUserKey(p, String(idx + 1)),
+    name: p.display_name || p.name || `Player ${idx + 1}`,
+    value: 1,
+    locked: false,
+    distance: null,
+  }));
+}
+
 export default function GuessingCardGame({
   sessionCode,
   players = [],
   isHost = false,
+  myUserId = null,
   onRoundComplete,
 }) {
   const wsRef = useRef(null);
@@ -51,50 +67,37 @@ export default function GuessingCardGame({
   const announcedRef = useRef(false);
   const onRoundCompleteRef = useRef(onRoundComplete);
 
-  useEffect(() => {
-    onRoundCompleteRef.current = onRoundComplete;
-  }, [onRoundComplete]);
+  const code = sessionCode || localStorage.getItem("session_code") || "local";
+  const localUserId = String(myUserId || localStorage.getItem("user_id") || "");
+
+  const initialPlayers = useMemo(() => makeSafePlayers(players), [players]);
 
   const [connLine, setConnLine] = useState("disconnected");
-
-  const code = sessionCode || localStorage.getItem("session_code") || "local";
-
-  const playerList = useMemo(() => {
-    return (players || []).slice(0, 4).map((p, idx) => ({
-      id: getUserKey(p) || String(idx + 1),
-      name: p.display_name || p.name || `Player ${idx + 1}`,
-    }));
-  }, [players]);
-
-  const stateRef = useRef({
-    phase: "countdown", // countdown -> picking -> reveal
+  const [ui, setUi] = useState({
+    phase: "setup", // setup -> countdown -> picking -> reveal
     timer: 3,
     aiCard: null,
-    players: [],
+    players: initialPlayers,
     outcome: "",
     winnerIds: [],
     tick: 0,
   });
 
-  const [ui, setUi] = useState({
-    phase: "countdown",
-    timer: 3,
-    aiCard: null,
-    players: [],
-    outcome: "",
-    winnerIds: [],
-  });
+  const stateRef = useRef(ui);
+
+  useEffect(() => {
+    onRoundCompleteRef.current = onRoundComplete;
+  }, [onRoundComplete]);
+
+  const myPlayerIndex = useMemo(() => {
+    if (!localUserId) return -1;
+    return ui.players.findIndex((p) => String(p.id) === String(localUserId));
+  }, [ui.players, localUserId]);
+
+  const myPlayer = myPlayerIndex >= 0 ? ui.players[myPlayerIndex] : null;
 
   function syncUiFromState() {
-    const s = stateRef.current;
-    setUi({
-      phase: s.phase,
-      timer: s.timer,
-      aiCard: s.aiCard,
-      players: s.players,
-      outcome: s.outcome,
-      winnerIds: s.winnerIds || [],
-    });
+    setUi({ ...stateRef.current });
   }
 
   function wsSend(obj) {
@@ -103,26 +106,212 @@ export default function GuessingCardGame({
     ws.send(JSON.stringify(obj));
   }
 
-  // initialise players once
-  useEffect(() => {
-    if (!playerList.length) return;
+  function buildPayload(overrides = {}) {
+    return {
+      ...stateRef.current,
+      ...overrides,
+    };
+  }
 
-    const s = stateRef.current;
+  function broadcastState(overrides = {}) {
+    if (!isHost) return;
 
-    if (s.players.length === playerList.length && s.players.length > 0) return;
+    wsSend({
+      type: "guessing_card_state",
+      sessionCode: code,
+      payload: buildPayload(overrides),
+    });
+  }
 
-    s.players = playerList.map((p) => ({
-      id: p.id,
-      name: p.name,
-      value: 1,
-      locked: false,
-      distance: null,
-    }));
+  function applyState(payload) {
+    if (!payload) return;
+
+    stateRef.current = {
+      phase: payload.phase || "setup",
+      timer: Number(payload.timer ?? 3),
+      aiCard: payload.aiCard ?? null,
+      players: Array.isArray(payload.players) ? payload.players : initialPlayers,
+      outcome: payload.outcome || "",
+      winnerIds: Array.isArray(payload.winnerIds) ? payload.winnerIds : [],
+      tick: Number(payload.tick || 0),
+    };
 
     syncUiFromState();
-  }, [playerList]);
+  }
 
-  // WS connect
+  function setAndBroadcast(nextState) {
+    stateRef.current = {
+      ...stateRef.current,
+      ...nextState,
+    };
+
+    syncUiFromState();
+    setTimeout(() => broadcastState(nextState), 0);
+  }
+
+  function startGame() {
+    if (!isHost) return;
+
+    announcedRef.current = false;
+
+    setAndBroadcast({
+      phase: "countdown",
+      timer: 3,
+      aiCard: null,
+      players: initialPlayers.map((p) => ({
+        ...p,
+        value: 1,
+        locked: false,
+        distance: null,
+      })),
+      outcome: "",
+      winnerIds: [],
+      tick: 0,
+    });
+  }
+
+  function resolveHand(sourceState = stateRef.current) {
+    const ai = sourceState.aiCard ?? Math.floor(Math.random() * 13) + 1;
+
+    let smallestDiff = Infinity;
+    let winners = [];
+
+    const resolvedPlayers = sourceState.players.map((player) => {
+      const diff = Math.abs(Number(player.value) - ai);
+
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        winners = [player.id];
+      } else if (diff === smallestDiff) {
+        winners.push(player.id);
+      }
+
+      return {
+        ...player,
+        locked: true,
+        distance: diff,
+      };
+    });
+
+    let outcome = "";
+
+    if (winners.length === 1) {
+      const winner = resolvedPlayers.find((p) => p.id === winners[0]);
+      outcome = `${winner?.name || "Player"} wins the hand`;
+    } else {
+      const names = winners
+        .map((id) => resolvedPlayers.find((p) => p.id === id)?.name)
+        .filter(Boolean);
+
+      outcome = `Split hand: ${names.join(", ")}`;
+    }
+
+    const nextState = {
+      phase: "reveal",
+      timer: 0,
+      aiCard: ai,
+      players: resolvedPlayers,
+      outcome,
+      winnerIds: winners,
+      tick: sourceState.tick + 1,
+    };
+
+    setAndBroadcast(nextState);
+
+    if (
+      !announcedRef.current &&
+      typeof onRoundCompleteRef.current === "function"
+    ) {
+      announcedRef.current = true;
+
+      const ranked = resolvedPlayers
+        .map((p) => ({
+          playerId: p.id,
+          name: p.name,
+          score: 13 - Number(p.distance || 0),
+          result: winners.includes(p.id) ? "Winner" : `Off by ${p.distance}`,
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      onRoundCompleteRef.current({
+        winnerKey: winners.length === 1 ? winners[0] : null,
+        outcome,
+        scores: ranked,
+      });
+    }
+  }
+
+  function hostUpdatePlayerValue(playerId, value) {
+    if (!isHost) return;
+
+    const s = stateRef.current;
+    if (s.phase !== "picking") return;
+
+    setAndBroadcast({
+      players: s.players.map((p) =>
+        String(p.id) === String(playerId) && !p.locked
+          ? { ...p, value: Number(value) }
+          : p
+      ),
+      tick: s.tick + 1,
+    });
+  }
+
+  function hostLockPlayer(playerId) {
+    if (!isHost) return;
+
+    const s = stateRef.current;
+    if (s.phase !== "picking") return;
+
+    const nextPlayers = s.players.map((p) =>
+      String(p.id) === String(playerId) ? { ...p, locked: true } : p
+    );
+
+    const allLocked = nextPlayers.length > 0 && nextPlayers.every((p) => p.locked);
+
+    const nextState = {
+      players: nextPlayers,
+      tick: s.tick + 1,
+    };
+
+    if (allLocked) {
+      stateRef.current = {
+        ...stateRef.current,
+        ...nextState,
+      };
+      syncUiFromState();
+      resolveHand(stateRef.current);
+      return;
+    }
+
+    setAndBroadcast(nextState);
+  }
+
+  function handleReplay() {
+    startGame();
+  }
+
+  function sendPlayerAction(action, payload = {}) {
+    const player = myPlayer;
+    if (!player) return;
+
+    if (isHost) {
+      if (action === "set_value") hostUpdatePlayerValue(player.id, payload.value);
+      if (action === "lock") hostLockPlayer(player.id);
+      return;
+    }
+
+    wsSend({
+      type: "guessing_card_action",
+      sessionCode: code,
+      payload: {
+        playerId: player.id,
+        action,
+        ...payload,
+      },
+    });
+  }
+
   useEffect(() => {
     if (runningRef.current) return;
     runningRef.current = true;
@@ -135,6 +324,10 @@ export default function GuessingCardGame({
     ws.onopen = () => {
       setConnLine("connected");
       wsSend({ type: "join", sessionCode: code });
+
+      if (isHost) {
+        setTimeout(() => broadcastState(), 150);
+      }
     };
 
     ws.onclose = () => setConnLine("disconnected");
@@ -142,6 +335,7 @@ export default function GuessingCardGame({
 
     ws.onmessage = (ev) => {
       let msg;
+
       try {
         msg = JSON.parse(ev.data);
       } catch {
@@ -150,32 +344,53 @@ export default function GuessingCardGame({
 
       if (!msg || msg.sessionCode !== code) return;
 
+      if (msg.type === "guessing_card_action" && isHost) {
+        const { playerId, action, value } = msg.payload || {};
+
+        if (action === "set_value") {
+          hostUpdatePlayerValue(playerId, value);
+        }
+
+        if (action === "lock") {
+          hostLockPlayer(playerId);
+        }
+
+        return;
+      }
+
       if (msg.type === "guessing_card_state") {
         if (isHost) return;
 
-        const payload = msg.payload;
-        if (!payload) return;
-
-        stateRef.current = {
-          ...stateRef.current,
-          ...payload,
-          players: payload.players || stateRef.current.players,
-        };
-
-        syncUiFromState();
+        applyState(msg.payload);
 
         if (
-          stateRef.current.phase === "reveal" &&
+          msg.payload?.phase === "reveal" &&
           !announcedRef.current &&
           typeof onRoundCompleteRef.current === "function"
         ) {
           announcedRef.current = true;
+
+          const resolvedPlayers = Array.isArray(msg.payload.players)
+            ? msg.payload.players
+            : [];
+
+          const winners = Array.isArray(msg.payload.winnerIds)
+            ? msg.payload.winnerIds
+            : [];
+
+          const ranked = resolvedPlayers
+            .map((p) => ({
+              playerId: p.id,
+              name: p.name,
+              score: 13 - Number(p.distance || 0),
+              result: winners.includes(p.id) ? "Winner" : `Off by ${p.distance}`,
+            }))
+            .sort((a, b) => b.score - a.score);
+
           onRoundCompleteRef.current({
-            winnerKey:
-              stateRef.current.winnerIds?.length === 1
-                ? stateRef.current.winnerIds[0]
-                : null,
-            outcome: stateRef.current.outcome,
+            winnerKey: winners.length === 1 ? winners[0] : null,
+            outcome: msg.payload.outcome,
+            scores: ranked,
           });
         }
       }
@@ -188,168 +403,76 @@ export default function GuessingCardGame({
       wsRef.current = null;
       runningRef.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, isHost]);
 
-  // Host game loop / timer
+  useEffect(() => {
+    if (ui.phase !== "setup") return;
+
+    stateRef.current = {
+      ...stateRef.current,
+      players: initialPlayers,
+    };
+
+    syncUiFromState();
+  }, [initialPlayers, ui.phase]);
+
   useEffect(() => {
     if (!isHost) return;
 
-    const s = stateRef.current;
-    if (!s.players.length) return;
-
     const interval = setInterval(() => {
+      const s = stateRef.current;
+
       if (s.phase === "countdown") {
-        s.timer -= 1;
+        const nextTimer = s.timer - 1;
 
-        if (s.timer < 0) {
-          s.phase = "picking";
-          s.timer = 20;
-          s.aiCard = Math.floor(Math.random() * 13) + 1;
-        }
-      } else if (s.phase === "picking") {
-        const allLocked =
-          s.players.length > 0 && s.players.every((p) => p.locked);
-
-        s.timer -= 1;
-
-        if (s.timer <= 0 || allLocked) {
-          const ai = s.aiCard ?? Math.floor(Math.random() * 13) + 1;
-
-          let smallestDiff = Infinity;
-          let winners = [];
-
-          s.players = s.players.map((player) => {
-            const diff = Math.abs(Number(player.value) - ai);
-
-            if (diff < smallestDiff) {
-              smallestDiff = diff;
-              winners = [player.id];
-            } else if (diff === smallestDiff) {
-              winners.push(player.id);
-            }
-
-            return {
-              ...player,
-              distance: diff,
-            };
+        if (nextTimer < 0) {
+          setAndBroadcast({
+            phase: "picking",
+            timer: 20,
+            aiCard: Math.floor(Math.random() * 13) + 1,
+            tick: s.tick + 1,
           });
-
-          s.winnerIds = winners;
-
-          if (winners.length === 1) {
-            const winner = s.players.find((p) => p.id === winners[0]);
-            s.outcome = `${winner?.name || "Player"} wins the hand`;
-          } else {
-            const names = winners
-              .map((id) => s.players.find((p) => p.id === id)?.name)
-              .filter(Boolean);
-            s.outcome = `Split hand: ${names.join(", ")}`;
-          }
-
-          s.phase = "reveal";
-          s.timer = 0;
+          return;
         }
+
+        setAndBroadcast({
+          timer: nextTimer,
+          tick: s.tick + 1,
+        });
+        return;
       }
 
-      s.tick += 1;
-      syncUiFromState();
+      if (s.phase === "picking") {
+        const allLocked = s.players.length > 0 && s.players.every((p) => p.locked);
+        const nextTimer = s.timer - 1;
 
-      wsSend({
-        type: "guessing_card_state",
-        sessionCode: code,
-        payload: {
-          phase: s.phase,
-          timer: s.timer,
-          aiCard: s.aiCard,
-          players: s.players,
-          outcome: s.outcome,
-          winnerIds: s.winnerIds,
-          tick: s.tick,
-        },
-      });
+        if (nextTimer <= 0 || allLocked) {
+          resolveHand({
+            ...s,
+            timer: Math.max(nextTimer, 0),
+          });
+          return;
+        }
 
-      if (
-        s.phase === "reveal" &&
-        !announcedRef.current &&
-        typeof onRoundCompleteRef.current === "function"
-      ) {
-        announcedRef.current = true;
-        onRoundCompleteRef.current({
-          winnerKey: s.winnerIds?.length === 1 ? s.winnerIds[0] : null,
-          outcome: s.outcome,
+        setAndBroadcast({
+          timer: nextTimer,
+          tick: s.tick + 1,
         });
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isHost, code, playerList.length]);
-
-  function updatePlayerValue(id, value) {
-    if (!isHost) return;
-
-    const s = stateRef.current;
-    if (s.phase !== "picking") return;
-
-    s.players = s.players.map((p) =>
-      p.id === id ? { ...p, value: Number(value) } : p
-    );
-
-    syncUiFromState();
-  }
-
-  function lockPlayer(id) {
-    if (!isHost) return;
-
-    const s = stateRef.current;
-    if (s.phase !== "picking") return;
-
-    s.players = s.players.map((p) =>
-      p.id === id ? { ...p, locked: true } : p
-    );
-
-    syncUiFromState();
-  }
-
-  function handleReplay() {
-    if (!isHost) return;
-
-    announcedRef.current = false;
-
-    const s = stateRef.current;
-    s.phase = "countdown";
-    s.timer = 3;
-    s.aiCard = null;
-    s.outcome = "";
-    s.winnerIds = [];
-    s.tick = 0;
-    s.players = s.players.map((p) => ({
-      ...p,
-      value: 1,
-      locked: false,
-      distance: null,
-    }));
-
-    syncUiFromState();
-
-    wsSend({
-      type: "guessing_card_state",
-      sessionCode: code,
-      payload: {
-        phase: s.phase,
-        timer: s.timer,
-        aiCard: s.aiCard,
-        players: s.players,
-        outcome: s.outcome,
-        winnerIds: s.winnerIds,
-        tick: s.tick,
-      },
-    });
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, code]);
 
   let heading = "";
   let subheading = "";
 
-  if (ui.phase === "countdown") {
+  if (ui.phase === "setup") {
+    heading = "Ready";
+    subheading = "Waiting for the host to deal.";
+  } else if (ui.phase === "countdown") {
     heading = ui.timer > 0 ? `${ui.timer}…` : "Deal!";
     subheading = "Dealer is preparing the next hand.";
   } else if (ui.phase === "picking") {
@@ -371,7 +494,7 @@ export default function GuessingCardGame({
         <div className="gc-info-block">
           <div className="gc-info-label">Role</div>
           <div className="gc-info-value">
-            {isHost ? "Dealer / Host" : "Player Table View"}
+            {isHost ? "Dealer / Host" : myPlayer ? "Player" : "Spectator"}
           </div>
         </div>
 
@@ -393,6 +516,18 @@ export default function GuessingCardGame({
         <div className="gc-phase-sub">{subheading}</div>
       </div>
 
+      {ui.phase === "setup" && (
+        <div className="gc-finish-panel">
+          {isHost ? (
+            <button className="gc-replay-btn" onClick={startGame}>
+              Start Hand
+            </button>
+          ) : (
+            <p className="gc-waiting">Waiting for dealer…</p>
+          )}
+        </div>
+      )}
+
       <div className="gc-table-wrap">
         <div className="gc-table-outer-glow" />
 
@@ -406,7 +541,7 @@ export default function GuessingCardGame({
 
             <div className="gc-dealer-label">House Card</div>
 
-            <div className={`gc-playing-card gc-ai-card`}>
+            <div className="gc-playing-card gc-ai-card">
               <div className="gc-card-corner top-left">
                 {ui.phase === "reveal" && ui.aiCard ? labelForValue(ui.aiCard) : "?"}
               </div>
@@ -433,15 +568,19 @@ export default function GuessingCardGame({
             {ui.players.map((player, index) => {
               const isWinner = ui.winnerIds?.includes(player.id);
               const seatClass = getSeatClass(index, ui.players.length);
+              const isMe = String(player.id) === String(myPlayer?.id);
 
               return (
                 <div
                   key={player.id}
-                  className={`gc-seat ${seatClass} ${player.locked ? "is-locked" : ""} ${
-                    isWinner ? "is-winner" : ""
-                  }`}
+                  className={`gc-seat ${seatClass} ${
+                    player.locked ? "is-locked" : ""
+                  } ${isWinner ? "is-winner" : ""}`}
                 >
-                  <div className="gc-seat-name">{player.name}</div>
+                  <div className="gc-seat-name">
+                    {player.name}
+                    {isMe ? " (You)" : ""}
+                  </div>
 
                   <div className={`gc-playing-card ${isWinner ? "winner-card" : ""}`}>
                     <div className="gc-card-corner top-left">
@@ -458,6 +597,7 @@ export default function GuessingCardGame({
                   </div>
 
                   <div className="gc-seat-status">
+                    {ui.phase === "setup" && "Waiting"}
                     {ui.phase === "countdown" && "Waiting for deal"}
                     {ui.phase === "picking" &&
                       (player.locked ? "Bet placed" : "Choosing")}
@@ -474,24 +614,30 @@ export default function GuessingCardGame({
       </div>
 
       <div className="gc-controls-card">
-        <div className="gc-controls-title">Dealer controls</div>
+        <div className="gc-controls-title">
+          {myPlayer ? "Your card" : "Table controls"}
+        </div>
 
         <div className="gc-controls-sub">
-          {isHost
-            ? "As host, you control and lock each player's card for now."
-            : "Waiting for the dealer to run the hand."}
+          {myPlayer
+            ? "Choose your guess and lock it before time runs out."
+            : isHost
+            ? "Host can start and replay the hand. Players now choose their own cards."
+            : "Spectating the hand."}
         </div>
 
         <div className="gc-controls-list">
-          {ui.players.map((player) => (
-            <div key={player.id} className="gc-player-controls">
-              <div className="gc-player-name">{player.name}</div>
+          {myPlayer ? (
+            <div className="gc-player-controls">
+              <div className="gc-player-name">{myPlayer.name}</div>
 
               <select
                 className="gc-select"
-                disabled={!isHost || ui.phase !== "picking" || player.locked}
-                value={player.value}
-                onChange={(e) => updatePlayerValue(player.id, e.target.value)}
+                disabled={ui.phase !== "picking" || myPlayer.locked}
+                value={myPlayer.value}
+                onChange={(e) =>
+                  sendPlayerAction("set_value", { value: e.target.value })
+                }
               >
                 {Array.from({ length: 13 }).map((_, i) => {
                   const v = i + 1;
@@ -505,13 +651,22 @@ export default function GuessingCardGame({
 
               <button
                 className="gc-lock-btn"
-                disabled={!isHost || ui.phase !== "picking" || player.locked}
-                onClick={() => lockPlayer(player.id)}
+                disabled={ui.phase !== "picking" || myPlayer.locked}
+                onClick={() => sendPlayerAction("lock")}
               >
-                {player.locked ? "Locked" : "Lock"}
+                {myPlayer.locked ? "Locked" : "Lock"}
               </button>
             </div>
-          ))}
+          ) : (
+            ui.players.map((player) => (
+              <div key={player.id} className="gc-player-controls">
+                <div className="gc-player-name">{player.name}</div>
+                <div className="gc-controls-sub">
+                  {player.locked ? "Locked" : "Choosing"}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
