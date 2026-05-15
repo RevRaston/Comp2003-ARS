@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stack — Tower Game</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+   
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0e2d1c;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    #tw {
+      background: #1a4a2e;
+      background-image: radial-gradient(ellipse at 50% 30%, #256b40 0%, #0e2d1c 100%);
+      font-family: 'DM Sans', sans-serif;
+      color: #f0e8d0;
+      padding: 16px;
+      border-radius: 16px;
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      max-width: 680px;
+    }
+
+    #tw::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(255,255,255,0.015) 40px, rgba(255,255,255,0.015) 41px);
+      pointer-events: none;
+    }
+
+   
+    .header-bar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .header-left, .header-right { display: flex; flex-direction: column; gap: 5px; }
+    .header-right { align-items: flex-end; }
+    .header-center { text-align: center; }
+
+    h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 20px;
+      letter-spacing: 3px;
+      color: #f5d76e;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      white-space: nowrap;
+    }
+    .subtitle { font-size: 10px; color: #a8c8a0; letter-spacing: 2px; }
+
+   
+    .hbtn {
+      border: none;
+      border-radius: 7px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 7px 12px;
+      transition: transform 0.1s, opacity 0.15s;
+      width: 100%;
+      text-align: center;
+    }
+    .hbtn:active   { transform: scale(0.97); }
+    .hbtn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+    .btn-gold { background: #f5d76e; color: #1a1a1a; }
+    .btn-menu { background: rgba(255,255,255,0.1); color: #f0e8d0; border: 1px solid rgba(255,255,255,0.2); }
+
+   
+    #setup-screen { text-align: center; padding: 10px 0; }
+
+    .setup-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 17px;
+      color: #f5d76e;
+      margin-bottom: 14px;
+    }
+
+    .player-count-btns { display: flex; gap: 10px; justify-content: center; margin-bottom: 16px; }
+
+    .pcount-btn {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: 2px solid rgba(245,215,110,0.4);
+      background: rgba(0,0,0,0.3);
+      color: #f5d76e;
+      font-size: 20px; font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pcount-btn:hover, .pcount-btn.active { background: #f5d76e; color: #1a1a1a; border-color: #f5d76e; }
+
+    .player-names { display: flex; flex-direction: column; gap: 7px; max-width: 260px; margin: 0 auto 20px; }
+
+    .name-input {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(245,215,110,0.3);
+      border-radius: 8px;
+      padding: 7px 12px;
+      color: #f0e8d0;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      width: 100%;
+    }
+    .name-input::placeholder { color: #a8c8a0; }
+    .name-input:focus { outline: none; border-color: rgba(245,215,110,0.7); }
+
+    .start-btn {
+      background: #f5d76e; color: #1a1a1a;
+      border: none; border-radius: 10px;
+      padding: 11px 36px;
+      font-size: 14px; font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer; letter-spacing: 1px;
+    }
+
+   
+    #pass-screen {
+      display: none;
+      text-align: center;
+      padding: 50px 20px;
+    }
+    .pass-icon    { font-size: 52px; margin-bottom: 16px; }
+    .pass-title   { font-family: 'Playfair Display', serif; font-size: 24px; color: #f5d76e; margin-bottom: 8px; }
+    .pass-sub     { font-size: 13px; color: #a8c8a0; margin-bottom: 6px; }
+    .pass-context { font-size: 12px; color: rgba(245,215,110,0.7); margin-bottom: 32px; font-style: italic; }
+    .pass-btn {
+      background: #f5d76e; color: #1a1a1a;
+      border: none; border-radius: 10px;
+      padding: 14px 44px;
+      font-size: 15px; font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer; letter-spacing: 1px;
+    }
+
+   
+    #game-screen { display: none; }
+
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .player-turn-badge { font-family: 'Playfair Display', serif; font-size: 14px; color: #f5d76e; }
+
+    .score-badges { display: flex; gap: 6px; }
+    .score-pip {
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 11px;
+      color: #a8c8a0;
+    }
+    .score-pip span { color: #f5d76e; font-weight: 500; }
+
+   
+    .canvas-wrap {
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 10px;
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    canvas { display: block; width: 100%; }
+
+    .tap-hint {
+      position: absolute;
+      bottom: 10px;
+      left: 0; right: 0;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(245,215,110,0.6);
+      letter-spacing: 1px;
+      pointer-events: none;
+    }
+
+   
+    .info-bar {
+      background: rgba(0,0,0,0.25);
+      border-radius: 9px;
+      padding: 9px 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .info-stat   { text-align: center; }
+    .info-label  { font-size: 10px; color: #a8c8a0; letter-spacing: 1px; text-transform: uppercase; }
+    .info-val    { font-family: 'Playfair Display', serif; font-size: 18px; color: #f5d76e; }
+
+    .msg-bar { text-align: center; font-size: 12px; color: #f0e8d0; min-height: 18px; }
+
+   
+    #result-screen { display: none; text-align: center; padding: 20px 16px; }
+
+    .result-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      color: #f5d76e;
+      margin-bottom: 4px;
+    }
+    .result-sub { font-size: 12px; color: #a8c8a0; margin-bottom: 14px; }
+
+    .results-grid { display: grid; gap: 7px; margin-bottom: 16px; }
+    .results-grid.rp1 { grid-template-columns: 1fr; }
+    .results-grid.rp2 { grid-template-columns: 1fr 1fr; }
+    .results-grid.rp3 { grid-template-columns: 1fr 1fr 1fr; }
+    .results-grid.rp4 { grid-template-columns: 1fr 1fr; }
+
+    .res-box {
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 9px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .res-box.res-winner { border-color: rgba(46,204,113,0.6); background: rgba(46,204,113,0.07); }
+    .res-box.res-tie    { border-color: rgba(245,215,110,0.5); }
+
+    .res-name   { font-size: 10px; color: #f5d76e; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+    .res-floors { font-family: 'Playfair Display', serif; font-size: 26px; color: #f5d76e; }
+    .res-label  { font-size: 10px; color: #a8c8a0; }
+    .res-rank   { font-size: 11px; color: #a8c8a0; margin-top: 2px; }
+
+    .win-btns { display: flex; gap: 10px; justify-content: center; }
+    .win-btn  { border: none; border-radius: 10px; padding: 10px 28px; font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+    .win-btn-primary   { background: #f5d76e; color: #1a1a1a; }
+    .win-btn-secondary { background: rgba(255,255,255,0.1); color: #f0e8d0; border: 1px solid rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+<div id="tw">
+
+
+  <div class="header-bar">
+    <div class="header-left">
+      <button class="hbtn btn-gold" id="btn-start" onclick="handleStart()">START</button>
+    </div>
+    <div class="header-center">
+      <h1>▲ STACK ▲</h1>
+      <div class="subtitle">TOWER GAME</div>
+    </div>
+    <div class="header-right">
+      <button class="hbtn btn-menu" id="btn-menu" onclick="goMenu()" style="display:none">MENU</button>
+    </div>
+  </div>
+
+ 
+  <div id="setup-screen">
+    <div class="setup-title">How many players?</div>
+    <div class="player-count-btns">
+      <button class="pcount-btn active" onclick="selectCount(1)">1</button>
+      <button class="pcount-btn"        onclick="selectCount(2)">2</button>
+      <button class="pcount-btn"        onclick="selectCount(3)">3</button>
+      <button class="pcount-btn"        onclick="selectCount(4)">4</button>
+    </div>
+    <div class="player-names" id="name-inputs">
+      <input class="name-input" id="name0" placeholder="Player 1" maxlength="14" value="Player 1">
+    </div>
+    <button class="start-btn" onclick="startGame()">START GAME</button>
+  </div>
+
+  
+  <div id="pass-screen">
+    <div class="pass-icon">🏗️</div>
+    <div class="pass-title"   id="pass-title">Pass to Player 2</div>
+    <div class="pass-sub"     id="pass-sub">Hand the device to Player 2</div>
+    <div class="pass-context" id="pass-context"></div>
+    <button class="pass-btn"  onclick="revealForPlayer()">I'm ready — let's stack!</button>
+  </div>
+
+
+  <div id="game-screen">
+
+    <div class="game-header">
+      <div class="player-turn-badge" id="player-turn-badge">Player 1's turn</div>
+      <div class="score-badges"      id="score-badges"></div>
+    </div>
+
+   
+    <div class="canvas-wrap" id="canvas-wrap" onclick="handleTap()">
+      <canvas id="stack-canvas" height="340"></canvas>
+      <div class="tap-hint" id="tap-hint">TAP TO STACK</div>
+    </div>
+
+    <div class="info-bar">
+      <div class="info-stat">
+        <div class="info-label">Floor</div>
+        <div class="info-val" id="floor-display">1</div>
+      </div>
+      <div class="info-stat">
+        <div class="info-label">Width</div>
+        <div class="info-val" id="width-display">100%</div>
+      </div>
+      <div class="info-stat">
+        <div class="info-label">Speed</div>
+        <div class="info-val" id="speed-display">1.0x</div>
+      </div>
+    </div>
+
+    <div class="msg-bar" id="msg-line"></div>
+
+  </div>
+
+ 
+  <div id="result-screen">
+    <div class="result-title" id="result-title">Player 1 wins!</div>
+    <div class="result-sub">highest tower</div>
+    <div class="results-grid rp1" id="results-grid"></div>
+    <div class="win-btns">
+      <button class="win-btn win-btn-primary"   onclick="playAgain()">PLAY AGAIN</button>
+      <button class="win-btn win-btn-secondary" onclick="goMenu()">CHANGE PLAYERS</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  
+  const TILE_H       = 18;    /
+  const BASE_W       = 200;   
+  const FLOOR_VISIBLE = 14;   
+  const SPEED_BASE   = 3;     
+  const SPEED_MAX    = 14;    
+  const PERFECT_TOL  = 4;     
+
+  const COLORS = [
+    '#f5d76e','#5dade2','#58d68d','#e67e22',
+    '#af7ac5','#ec407a','#26c6da','#ff7043'
+  ];
+
+ 
+  let players        = [];
+  let numPlayers     = 1;
+  let currentPlayerIdx = 0;
+  let pendingCallback  = null;
+  let animId           = null;
+
+ 
+  let floors       = [];       
+  let sliderX      = 0;        
+  let sliderDir    = 1;       
+  let sliderSpeed  = SPEED_BASE;
+  let tileW        = BASE_W;   
+  let colorIdx     = 0;        
+  let gameOver     = false;
+  let canvasW      = 480;      
+
+  const canvas = document.getElementById('stack-canvas');
+  const ctx    = canvas.getContext('2d');
+
+
+  function selectCount(n) {
+    numPlayers = n;
+    document.querySelectorAll('.pcount-btn').forEach((b, i) =>
+      b.classList.toggle('active', [1,2,3,4][i] === n)
+    );
+    const cont = document.getElementById('name-inputs');
+    cont.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const inp = document.createElement('input');
+      inp.className   = 'name-input';
+      inp.id          = 'name' + i;
+      inp.maxLength   = 14;
+      inp.placeholder = 'Player ' + (i + 1);
+      inp.value       = 'Player ' + (i + 1);
+      cont.appendChild(inp);
+    }
+  }
+
+  function startGame() {
+    players = [];
+    for (let i = 0; i < numPlayers; i++) {
+      const el = document.getElementById('name' + i);
+      players.push({
+        name:  el ? el.value.trim() || 'Player ' + (i + 1) : 'Player ' + (i + 1),
+        score: 0
+      });
+    }
+    currentPlayerIdx = 0;
+    hideAllScreens();
+    document.getElementById('btn-menu').style.display  = 'block';
+    document.getElementById('btn-start').style.display = 'none';
+    launchTurn(0);
+  }
+
+  function handleStart() {
+    hideAllScreens();
+    document.getElementById('setup-screen').style.display = 'block';
+  }
+
+  function hideAllScreens() {
+    ['setup-screen','pass-screen','game-screen','result-screen'].forEach(id =>
+      document.getElementById(id).style.display = 'none'
+    );
+  }
+
+  function showPassScreen(toIdx, contextMsg, callback) {
+    const p = players[toIdx];
+    hideAllScreens();
+    document.getElementById('pass-screen').style.display  = 'block';
+    document.getElementById('pass-title').textContent     = 'Hand it to ' + p.name;
+    document.getElementById('pass-sub').textContent       = 'Pass the device to ' + p.name + ' now.';
+    document.getElementById('pass-context').textContent   = contextMsg || '';
+    pendingCallback = callback;
+  }
+
+  function revealForPlayer() {
+    hideAllScreens();
+    document.getElementById('game-screen').style.display = 'block';
+    if (pendingCallback) pendingCallback();
+  }
+
+
+  function launchTurn(idx) {
+    currentPlayerIdx = idx;
+
+
+    if (animId) cancelAnimationFrame(animId);
+
+
+    floors      = [];
+    tileW       = BASE_W;
+    sliderX     = 0;
+    sliderDir   = 1;
+    sliderSpeed = SPEED_BASE;
+    gameOver    = false;
+    colorIdx    = 0;
+
+
+    const wrap = document.getElementById('canvas-wrap');
+    canvasW     = wrap.offsetWidth || 480;
+    canvas.width  = canvasW;
+    canvas.height = 340;
+
+    hideAllScreens();
+    document.getElementById('game-screen').style.display = 'block';
+    document.getElementById('player-turn-badge').textContent = players[idx].name + "'s turn";
+    document.getElementById('tap-hint').style.display = 'block';
+
+    renderScoreBadges();
+    updateInfoBar();
+    setMsg('Tap to stack each tile — be precise!');
+
+    const baseX = Math.round((canvasW - tileW) / 2);
+    floors.push({ x: baseX, w: tileW, color: COLORS[colorIdx % COLORS.length] });
+    colorIdx++;
+
+
+    sliderX = 0;
+
+    animId = requestAnimationFrame(loop);
+  }
+
+ 
+  function loop() {
+    if (gameOver) return;
+
+
+    sliderX += sliderDir * sliderSpeed;
+
+   
+    if (sliderX <= 0)                { sliderX = 0;              sliderDir =  1; }
+    if (sliderX + tileW >= canvasW)  { sliderX = canvasW - tileW; sliderDir = -1; }
+
+    draw();
+    animId = requestAnimationFrame(loop);
+  }
+
+
+  function draw() {
+    const cw = canvas.width;
+    const ch = canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+
+
+    const total      = floors.length;
+    const startFloor = Math.max(0, total - FLOOR_VISIBLE);
+    const visible    = floors.slice(startFloor);
+
+    visible.forEach((f, i) => {
+      const y = ch - TILE_H - i * TILE_H;
+      ctx.fillStyle = f.color;
+      ctx.fillRect(f.x, y, f.w, TILE_H - 1);
+  
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(f.x, y, f.w, 3);
+    });
+
+    if (!gameOver) {
+      const sliderY  = ch - TILE_H - visible.length * TILE_H;
+      const sliderCol = COLORS[colorIdx % COLORS.length];
+      ctx.fillStyle = sliderCol;
+      ctx.fillRect(sliderX, sliderY, tileW, TILE_H - 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(sliderX, sliderY, tileW, 3);
+    }
+  }
+
+
+  function handleTap() {
+    if (gameOver) return;
+
+    cancelAnimationFrame(animId);
+    animId = null;
+
+    const topFloor = floors[floors.length - 1];
+    const prevX    = topFloor.x;
+    const prevW    = topFloor.w;
+
+  
+    const overlapLeft  = Math.max(sliderX, prevX);
+    const overlapRight = Math.min(sliderX + tileW, prevX + prevW);
+    const overlap      = overlapRight - overlapLeft;
+
+    if (overlap <= 2) {
+      setMsg('Missed! Tower complete.');
+      document.getElementById('tap-hint').style.display = 'none';
+      gameOver = true;
+      const score = floors.length - 1; 
+      players[currentPlayerIdx].score = score;
+      draw();
+      flashMiss(); 
+      setTimeout(() => endTurn(score), 1200);
+      return;
+    }
+
+  
+    const perfect = Math.abs(overlap - prevW) <= PERFECT_TOL;
+    let newW, newX;
+    if (perfect) {
+      newW = prevW;
+      newX = prevX;
+      setMsg('Perfect! Keep it up!');
+    } else {
+      newW = overlap;
+      newX = overlapLeft;
+      setMsg(overlap < prevW * 0.5 ? 'Careful — getting thin!' : 'Good stack!');
+    }
+
+ 
+    floors.push({ x: newX, w: newW, color: COLORS[colorIdx % COLORS.length] });
+    colorIdx++;
+    tileW = newW;
+
+   
+    sliderSpeed = Math.min(SPEED_BASE + Math.floor(floors.length / 3) * 0.7, SPEED_MAX);
+
+    updateInfoBar();
+    draw();
+
+  
+    if (tileW < 6) {
+      setMsg('Too thin! Tower complete.');
+      document.getElementById('tap-hint').style.display = 'none';
+      gameOver = true;
+      const score = floors.length - 1;
+      players[currentPlayerIdx].score = score;
+      setTimeout(() => endTurn(score), 900);
+      return;
+    }
+
+   
+    sliderX   = 0;
+    sliderDir = 1;
+    animId    = requestAnimationFrame(loop);
+  }
+
+
+  function flashMiss() {
+    const ch        = canvas.height;
+    const sliderY   = ch - TILE_H - floors.length * TILE_H;
+    let alpha       = 0.8;
+
+    function fade() {
+      draw(); 
+      ctx.fillStyle = 'rgba(231,76,60,' + alpha + ')';
+      ctx.fillRect(sliderX, sliderY, tileW, TILE_H - 1);
+      alpha -= 0.1;
+      if (alpha > 0) requestAnimationFrame(fade);
+    }
+    fade();
+  }
+
+
+  function endTurn(score) {
+    if (currentPlayerIdx < numPlayers - 1) {
+
+      const next    = currentPlayerIdx + 1;
+      const context = players[currentPlayerIdx].name + ' stacked ' + score + ' floor' + (score !== 1 ? 's' : '') + '.';
+      showPassScreen(next, context, () => launchTurn(next));
+    } else {
+     
+      showResults();
+    }
+  }
+
+
+  function updateInfoBar() {
+    document.getElementById('floor-display').textContent = floors.length;
+    document.getElementById('width-display').textContent = Math.round((tileW / BASE_W) * 100) + '%';
+    document.getElementById('speed-display').textContent = sliderSpeed.toFixed(1) + 'x';
+  }
+
+  function renderScoreBadges() {
+    const el = document.getElementById('score-badges');
+    el.innerHTML = '';
+    players.forEach((p, i) => {
+      const pip = document.createElement('div');
+      pip.className = 'score-pip';
+      const val = p.score > 0 ? p.score + 'F' : i < currentPlayerIdx ? p.score + 'F' : '–';
+      pip.innerHTML = i === currentPlayerIdx
+        ? '<span>' + val + '</span>'
+        : val;
+      el.appendChild(pip);
+    });
+  }
+
+  function setMsg(t) { document.getElementById('msg-line').textContent = t; }
+
+
+  function showResults() {
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+    hideAllScreens();
+    document.getElementById('result-screen').style.display = 'block';
+
+    const maxScore = Math.max(...players.map(p => p.score));
+    const winners  = players.filter(p => p.score === maxScore);
+    const isTie    = winners.length > 1;
+
+    document.getElementById('result-title').textContent =
+      isTie ? "It's a tie!" : winners[0].name + ' wins!';
+
+    const grid = document.getElementById('results-grid');
+    grid.className = 'results-grid rp' + numPlayers;
+    grid.innerHTML = '';
+
+   
+    const sorted = [...players]
+      .map((p, i) => ({ ...p, origIdx: i }))
+      .sort((a, b) => b.score - a.score);
+
+    sorted.forEach((p, rank) => {
+      const isWinner = p.score === maxScore;
+      const box      = document.createElement('div');
+      box.className  = 'res-box' + (isTie && isWinner ? ' res-tie' : isWinner ? ' res-winner' : '');
+      box.innerHTML  = `
+        <div class="res-name">${p.name}</div>
+        <div class="res-floors">${p.score}</div>
+        <div class="res-label">floors</div>
+        <div class="res-rank">${
+          isWinner && !isTie ? '🏆 Winner' :
+          isTie && isWinner  ? '🤝 Tied'   :
+          '#' + (rank + 1)
+        }</div>`;
+      grid.appendChild(box);
+    });
+  }
+
+
+  function playAgain() {
+ 
+    players = players.map(p => ({ name: p.name, score: 0 }));
+    currentPlayerIdx = 0;
+    launchTurn(0);
+  }
+
+  function goMenu() {
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+    hideAllScreens();
+    document.getElementById('setup-screen').style.display = 'block';
+    document.getElementById('btn-menu').style.display     = 'none';
+    document.getElementById('btn-start').style.display    = 'block';
+    selectCount(numPlayers);
+  }
+
+  selectCount(1);
+  document.getElementById('setup-screen').style.display = 'block';
+</script>
+</body>
+</html>

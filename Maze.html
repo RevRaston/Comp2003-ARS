@@ -1,0 +1,268 @@
+import React, { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
+
+// ===== CONFIG =====
+const GRID_SIZE = 21; // odd number recommended
+const CELL_SIZE = 24;
+const PLAYER_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308"];
+const MOVE_INTERVAL = 120; // ms between steps when holding key
+
+// Control schemes for up to 4 local players (for preview testing)
+const CONTROL_SCHEMES = [
+  { up: "w", down: "s", left: "a", right: "d" },
+  { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" },
+  { up: "i", down: "k", left: "j", right: "l" },
+  { up: "t", down: "g", left: "f", right: "h" }
+];
+
+// ===== MAZE GENERATION (Recursive Backtracker) =====
+function generateMaze(size) {
+  const maze = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => 1)
+  );
+
+  const dirs = [
+    [0, -2],
+    [2, 0],
+    [0, 2],
+    [-2, 0]
+  ];
+
+  function shuffle(arr) {
+    return arr.sort(() => Math.random() - 0.5);
+  }
+
+  function carve(x, y) {
+    maze[y][x] = 0;
+    shuffle(dirs).forEach(([dx, dy]) => {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (
+        nx > 0 && nx < size - 1 &&
+        ny > 0 && ny < size - 1 &&
+        maze[ny][nx] === 1
+      ) {
+        maze[y + dy / 2][x + dx / 2] = 0;
+        carve(nx, ny);
+      }
+    });
+  }
+
+  carve(1, 1);
+  return maze;
+}
+
+function getSpawnPositions(size) {
+  return [
+    { x: 1, y: 1 },
+    { x: size - 2, y: 1 },
+    { x: 1, y: size - 2 },
+    { x: size - 2, y: size - 2 }
+  ];
+}
+
+export default function MultiplayerMazePreview() {
+  const canvasRef = useRef(null);
+
+  // Default to 4 players so 3 & 4 are immediately playable
+  const [playersCount, setPlayersCount] = useState(4);
+  const [maze, setMaze] = useState(() => generateMaze(GRID_SIZE));
+  const [players, setPlayers] = useState([]);
+  const [winner, setWinner] = useState(null);
+
+  const mazeRef = useRef(maze);
+  const winnerRef = useRef(winner);
+  const animationRef = useRef(null);
+
+  const keysHeld = useRef({});
+  const lastMoveTime = useRef(0);
+
+  const center = {
+    x: Math.floor(GRID_SIZE / 2),
+    y: Math.floor(GRID_SIZE / 2)
+  };
+
+  // Keep refs synced
+  useEffect(() => {
+    mazeRef.current = maze;
+  }, [maze]);
+
+  useEffect(() => {
+    winnerRef.current = winner;
+  }, [winner]);
+
+  function resetGame(count = playersCount) {
+    const newMaze = generateMaze(GRID_SIZE);
+    newMaze[center.y][center.x] = 0;
+
+    const spawns = getSpawnPositions(GRID_SIZE);
+    const newPlayers = Array.from({ length: count }, (_, i) => ({
+      id: i,
+      x: spawns[i].x,
+      y: spawns[i].y
+    }));
+
+    setMaze(newMaze);
+    setPlayers(newPlayers);
+    setWinner(null);
+  }
+
+  // IMPORTANT: ensure game is fully initialised on first mount
+  useEffect(() => {
+    resetGame(playersCount);
+  }, []);
+
+  // Reset when player count changes
+  useEffect(() => {
+    resetGame(playersCount);
+  }, [playersCount]);
+
+  // ===== KEY TRACKING =====
+  useEffect(() => {
+    function down(e) {
+      keysHeld.current[e.key] = true;
+    }
+    function up(e) {
+      keysHeld.current[e.key] = false;
+    }
+
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
+  // ===== CONTINUOUS MOVEMENT LOOP =====
+  useEffect(() => {
+    function loop(time) {
+      if (winnerRef.current === null && time - lastMoveTime.current > MOVE_INTERVAL) {
+        lastMoveTime.current = time;
+
+        setPlayers(prev => {
+          const updated = prev.map(p => ({ ...p }));
+          const maze = mazeRef.current;
+
+          updated.forEach((player, index) => {
+            const scheme = CONTROL_SCHEMES[index];
+            if (!scheme) return;
+
+            let nx = player.x;
+            let ny = player.y;
+
+            if (keysHeld.current[scheme.up]) ny--;
+            else if (keysHeld.current[scheme.down]) ny++;
+            else if (keysHeld.current[scheme.left]) nx--;
+            else if (keysHeld.current[scheme.right]) nx++;
+
+            if (maze[ny]?.[nx] === 0) {
+              player.x = nx;
+              player.y = ny;
+            }
+
+            if (player.x === center.x && player.y === center.y) {
+              setWinner(index);
+            }
+          });
+
+          return updated;
+        });
+      }
+
+      animationRef.current = requestAnimationFrame(loop);
+    }
+
+    animationRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, []);
+
+  // ===== RENDER =====
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = GRID_SIZE * CELL_SIZE;
+    canvas.height = GRID_SIZE * CELL_SIZE;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        ctx.fillStyle = maze[y][x] === 1 ? "#111827" : "#f9fafb";
+        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+      }
+    }
+
+    ctx.fillStyle = "#a855f7";
+    ctx.fillRect(center.x * CELL_SIZE, center.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+    players.forEach((p, i) => {
+      ctx.fillStyle = PLAYER_COLORS[i];
+      ctx.beginPath();
+      ctx.arc(
+        p.x * CELL_SIZE + CELL_SIZE / 2,
+        p.y * CELL_SIZE + CELL_SIZE / 2,
+        CELL_SIZE / 3,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    });
+  }, [maze, players]);
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center gap-4 p-6">
+      <motion.h1
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-3xl font-bold"
+      >
+        Multiplayer Maze — Local Preview
+      </motion.h1>
+
+      <div className="flex gap-3 items-center">
+        <label className="text-sm">Players:</label>
+        <select
+          value={playersCount}
+          onChange={e => setPlayersCount(Number(e.target.value))}
+          className="text-black px-2 py-1 rounded"
+        >
+          {[1, 2, 3, 4].map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+
+        <button
+          onClick={() => resetGame(playersCount)}
+          className="bg-indigo-500 hover:bg-indigo-600 px-3 py-1 rounded"
+        >
+          New Maze
+        </button>
+      </div>
+
+      <canvas ref={canvasRef} className="rounded-2xl shadow-2xl" />
+
+      <div className="text-sm text-slate-300 max-w-xl text-center">
+        Player 1: WASD &nbsp; | &nbsp;
+        Player 2: Arrow Keys &nbsp; | &nbsp;
+        Player 3: IJKL &nbsp; | &nbsp;
+        Player 4: TFGH
+      </div>
+
+      {winner !== null && (
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-green-500 text-black px-6 py-3 rounded-2xl font-semibold"
+        >
+          Player {winner + 1} reached the center and wins!
+        </motion.div>
+      )}
+    </div>
+  );
+}
